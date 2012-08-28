@@ -1,0 +1,10 @@
+MUPD8
+Copyright 2011-2012 @WalmartLabs, a division of Wal-Mart Stores, Inc.
+
+This product includes software developed at
+@WalmartLabs (http://www.walmartlabs.com/).
+
+The Apache Cassandra configuration file (cassandra.yaml) and a
+Java-environment-configuration shell script (mupd8-env.sh) are
+derived from Apache Cassandra, licensed under Apache License 2.0.
+

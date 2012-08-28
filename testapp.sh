@@ -1,0 +1,41 @@
+pidfile=mupd8.pid
+messageserver_pidfile=messageserver.pid
+
+# XXX: assume we run the code from ../target for now
+target=`dirname $0 | pwd`/target
+cpfile=$target/classpath.txt
+mupd8jar=$target/mupd8-1.0-SNAPSHOT.jar
+CLASSPATH=`head -1 $cpfile | tr -d '\n'`:$mupd8jar
+
+start() {
+    export CLASSPATH=$CLASSPATH
+    #export JAVA_OPT="-Xmx512M -Xms512M"
+
+    echo "starting messageserver..."
+    nohup java com.walmartlabs.mupd8.MessageServer -pidFile $messageserver_pidfile -d `pwd`/src/main/config/testapp >> nohup.messageserver.out 2>&1 &
+    
+     echo "starting the mupd8 app..."
+#    nohup java com.walmartlabs.mupd8.Mupd8Main -pidFile $pidfile -key k1 -from file:$HOME/data/T10.data -to T10Source -threads 6 -s `pwd`/src/main/config/testapp/sys_old -a `pwd`/src/main/config/testapp/app_old &
+#nohup java com.walmartlabs.mupd8.Mupd8Main -pidFile $pidfile -key k1 -from "file:`pwd`/src/test/resources/testapp/T10.data" -to T10Source -threads 6 -d `pwd`/src/main/config/testapp &
+nohup java com.walmartlabs.mupd8.Mupd8Main -pidFile $pidfile -key k1 -from "file:`pwd`/src/test/resources/testapp/T10.data" -to T10Source -threads 6 -d `pwd`/src/main/config/testapp >> nohup.mupd8.out 2>&1 &
+}
+
+stop() {
+    mupd8_pid=`perl -nw -e '/^(\d+)$/ and print $1;' $pidfile`
+    messageserver_pid=`perl -nw -e '/^(\d+)$/ and print $1;' $messageserver_pidfile`
+    echo "stopping the mupd8 app ($mupd8_pid)..."
+    kill $mupd8_pid
+    echo "stopping the messageserver ($messageserver_pid)..."
+    kill $messageserver_pid
+}
+
+status() {
+   curl http://$HOSTNAME:5001/app/status
+}
+
+case $1 in
+    start)    start;;
+    stop)     stop;;
+    status)   status;;
+    *)        echo "Usage: $0 start|stop|status" 1>&2; exit 1;;
+esac

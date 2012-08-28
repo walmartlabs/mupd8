@@ -1,0 +1,43 @@
+{
+
+"perl_class_path" : "/home/stsprasad/main/cosmix/MapUpdateR2",
+"install_path" : "/home/stsprasad/main/cosmix/MapUpdateR2",
+
+"system_hosts" : [
+    "localhost"
+    "dev001",
+    "dev003"
+],
+
+"gearman" : {
+    "port" : 8020
+},
+
+"mupd8_status" : {
+   "http_port" : 5001 
+},
+
+# "gearman_server_parameters" : "-t 4",
+# Examples: "-t 4" for server threads, "-j 3" for job retries
+
+"debug_level" : 1,
+
+# "log_requests" : 1,
+
+"event_batch_size" : 100,
+
+"log_directory" : "/home/stsprasad/logs/testapp",
+
+"performer_recv_timeout" : 3,
+"performer_send_timeout" : 3,
+
+"slate_store" : {
+    "type" : "Cassandra",
+    "hosts" : [ "dev007" ],
+    "port" : 9160,
+    "keyspace" : "Keyspace1",
+    "recv_timeout" : 30000,
+    "send_timeout" : 3000
+}
+
+}
