@@ -387,9 +387,8 @@ EOF
       Run MUPD8:
 <screen>
 <prompt>$</prompt> <userinput>java -cp ~/.m2/repository/org/slf4j/slf4j-simple/1.6.4/slf4j-simple-1.6.4.jar:~/.m2/repository/org/slf4j/slf4j-api/1.6.4/slf4j-api-1.6.4.jar:../mupd8/target/mupd8-1.0-SNAPSHOT.jar:../mupd8/target/mupd8-1.0-SNAPSHOT-jar-with-dependencies.jar:target/mupd8_demo-1.0-SNAPSHOT.jar \
-    com.walmartlabs.mupd8.Mupd8Main -d etc/ -pidFile mupd8.pid -from % -key % -to %</userinput>
+    com.walmartlabs.mupd8.Mupd8Main -d etc/ -pidFile mupd8.pid</userinput>
 </screen>
-      The command-line parameters with <userinput>%</userinput> value are actually ignored because the configuration file in <userinput>etc/</userinput> already specifies the parameters.  Unfortunately, the code currently requires these command-line parameters to be enumerated anyway.
     </para>
     <para>
       While MUPD8 is running, we can see the result in another terminal:
