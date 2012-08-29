@@ -63,7 +63,7 @@ object Mupd8Runner {
                                     if (options.has(sysOpt)) Option(options.valueOf(sysOpt)) else None,
                                     true)
     // source(s) are required
-    if (appInfo.sources.length == 0 &&
+    if (appInfo.sources.size == 0 &&
         !(options.has(fromOpt) && options.has(toOpt) && options.has(keyOpt))) {
       System.err.println("\"sources\" is not specified in sys config. " + 
                          "Please either provide sources in sys.cfg or provide arguments " + 
@@ -77,16 +77,16 @@ object Mupd8Runner {
     
     val app = new AppRuntime(0, options.valueOf(threadsOpt), appInfo)
     
-    // start the source
-    if (appInfo.sources.length > 0) {
-      System.out.println("start source from sys cfg")
-      appInfo.sources.foreach { case Array(from, to, performer, key) =>
-        if (isLocalHost(to)) app.startSource(performer, from, key)
-      }
-    }
-    else {
-      System.out.println("start source from cmdLine")
-      app.startSource(options.valueOf(toOpt), options.valueOf(fromOpt), options.valueOf(keyOpt))
-    }
+    // // start the source
+    // if (appInfo.sources.length > 0) {
+    //   System.out.println("start source from sys cfg")
+    //   appInfo.sources.foreach { case Array(from, to, performer, key) =>
+    //     if (isLocalHost(to)) app.startSource(performer, from, key)
+    //   }
+    // }
+    // else {
+    //   System.out.println("start source from cmdLine")
+    //   app.startSource(options.valueOf(toOpt), options.valueOf(fromOpt), options.valueOf(keyOpt))
+    // }
   }
 }

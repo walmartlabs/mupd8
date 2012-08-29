@@ -17,71 +17,67 @@
 
 package com.walmartlabs.mupd8
 
-class SourceReader(uri : String, continuation : Array[Byte] => Unit)
-      extends Runnable {
-  import java.io.InputStream
-  import java.io.BufferedInputStream
-  
-  val arr = uri.split(":")
- 
-  def read(istream : InputStream) : Unit = {
-    var run : List[Byte] = Nil
-    var b = 0      
-    while ({
-      run = Nil
-      while ({
-        b = istream.read()
-        b != -1 && b.toChar != '\n'        
-      }) { run = b.toByte::run }
-      b != -1
-    }) try {
-      continuation(run.toArray.reverse)
-    } catch {
-      case e : Exception => println("Discarding event because source processing failed with "+e.toString+" on source event "+new String(run.toArray.reverse, "UTF-8"))
-    }
+import scala.util.parsing.json.JSON
+import com.walmartlabs.mupd8.application.Mupd8Source
+import com.walmartlabs.mupd8.application.Mupd8DataPair
+import com.walmartlabs.mupd8.Misc._
+import java.io.BufferedReader
+import java.net.Socket
+import java.io.InputStreamReader
+import java.io.FileReader
+
+/** A default JSON Source Reader
+ *
+ * @constructor create a JSON Source Reader with source and key path in json
+ * @param source source either a socket or a file
+ * @param key path of key in json line
+ *
+ */
+class JSONSource (args : java.util.List[String]) extends Mupd8Source {
+  val sourceStr = args.get(0)
+  val keyStr = args.get(1)
+  val sourceArr = sourceStr.split(":")
+  val reader = sourceArr(0) match {
+    case "file" => try {fileReader} catch { case _ => println("Source failed. : " + sourceStr + " " + keyStr); null}
+    case _      => try {socketReader} catch { case _ => println("Source failed. : " + sourceStr + " " + keyStr); null}
   }
-  
-  def readFile (file : String) : Unit = {
-    println("read from " + file)
-    try {
-      val istream = new BufferedInputStream(new java.io.FileInputStream(file))
-      read(istream)
-      istream.close
-    } catch {
-      case e : Exception => println(e.getMessage)
-    }
+
+  var currentLine : String = null;
+
+  def fileReader : BufferedReader = {
+    new BufferedReader(new FileReader(sourceArr(1)))
   }
-  
-  def readSocket (host: String, port : Int) : Unit = {
-    import java.net._
-    
-    var socket : Socket = null
-    var reading = true
-    while (reading) {
-      try {
-        socket = new Socket(host, port)
-        println("connected to " + host + ":" + port)
-        val istream = new BufferedInputStream(socket.getInputStream)
-        read(istream)
-      } catch {
-        case ioe : java.io.IOException => {
-          println(ioe.getMessage + " IOException, sleep a while and try again")
-          Thread.sleep(1000)
-        }
-        case e : Exception => {
-          println("quit reader on exception " + e.toString + ": " + e.getMessage)
-          e.printStackTrace
-          if (socket != null && socket.isConnected) socket.close
-          reading = false
-        }
+
+  def socketReader : BufferedReader = {
+    val socket = new Socket(sourceArr(0), sourceArr(1).toInt)
+    new BufferedReader(new InputStreamReader(socket.getInputStream()))
+  }
+
+  val keys = keyStr.split(':')
+  def getValue(keyindex: Int, maps: Option[Any]): Option[String] = {
+    if (keyindex < keys.size) {
+      println("key = " + keys(keyindex))
+    } else { "bottom" }
+    println("maps = " + maps)
+    maps map {
+      x =>  x match {
+        case x: Map[String, Any] => getValue(keyindex + 1, x.get(keys(keyindex))).get
+        case x: String => x
       }
     }
   }
-  
-  def run {
-    arr(0) match {
-      case "file" => readFile(arr(1))
-      case _      => readSocket(arr(0), arr(1).toInt)
-    }
+
+  override def hasNext() = {
+    if (reader == null) false
+    currentLine = reader.readLine()
+    currentLine != null
+  }
+
+  override def getNextDataPair: Mupd8DataPair = {
+    val rtn = new Mupd8DataPair
+    val json = JSON.parseFull(currentLine)
+    rtn._key = new String(getValue(0, json).get)
+    rtn._value = new String(currentLine).getBytes("UTF-8")
+    rtn
   }
 }

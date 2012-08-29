@@ -26,4 +26,5 @@ pip-log.txt
 #Mr Developer
 .mr.developer.cfg
 *.pid
-
+*.out
+target

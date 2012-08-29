@@ -20,14 +20,13 @@ package com.walmartlabs.mupd8
 import scala.collection.mutable
 import scala.collection.breakOut
 import scala.collection.JavaConverters._
+import scala.util.parsing.json.JSON
 import java.util.concurrent._
 import java.util.ArrayList
 import java.io.{File, InputStream, OutputStream}
 import java.lang.Integer
 import java.lang.Number
 import java.net._
-
-import org.json._
 import org.json.simple._
 import org.scale7.cassandra.pelops._
 import org.apache.cassandra.thrift.ConsistencyLevel
@@ -35,22 +34,25 @@ import org.jboss.netty.buffer.{ChannelBuffers, ChannelBuffer}
 import org.jboss.netty.channel.{ChannelHandlerContext, Channel}
 import org.jboss.netty.handler.codec.oneone.OneToOneEncoder
 import org.jboss.netty.handler.codec.replay.ReplayingDecoder
-
 import com.walmartlabs.mupd8.application.binary
 import com.walmartlabs.mupd8.compression.CompressionFactory
 import com.walmartlabs.mupd8.compression.CompressionService
 import com.walmartlabs.mupd8.Misc._
+import com.walmartlabs.mupd8.application._
+
+import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
+import scala.collection.JavaConversions
 
 object miscM {
 
   val SLATE_CAPACITY = 1048576 // 1M size
   val INTMAX : Long = Int.MaxValue.toLong
   val HASH_BASE : Long = Int.MaxValue.toLong - Int.MinValue.toLong
-  
+
   def log(s : => {def toString : String}) = {} //println("[" + Thread.currentThread().getName() + "]" + s.toString)
 
   def str(a : Array[Byte]) = new String(a)
-  
+
   def argParser(syntax : Map[String,(Int,String)], args : Array[String]) : Option[Map[String,List[String]]] = {
     var parseSuccess = true
 
@@ -77,7 +79,7 @@ object miscM {
     def get() : T = { sem.acquire() ; obj.get }
     def set(x : T) { obj = Option(x) ; sem.release() }
   }
-  
+
   def fetchURL(urlStr : String) : Option[Array[Byte]] = {
     excToOptionWithLog {
       // XXX: URL class doesn't {en,de}code any url string by itself
@@ -98,9 +100,9 @@ object miscM {
       buffer.toByteArray()
     }
   }
-  
+
   def hash2Float(key : Any) : Float = (key.hashCode.toLong + INTMAX).toFloat / HASH_BASE
-  
+
 }
 
 import miscM._
@@ -146,7 +148,7 @@ class MUCluster[T <: MapUpdateClass[T]]
     }.get._2
   }
   println("Host id is " + self)
-  
+
   def init() {
     server.start()
     client.init()
@@ -157,7 +159,7 @@ class MUCluster[T <: MapUpdateClass[T]]
         while (!client.connect(i.toString,host,p) && java.lang.System.currentTimeMillis < finaltime) {
           java.lang.Thread.sleep(100)
         }
-        if (client.isConnected(i.toString)) 
+        if (client.isConnected(i.toString))
           println("Connected to " + i + " " + host + ":" + port)
         else {
           if (msClient != null)
@@ -181,20 +183,20 @@ class MUCluster[T <: MapUpdateClass[T]]
 class MapUpdatePool[T <: MapUpdateClass[T]]
   (val poolsize : Int, val ring : HashRing, clusterFactory : (T => Unit) => MUCluster[T]) {
   case class innerCompare(job : T, key : Any) extends Comparable[innerCompare]{
-    override def compareTo(other : innerCompare) = job.compareTo(other.job) 
+    override def compareTo(other : innerCompare) = job.compareTo(other.job)
   }
-  
+
   class ThreadData(val me : Int) {
     val queue    = new PriorityBlockingQueue[innerCompare]
     private[MapUpdatePool] var keyInUse : Any = null
     private[MapUpdatePool] var keyQueue = new mutable.Queue[Runnable]
     private[MapUpdatePool] val keyLock  = new scala.concurrent.Lock
-    
+
     val thread   = new Thread (run{
       log("MapUpdateThread " + me)
       while (true) {
         val item = queue.take()
-        if (item.key == null) { 
+        if (item.key == null) {
           item.job.run() // This is a mapper job
         } else {
           val (i1,i2) = getPoolIndices(item.key)
@@ -202,12 +204,12 @@ class MapUpdatePool[T <: MapUpdateClass[T]]
           lock(i1,i2)
           if (attemptQueue(item.job,item.key,i1,i2)) {
             unlock(i1,i2)
-          } else {            
+          } else {
             keyInUse = item.key
             unlock(i1,i2)
             item.job.run()
             var jobCount = 0
-            var currentlyHot = false 
+            var currentlyHot = false
             while({
               lock(i1,i2)
               val work = keyQueue.headOption
@@ -225,22 +227,22 @@ class MapUpdatePool[T <: MapUpdateClass[T]]
               work != None
             }) {}
             if (currentlyHot) {
-              Thread.currentThread.setPriority(Thread.NORM_PRIORITY)              
+              Thread.currentThread.setPriority(Thread.NORM_PRIORITY)
             }
-          }          
+          }
         }
       }
     }, "MapUpdateThread-"+me)
     thread.start()
 
-    def getSerialQueueSize() = { 
+    def getSerialQueueSize() = {
 //      keyLock.acquire
       val size = keyQueue.size
 //      keyLock.release
       size
     }
   }
-  
+
   val pool    = 0 until poolsize map { new ThreadData(_) }
   private val rand = new java.util.Random(0)  // TODO: DO we need to serialize this?
   val cluster = clusterFactory(p => putLocal(p.getKey,p))
@@ -256,13 +258,13 @@ class MapUpdatePool[T <: MapUpdateClass[T]]
     val (m1,m2) = (mod(i1),mod(i2))
     (m1, if (m2 < m1) m2 else m2 + 1)
   }
-  
+
   def getPreferredPoolIndex(key : Any) = {
     val fullhash = key.hashCode()
     val hash = fullhash / cluster.hosts.size
     mod(hash % pool.size)
   }
-  
+
   def getDestinationHost(key : Any) =
     ring(hash2Float(key))
 
@@ -297,17 +299,17 @@ class MapUpdatePool[T <: MapUpdateClass[T]]
   def put(x : T) {
     val a = rand.nextInt(pool.size) //TODO: Do we need to serialize this call?
     val sa = pool(a).keyQueue.size + pool(a).queue.size()
-    
-    val destination = 
+
+    val destination =
       if (sa > 1) {
         val temp = rand.nextInt(pool.size-1)
         val b = if (temp < a) temp else temp + 1
         if (pool(b).keyQueue.size + pool(b).queue.size < sa) b else a
       } else a
-    
-    pool(destination).queue.put(innerCompare(x, null))    
+
+    pool(destination).queue.put(innerCompare(x, null))
   }
-  
+
   def putSource(x : T) {
     var a = 0
     var sa = 0
@@ -324,15 +326,15 @@ class MapUpdatePool[T <: MapUpdateClass[T]]
   def putLocal(key : Any, x : T) { // TODO : Fix key : Any??
     val (i1,i2) = getPoolIndices(key)
     lock(i1,i2)
-    
+
     if (!attemptQueue(x,key,i1,i2)) {
       // TODO: HOT conductor check not accurate, use time stamps
       val (p1,p2) = (pool(i1),pool(i2))
       val dest = if (p1.keyQueue.size + p1.queue.size > 1.3*(p2.keyQueue.size + p2.queue.size)) p2 else p1
       dest.queue.put(innerCompare(x, key))
     }
-    
-    unlock(i1,i2)    
+
+    unlock(i1,i2)
   }
 
   def put(key : Any, x : T) {
@@ -347,7 +349,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]]
   // Hot Conductor Queue Status
   val queueStatus = cluster.hosts.map(_ => 0).toArray
   var maxQueueBacklog = 0 // TODO: Make this volatile
-  val queueStatusServer = new HttpServer(cluster.port+1, cluster.hosts.length, 
+  val queueStatusServer = new HttpServer(cluster.port+1, cluster.hosts.length,
     s => Option (s.split('/')(1) == "queuestatus") map { _ =>
       pool.map(p => p.queue.size + p.getSerialQueueSize()).max.toString.getBytes
     })
@@ -407,7 +409,7 @@ class CassandraPool(
     val getCF : String => String,
     val getTTL : String => Int,
     val compressionCodec : String) extends IoPool {
-  
+
   val poolName      = keyspace  //TODO: Change this
   val cluster = new Cluster(hosts.reduceLeft(_ + "," + _), port)
   val cService = CompressionFactory.getService(compressionCodec)
@@ -422,7 +424,7 @@ class CassandraPool(
       //_ <- {print("[OK]\nChecking for column family " + columnFamily) ; Some(true)} ;
       //cfs             <- ks.getCf_defs.toArray find {_.asInstanceOf[org.apache.cassandra.thrift.CfDef].getName == columnFamily}
     ) yield { println("[OK]") ; true }} getOrElse { println("[Failed]\nTerminating Mupd8") ; false }
-  
+
   if (!dbIsConnected) java.lang.System.exit(1)
 
   Pelops.addPool(poolName, cluster, keyspace)
@@ -634,14 +636,14 @@ object loadConfig {
       )
     )(breakOut)
   }
-  
+
 }
 
 class AppStaticInfo(val configDir : Option[String], val appConfig : Option[String], val sysConfig : Option[String], val loadClasses : Boolean) {
   assert(appConfig.size == sysConfig.size && appConfig.size != configDir.size)
   val config            = configDir map { p => new application.Config(new File(p))} getOrElse new application.Config(sysConfig.get, appConfig.get)
   val performers        = loadConfig.convertPerformers(config.workerJSONs)
-  val statusPort        = Option(config.getScopedValue(Array("mupd8", "mupd8_status", "http_port"))).getOrElse(new Integer(6001)).asInstanceOf[Number].intValue()
+  val statusPort        = Option(config.getScopedValue(Array("mupd8", "mupd8_status", "http_port"))).getOrElse(new Integer(5001)).asInstanceOf[Number].intValue()
   val performerName2ID  = Map(performers.map(_.name).zip(0 until performers.size):_*)
   val edgeName2IDs      = performers.map(p => p.subs.map((_,performerName2ID(p.name)))).flatten.groupBy(_._1).mapValues(_.map(_._2))
 
@@ -657,11 +659,12 @@ class AppStaticInfo(val configDir : Option[String], val appConfig : Option[Strin
       classObject.map { x =>
         val classobject = x.getConstructor(config.getClass, "".getClass)
         if (p.copy) {
+//        if ((p.name == "fbEntityProcessor")||(p.name == "interestStatsFetcher")) {
           () => { log("Building object " + p.name) ; classobject.newInstance(config,p.name) }
         } else {
           val obj = classobject.newInstance(config,p.name)
           () => obj
-        }          
+        }
       }
     }
   ) (breakOut)  else Vector()
@@ -678,9 +681,10 @@ class AppStaticInfo(val configDir : Option[String], val appConfig : Option[Strin
   val javaClassPath     = Option(config.getScopedValue(Array("mupd8", "java_class_path"))).getOrElse("share/java/*").asInstanceOf[String]
   val javaSetting       = Option(config.getScopedValue(Array("mupd8", "java_setting"))).getOrElse("-Xmx200M -Xms200M").asInstanceOf[String]
 
-  val sources           = Option(config.getScopedValue(Array("mupd8", "sources"))).map{_.asInstanceOf[ArrayList[String]].asScala.toArray}.
-                          getOrElse(Array[String]()).map{_.split(' ').take(4)}
-  
+  val sources           = Option(config.getScopedValue(Array("mupd8", "sources"))).map{
+	  					  x => x.asInstanceOf[java.util.List[org.json.simple.JSONObject]]
+	  					  }.getOrElse(new java.util.ArrayList[org.json.simple.JSONObject]())
+
   val messageServerHost = Option(config.getScopedValue(Array("mupd8", "messageserver", "host")))
   val messageServerPort = Option(config.getScopedValue(Array("mupd8", "messageserver", "port")))
 }
@@ -700,7 +704,7 @@ case class PerformerPacket(
   override def getKey = PerformerPacket.getKey(pid,key)
 
   override def compareTo(other : PerformerPacket) = pri.compareTo(other.pri)
-  
+
   override def toString = "{" + pri + "," + pid + "," + str (key) + "," + str(event) + "," + stream + "}"
 
   // Treat this as a static method, do not touch "this", use msg
@@ -731,7 +735,7 @@ case class PerformerPacket(
     }
     val performer = appRun.app.performers(pid)
     val name = performer.name
-      
+
     val cache = appRun.getTLS(pid,key).slateCache
     val optSlate = Option(performer.mtype == Updater) map { _ =>
       val s = cache.getSlate((name,key))
@@ -744,11 +748,11 @@ case class PerformerPacket(
       }
       s
     }
-    
+
     if (optSlate != Some(None)) {
       val slate = optSlate.flatMap(p => p)
 
-      slate.map(s => 
+      slate.map(s =>
         log("Update now " + "DBG for performer " + name + " Key " + str(key) + " \nEvent " + str(event) + "\nSlate " + str(s)))
 
       val tls = appRun.getTLS
@@ -765,6 +769,7 @@ case class PerformerPacket(
     }
   }
 }
+
 
 import com.walmartlabs.mupd8.network.common.Decoder.DecodingState._
 import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
@@ -789,7 +794,7 @@ class Decoder(val appRun : AppRuntime) extends ReplayingDecoder[DecodingState](P
   protected def decode(ctx: ChannelHandlerContext, channel: Channel, buffer: ChannelBuffer, stateParam: DecodingState): AnyRef = {
     var p : PerformerPacket = null
     var state = stateParam
-    
+
     do {
 //      (state.## : @scala.annotation.switch) match {
       state match {
@@ -846,13 +851,13 @@ class TLS(appRun : AppRuntime) extends binary.PerformerUtilities {
   val queue           = new PriorityBlockingQueue[Runnable]
   var perfPacket : PerformerPacket = null
   var startTime : Long = 0
-  
-  val unifiedUpdaters : Set[Int] = 
+
+  val unifiedUpdaters : Set[Int] =
     (for ((oo,i) <- objects zipWithIndex ;
            o     <- oo ;
            if excToOption(o.asInstanceOf[binary.UnifiedUpdater]) != None) yield i) (breakOut)
-    
-  
+
+
   override def publish(stream : String, key : Array[Byte], event : Array[Byte]) {
     val app = appRun.app
     log("Publishing to " + stream + " Key " + str(key) + " event " + str(event))
@@ -861,18 +866,14 @@ class TLS(appRun : AppRuntime) extends binary.PerformerUtilities {
           log("Publishing to " + app.performers(pid).name)
           val packet = PerformerPacket(normal, pid, key, event, stream, appRun)
           if (app.performers(pid).mtype == Mapper)
-            appRun.pool.put(packet)        
+            appRun.pool.put(packet)
           else
             appRun.pool.put(packet.getKey, packet)
         }
     )).getOrElse(log("Bad Stream name" + stream))
   }
 
-  import com.walmartlabs.mupd8.application.SlateSizeException
-  @throws(classOf[SlateSizeException])
   override def replaceSlate(slate : Array[Byte]) {
-    if (slate.size >= Misc.SLATE_CAPACITY)
-        throw new SlateSizeException(slate.size, Misc.SLATE_CAPACITY-1)
     // TODO: Optimize replace slate to avoid hash table look ups
     val name = appRun.app.performers(perfPacket.pid).name
     assert(appRun.app.performers(perfPacket.pid).mtype == Updater)
@@ -888,9 +889,9 @@ class AppRuntime(appID    : Int,
                  useNullPool : Boolean = false
                 ) {
   private var sourceThreads : List[(String,List[java.lang.Thread])] = Nil
-  
+
   val ring : HashRing = new HashRing(app.systemHosts.length, 0)
-  
+
   def actOnMessage(msg : String) = {
     val host = msg.replaceFirst("\\d+ update remove ", "")
     val index = {
@@ -910,7 +911,7 @@ class AppRuntime(appID    : Int,
                                        1000L)
     new Thread(msClient, "MessageServerClient").start
   }
-  
+
   val pool = new MapUpdatePool[PerformerPacket](
     poolsize,
     ring,
@@ -922,7 +923,7 @@ class AppRuntime(appID    : Int,
       action,
       msClient)
   )
-  val storeIo   = if (useNullPool) new NullPool 
+  val storeIo   = if (useNullPool) new NullPool
                   else new CassandraPool(
                              app.cassHosts,
                              app.cassPort,
@@ -930,7 +931,7 @@ class AppRuntime(appID    : Int,
                              p => (app.performers(app.performerName2ID(p)).cf).getOrElse(app.cassColumnFamily),
                              p => app.performers(app.performerName2ID(p)).ttl,
                              app.compressionCodec)
-  
+
   val slateRAM : Long = Runtime.getRuntime.maxMemory/5
   println("Memory available for use by Slate Cache is " + slateRAM + " bytes")
   private val threadMap : Map[Long,TLS] = pool.pool.map(_.thread.getId -> new TLS(this)) (breakOut)
@@ -957,8 +958,8 @@ class AppRuntime(appID    : Int,
           sortWith(_._2 >= _._2).
           map(x => x._1 + (x._1.length to 50 map(_=>" ")).foldLeft("")(_+_) + " " + x._2).foldLeft("")(_ + _ + "\n") +
           {
-            val poolsizes     = pool.pool.map(p => (p.queue.size,p.getSerialQueueSize())).sortWith{case((a,b),(c,d)) => a+b < c+d} 
-            val num           = (10 :: poolsizes.size/2 :: Nil).min 
+            val poolsizes     = pool.pool.map(p => (p.queue.size,p.getSerialQueueSize())).sortWith{case((a,b),(c,d)) => a+b < c+d}
+            val num           = (10 :: poolsizes.size/2 :: Nil).min
             val currTime      = java.lang.System.nanoTime()
             val startTimes    = threadVect.map(_.startTime).filter(_ != 0)
             val nonHotThreads = poolsizes filter {_._2 < 2} map {_._1.toFloat}
@@ -1011,50 +1012,59 @@ class AppRuntime(appID    : Int,
     getSlate((tok(4),tok(5).map(_.toByte).toArray))
   })
   slateServer.start
-  
-  def startSource(sourcePerformer : String, URI : String, keyspec : String) = {
 
-    def extractKey(ab : Array[Byte]) : Option[Array[Byte]] =
-      // the following parsing would fail if event is JSONArray
-      excToOptionWithLog {
-        keyspec.split(':').foldLeft(JSONValue.parse(str(ab)))((js,key) => js.asInstanceOf[simple.JSONObject].get(key).asInstanceOf[Object]).
-        toString().getBytes("UTF-8")
-      } 
-    
-    def initiateWork(performerID : Int, stream : String, payload : Array[Byte]) {
+  def startSource(sourcePerformer : String, sourceClassName : String, sourceClassParams : java.util.List[String]) = {
+
+    def initiateWork(performerID : Int, stream : String, data : Mupd8DataPair) { //} key: String, payload : Array[Byte]) {
       log("Posting")
       // TODO: Sleep if the pending IO count is in excess of ????
-      val key = extractKey(payload)
-      (0 until pool.maxQueueBacklog-10000) foreach { _ => extractKey(payload) } // Throttle the Source if we have a hot conductor
-      key map { k =>
-        pool.putSource(PerformerPacket(
-          source,
-          performerID,
-          k,
-          payload,
-          stream,
-          this
-        ))
-      } getOrElse {
-        println("No key/Invalid key in Source Event " + excToOption(str(payload)).getOrElse("#Failed String Conversion#"))
+      //val key = extractKey(payload)
+       // Throttle the Source if we have a hot conductor
+      //  (0 until pool.maxQueueBacklog-10000) foreach { _ => extractKey(payload) }
+      if (data._key.size <= 0) {
+    	  println("No key/Invalid key in Source Event " + excToOption(str(data._value)))
+      } else {
+            pool.putSource(PerformerPacket(
+              source,
+              performerID,
+              data._key.getBytes("UTF-8"),
+              data._value,
+              stream,
+              this
+            ))
+          }
+
+    }
+
+    class SourceThread(sourceClassName: String,
+    				   sourceParams: java.util.List[String],
+                       continuation: Mupd8DataPair => Unit)
+    extends Runnable {
+      override def run() {
+        val cls = Class.forName(sourceClassName)
+        val ins = cls.getConstructor(Class.forName("java.util.List")).newInstance(sourceParams).asInstanceOf[com.walmartlabs.mupd8.application.Mupd8Source]
+        while (ins.hasNext()) {
+          val data = ins.getNextDataPair();
+          continuation(data)
+        }
       }
     }
-      
+
     // TODO : Behavior for multiple performers is most probably wrong!!
     val threads = for (
       perfID      <- app.performerName2ID.get(sourcePerformer).toList ;
       if app.performers(perfID).mtype == Source ;
       edgeName    <- app.performers(perfID).pubs ;
       destID      <- app.edgeName2IDs(edgeName) ;
-      input       <- excToOptionWithLog(new SourceReader(URI, initiateWork(destID, edgeName, _)))
+      input       <- excToOptionWithLog(new SourceThread(sourceClassName, sourceClassParams, initiateWork(destID, edgeName, _)))
    ) yield (new java.lang.Thread(input))
-    
-    if (!threads.isEmpty) 
+
+    if (!threads.isEmpty)
       sourceThreads = (sourcePerformer,threads) :: sourceThreads
     else
-      log("Unable to set up source for " + sourcePerformer + " server " + URI)
-      
-    threads foreach {_.start()}    
+      log("Unable to set up source for " + sourcePerformer + " server class " + sourceClassName + " with params: " + sourceClassParams )
+
+    threads foreach {_.start()}
     !threads.isEmpty
   }
 
@@ -1084,13 +1094,13 @@ class AppRuntime(appID    : Int,
   pool.init()
 
   def getTLS    = threadMap(Thread.currentThread().getId)
-  
+
   def getMapper(pid : Int) = getTLS.objects(pid).get.asInstanceOf[binary.Mapper]
-  
+
   def getUpdater(pid : Int) = getTLS.objects(pid).get.asInstanceOf[binary.Updater]
-  
+
   def getUnifiedUpdater(pid : Int) = getTLS.objects(pid).get.asInstanceOf[binary.UnifiedUpdater]
-  
+
   // This hash function must be the same as the MapUpdatePool and different from SlateCache
   def getTLS(pid : Int, key : Key) =
     threadVect(pool.getPreferredPoolIndex(PerformerPacket.getKey(pid,key)))
@@ -1142,29 +1152,31 @@ class MasterNode(args : Array[String], config : AppStaticInfo, shutdown : Boolea
 }
 
 object Mupd8Main {
-  
+
   def main(args : Array[String]) {
     val syntax = Map( "-s"       -> (1, "Sys config file name"),
                       "-a"       -> (1, "App config file name"),
                       "-d"       -> (1, "Unified-config directory name"),
-                      "-from"    -> (1, "URI from which to read data"),
-                      "-key"     -> (1, "Key specification in the data streamed from the URI"),
+                      "-sc"      -> (1, "Mupd8 source class name"),
+                      "-sp"      -> (1, "Mupd8 source class parameters separated by comma"),
                       "-to"      -> (1, "Stream to which data from the URI is sent"),
                       "-threads" -> (1, "Optional number of execution threads, default is 5"),
                       "-shutdown"-> (0, "Shut down the Mupd8 App"),
                       "-pidFile" -> (1, "Optional PID filename"))
 
     {
-      val argMap = argParser(syntax, args)    
+      val argMap = argParser(syntax, args)
+      for (x <- args) println(x)
+      println("argMap = " + argMap)
       for { p <- argMap
             val shutdown = p.get("-shutdown") != None
-            if shutdown || p.size == p.get("-threads").size + p.get("-pidFile").size + p.get("-a").size +
-                                     p.get("-s").size + p.get("-d").size + syntax.size - 6
+//            if shutdown || p.size == p.get("-threads").size + p.get("-pidFile").size + p.get("-a").size +
+//                                     p.get("-s").size + p.get("-d").size + syntax.size - 6
             if p.get("-s").size == p.get("-a").size
             if p.get("-s").size != p.get("-d").size
             threads <- excToOption(p.get("-threads").map(_.head.toInt).getOrElse(5))
             val launcher = p.get("-pidFile") == None
-      } yield {
+      } yield	{
         //Misc.configureLoggerFromXML("log4j.xml")
         val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head), !launcher)
         if (launcher) {
@@ -1172,14 +1184,28 @@ object Mupd8Main {
         } else {
           p.get("-pidFile").map(x => writePID(x.head))
           val api = new AppRuntime(0, threads, app)
-          if (app.sources.length > 0) {
-            println("start source from sys cfg")
-            app.sources.foreach { case Array(from, to, performer, key) => 
-              if (isLocalHost(to)) api.startSource(performer, from, key)
-            }
-          } else {
+          if (app.sources.size > 0) {
+              val ssources = JavaConversions.asScalaBuffer(app.sources)
+              println("start source from sys cfg")
+              object O {
+                def unapply(a: Any): Option[org.json.simple.JSONObject] = 
+                if (a.isInstanceOf[org.json.simple.JSONObject]) 
+                  Some(a.asInstanceOf[org.json.simple.JSONObject])
+                   else None
+              }
+              ssources.foreach {
+                case O(obj) => {
+                  if (isLocalHost(obj.get("host").asInstanceOf[String])) {
+                     val params = obj.get("parameters").asInstanceOf[java.util.List[String]]
+                       api.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
+                     }
+                 }
+                 case _ => {println("Wrong source format")}
+             }
+        } else {
             println("start source from cmdLine")
-            api.startSource(p("-to").head, p("-from").head, p("-key").head)
+            val ps = p("-sp").head.split(',');
+            api.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
           }
           log("Goodbye")
         }
@@ -1187,6 +1213,7 @@ object Mupd8Main {
     } getOrElse {
       System.err.println("Command Syntax error")
       System.err.println("Syntax is\n" + syntax.map(p => p._1 + " " + p._2._2 + "\n").reduceLeft(_+_))
-    }  
+    }
+
   }
 }
