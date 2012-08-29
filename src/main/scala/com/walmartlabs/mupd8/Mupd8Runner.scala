@@ -18,8 +18,8 @@
 package com.walmartlabs.mupd8
 
 import joptsimple._
-
 import Misc._
+import scala.collection.JavaConversions
 
 object Mupd8Runner {
   def main(args : Array[String]) {
@@ -77,16 +77,24 @@ object Mupd8Runner {
     
     val app = new AppRuntime(0, options.valueOf(threadsOpt), appInfo)
     
-    // // start the source
-    // if (appInfo.sources.length > 0) {
-    //   System.out.println("start source from sys cfg")
-    //   appInfo.sources.foreach { case Array(from, to, performer, key) =>
-    //     if (isLocalHost(to)) app.startSource(performer, from, key)
-    //   }
-    // }
-    // else {
-    //   System.out.println("start source from cmdLine")
-    //   app.startSource(options.valueOf(toOpt), options.valueOf(fromOpt), options.valueOf(keyOpt))
-    // }
+    // start the source
+    object O {
+      def unapply(a: Any): Option[org.json.simple.JSONObject] = 
+        if (a.isInstanceOf[org.json.simple.JSONObject]) 
+          Some(a.asInstanceOf[org.json.simple.JSONObject])
+        else None
+    }
+    if (appInfo.sources.size > 0) {
+      val ssources = JavaConversions.asScalaBuffer(appInfo.sources)
+      System.out.println("start source from sys cfg")
+//			ssources.foreach {
+				// case Array(from, to, performer, key) =>
+				// 	if (isLocalHost(to)) app.startSource(performer, from, key)
+      //}
+    }
+    else {
+      System.out.println("start source from cmdLine")
+      //app.startSource(options.valueOf(toOpt), options.valueOf(fromOpt), options.valueOf(keyOpt))
+    }
   }
 }

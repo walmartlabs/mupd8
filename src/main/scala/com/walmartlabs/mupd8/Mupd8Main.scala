@@ -1018,7 +1018,6 @@ class AppRuntime(appID    : Int,
     def initiateWork(performerID : Int, stream : String, data : Mupd8DataPair) { //} key: String, payload : Array[Byte]) {
       log("Posting")
       // TODO: Sleep if the pending IO count is in excess of ????
-      //val key = extractKey(payload)
        // Throttle the Source if we have a hot conductor
       //  (0 until pool.maxQueueBacklog-10000) foreach { _ => extractKey(payload) }
       if (data._key.size <= 0) {
@@ -1033,7 +1032,6 @@ class AppRuntime(appID    : Int,
               this
             ))
           }
-
     }
 
     class SourceThread(sourceClassName: String,
