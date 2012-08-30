@@ -1153,61 +1153,61 @@ object Mupd8Main {
 
   def main(args : Array[String]) {
     val syntax = Map( "-s"       -> (1, "Sys config file name"),
-                      "-a"       -> (1, "App config file name"),
-                      "-d"       -> (1, "Unified-config directory name"),
-                      "-sc"      -> (1, "Mupd8 source class name"),
-                      "-sp"      -> (1, "Mupd8 source class parameters separated by comma"),
-                      "-to"      -> (1, "Stream to which data from the URI is sent"),
-                      "-threads" -> (1, "Optional number of execution threads, default is 5"),
-                      "-shutdown"-> (0, "Shut down the Mupd8 App"),
-                      "-pidFile" -> (1, "Optional PID filename"))
+                     "-a"       -> (1, "App config file name"),
+                     "-d"       -> (1, "Unified-config directory name"),
+                     "-sc"      -> (1, "Mupd8 source class name"),
+                     "-sp"      -> (1, "Mupd8 source class parameters separated by comma"),
+                     "-to"      -> (1, "Stream to which data from the URI is sent"),
+                     "-threads" -> (1, "Optional number of execution threads, default is 5"),
+                     "-shutdown"-> (0, "Shut down the Mupd8 App"),
+                     "-pidFile" -> (1, "Optional PID filename"))
 
     {
       val argMap = argParser(syntax, args)
       for (x <- args) println(x)
       println("argMap = " + argMap)
       for { p <- argMap
-            val shutdown = p.get("-shutdown") != None
-//            if shutdown || p.size == p.get("-threads").size + p.get("-pidFile").size + p.get("-a").size +
-//                                     p.get("-s").size + p.get("-d").size + syntax.size - 6
-            if p.get("-s").size == p.get("-a").size
-            if p.get("-s").size != p.get("-d").size
-            threads <- excToOption(p.get("-threads").map(_.head.toInt).getOrElse(5))
-            val launcher = p.get("-pidFile") == None
-      } yield	{
-        //Misc.configureLoggerFromXML("log4j.xml")
-        val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head), !launcher)
-        if (launcher) {
-          new MasterNode(args, app, shutdown)
-        } else {
-          p.get("-pidFile").map(x => writePID(x.head))
-          val api = new AppRuntime(0, threads, app)
-          if (app.sources.size > 0) {
-              val ssources = JavaConversions.asScalaBuffer(app.sources)
-              println("start source from sys cfg")
-              object O {
-                def unapply(a: Any): Option[org.json.simple.JSONObject] = 
-                if (a.isInstanceOf[org.json.simple.JSONObject]) 
-                  Some(a.asInstanceOf[org.json.simple.JSONObject])
+           val shutdown = p.get("-shutdown") != None
+           //            if shutdown || p.size == p.get("-threads").size + p.get("-pidFile").size + p.get("-a").size +
+           //                                     p.get("-s").size + p.get("-d").size + syntax.size - 6
+           if p.get("-s").size == p.get("-a").size
+           if p.get("-s").size != p.get("-d").size
+           threads <- excToOption(p.get("-threads").map(_.head.toInt).getOrElse(5))
+           val launcher = p.get("-pidFile") == None
+         } yield  {
+           //Misc.configureLoggerFromXML("log4j.xml")
+           val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head), !launcher)
+           if (launcher) {
+             new MasterNode(args, app, shutdown)
+           } else {
+             p.get("-pidFile").map(x => writePID(x.head))
+             val api = new AppRuntime(0, threads, app)
+             if (app.sources.size > 0) {
+               val ssources = JavaConversions.asScalaBuffer(app.sources)
+               println("start source from sys cfg")
+               object O {
+                 def unapply(a: Any): Option[org.json.simple.JSONObject] = 
+                   if (a.isInstanceOf[org.json.simple.JSONObject]) 
+                     Some(a.asInstanceOf[org.json.simple.JSONObject])
                    else None
-              }
-              ssources.foreach {
-                case O(obj) => {
-                  if (isLocalHost(obj.get("host").asInstanceOf[String])) {
+               }
+               ssources.foreach {
+                 case O(obj) => {
+                   if (isLocalHost(obj.get("host").asInstanceOf[String])) {
                      val params = obj.get("parameters").asInstanceOf[java.util.List[String]]
-                       api.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
-                     }
+                     api.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
+                   }
                  }
                  case _ => {println("Wrong source format")}
+               }
+             } else {
+               println("start source from cmdLine")
+               val ps = p("-sp").head.split(',');
+               api.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
              }
-        } else {
-            println("start source from cmdLine")
-            val ps = p("-sp").head.split(',');
-            api.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
-          }
-          log("Goodbye")
-        }
-      }
+             log("Goodbye")
+           }
+         }
     } getOrElse {
       System.err.println("Command Syntax error")
       System.err.println("Syntax is\n" + syntax.map(p => p._1 + " " + p._2._2 + "\n").reduceLeft(_+_))
