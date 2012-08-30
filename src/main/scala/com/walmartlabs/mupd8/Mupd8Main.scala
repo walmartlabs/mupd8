@@ -1164,8 +1164,6 @@ object Mupd8Main {
 
     {
       val argMap = argParser(syntax, args)
-      for (x <- args) println(x)
-      println("argMap = " + argMap)
       for { p <- argMap
            val shutdown = p.get("-shutdown") != None
            //            if shutdown || p.size == p.get("-threads").size + p.get("-pidFile").size + p.get("-a").size +
