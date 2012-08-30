@@ -873,7 +873,11 @@ class TLS(appRun : AppRuntime) extends binary.PerformerUtilities {
     )).getOrElse(log("Bad Stream name" + stream))
   }
 
+  import com.kosmix.muppet.application.SlateSizeException
+  @throws(classOf[SlateSizeException])
   override def replaceSlate(slate : Array[Byte]) {
+    if (slate.size >= Misc.SLATE_CAPACITY)
+        throw new SlateSizeException(slate.size, Misc.SLATE_CAPACITY-1)
     // TODO: Optimize replace slate to avoid hash table look ups
     val name = appRun.app.performers(perfPacket.pid).name
     assert(appRun.app.performers(perfPacket.pid).mtype == Updater)
