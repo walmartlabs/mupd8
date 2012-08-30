@@ -32,11 +32,11 @@ object Mupd8Runner {
                            .withRequiredArg().ofType(classOf[String])
     val threadsOpt = parser.accepts("threads", "Optonal: number of threads [default 5]")
                            .withRequiredArg().ofType(classOf[java.lang.Integer]).defaultsTo(5)
-    val fromOpt    = parser.accepts("from", "Optional: source for sourcereader")
+    val scOpt      = parser.accepts("sc", "Optional: source for sourcereader")
                            .withRequiredArg().ofType(classOf[String])
     val toOpt      = parser.accepts("to", "Optional: destination for sourcereader")
                            .withRequiredArg().ofType(classOf[String])
-    val keyOpt     = parser.accepts("key", "Optional: source event key name")
+    val spOpt      = parser.accepts("sp", "Optional: source event key name")
                            .withRequiredArg().ofType(classOf[String])
     val pidOpt     = parser.accepts("pidFile", "mupd8 process PID file")
                            .withRequiredArg().ofType(classOf[String]).defaultsTo("mupd8.pid")
@@ -64,12 +64,12 @@ object Mupd8Runner {
                                     true)
     // source(s) are required
     if (appInfo.sources.size == 0 &&
-        !(options.has(fromOpt) && options.has(toOpt) && options.has(keyOpt))) {
+        !(options.has(scOpt) && options.has(toOpt) && options.has(spOpt))) {
       System.err.println("\"sources\" is not specified in sys config. " + 
                          "Please either provide sources in sys.cfg or provide arguments " + 
-                         fromOpt + " (" + fromOpt.description + ") " + 
+                         scOpt + " (" + scOpt.description + ") " + 
                          toOpt + " (" + toOpt.description + ") and " + 
-                         keyOpt + " (" + keyOpt.description + ")")
+                         spOpt + " (" + spOpt.description + ")")
       System.exit(1)
     }
     
@@ -87,14 +87,21 @@ object Mupd8Runner {
     if (appInfo.sources.size > 0) {
       val ssources = JavaConversions.asScalaBuffer(appInfo.sources)
       System.out.println("start source from sys cfg")
-//			ssources.foreach {
-				// case Array(from, to, performer, key) =>
-				// 	if (isLocalHost(to)) app.startSource(performer, from, key)
-      //}
+			ssources.foreach {
+        case O(obj) => {
+          if (isLocalHost(obj.get("host").asInstanceOf[String])) {
+            val params = obj.get("parameters").asInstanceOf[java.util.List[String]]
+            app.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
+          }
+        }
+        case _ => {println("Wrong source format")}
+      }
     }
     else {
       System.out.println("start source from cmdLine")
-      //app.startSource(options.valueOf(toOpt), options.valueOf(fromOpt), options.valueOf(keyOpt))
+      app.startSource(options.valueOf(toOpt),
+                      options.valueOf(scOpt),
+                      JavaConversions.seqAsJavaList(options.valueOf(spOpt).split(',')))
     }
   }
 }

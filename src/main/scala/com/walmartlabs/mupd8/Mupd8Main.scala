@@ -1156,7 +1156,7 @@ class MasterNode(args : Array[String], config : AppStaticInfo, shutdown : Boolea
 object Mupd8Main {
 
   def main(args : Array[String]) {
-    val syntax = Map( "-s"       -> (1, "Sys config file name"),
+    val syntax = Map("-s"       -> (1, "Sys config file name"),
                      "-a"       -> (1, "App config file name"),
                      "-d"       -> (1, "Unified-config directory name"),
                      "-sc"      -> (1, "Mupd8 source class name"),
@@ -1204,7 +1204,6 @@ object Mupd8Main {
                }
              } else {
                println("start source from cmdLine")
-               val ps = p("-sp").head.split(',');
                api.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
              }
              log("Goodbye")
