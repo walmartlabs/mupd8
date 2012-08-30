@@ -55,10 +55,6 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
 
   val keys = keyStr.split(':')
   def getValue(keyindex: Int, maps: Option[Any]): Option[String] = {
-    if (keyindex < keys.size) {
-      println("key = " + keys(keyindex))
-    } else { "bottom" }
-    println("maps = " + maps)
     maps map {
       x =>  x match {
         case x: Map[String, Any] => getValue(keyindex + 1, x.get(keys(keyindex))).get
