@@ -14,5 +14,5 @@ a simple example MUPD8 application.
 This paper provides additional technical background:
 
 Wang Lam, Lu Liu, STS Prasad, Anand Rajaraman, Zoheb Vacheri, and AnHai Doan.
-MUPD8: MapReduce-Style Processing of Fast Data. PVLDB 5(12):1814-1825, 2012.
+Muppet: MapReduce-Style Processing of Fast Data. PVLDB 5(12):1814-1825, 2012.
 (available as http://vldb.org/pvldb/vol5/p1814_wanglam_vldb2012.pdf)
