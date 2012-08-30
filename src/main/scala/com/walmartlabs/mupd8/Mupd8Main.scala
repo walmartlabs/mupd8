@@ -643,7 +643,7 @@ class AppStaticInfo(val configDir : Option[String], val appConfig : Option[Strin
   assert(appConfig.size == sysConfig.size && appConfig.size != configDir.size)
   val config            = configDir map { p => new application.Config(new File(p))} getOrElse new application.Config(sysConfig.get, appConfig.get)
   val performers        = loadConfig.convertPerformers(config.workerJSONs)
-  val statusPort        = Option(config.getScopedValue(Array("mupd8", "mupd8_status", "http_port"))).getOrElse(new Integer(5001)).asInstanceOf[Number].intValue()
+  val statusPort        = Option(config.getScopedValue(Array("mupd8", "mupd8_status", "http_port"))).getOrElse(new Integer(6001)).asInstanceOf[Number].intValue()
   val performerName2ID  = Map(performers.map(_.name).zip(0 until performers.size):_*)
   val edgeName2IDs      = performers.map(p => p.subs.map((_,performerName2ID(p.name)))).flatten.groupBy(_._1).mapValues(_.map(_._2))
 
