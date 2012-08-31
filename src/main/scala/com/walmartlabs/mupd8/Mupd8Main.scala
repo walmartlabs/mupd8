@@ -1023,7 +1023,7 @@ class AppRuntime(appID    : Int,
       log("Posting")
       // TODO: Sleep if the pending IO count is in excess of ????
        // Throttle the Source if we have a hot conductor
-      //  (0 until pool.maxQueueBacklog-10000) foreach { _ => extractKey(payload) }
+      //(0 until pool.maxQueueBacklog-10000) foreach { _ => extractKey(payload) }
       if (data._key.size <= 0) {
     	  println("No key/Invalid key in Source Event " + excToOption(str(data._value)))
       } else {
