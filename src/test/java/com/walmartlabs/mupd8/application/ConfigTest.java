@@ -30,6 +30,7 @@ public class ConfigTest extends TestCase {
         super( name);
     }
 
+	@SuppressWarnings("unchecked")
     public void testConfigDirLoad() throws Exception {
         String dir =
             this.getClass().getClassLoader().getResource( "testapp").getPath();

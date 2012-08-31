@@ -123,9 +123,8 @@
   </pluginRepositories>
   <build>
 
-		<pluginManagement>
+    <pluginManagement>
             <plugins>
-		<!--following 2 blocks are for eclipse m2e compatiblitly -->
                 <plugin>
                     <groupId>org.eclipse.m2e</groupId>
                     <artifactId>lifecycle-mapping</artifactId>
@@ -133,16 +132,27 @@
                     <configuration>
                         <lifecycleMappingMetadata>
                             <pluginExecutions>
+                            <!--following 3 blocks are for eclipse m2e compatiblitly -->
                                 <pluginExecution>
                                     <pluginExecutionFilter>
                                         <groupId>org.apache.maven.plugins</groupId>
                                         <artifactId>maven-dependency-plugin</artifactId>
-                                        <versionRange>[1.0.0,)</versionRange>
+                                        <versionRange>[1.0,)</versionRange>
                                         <goals>
-                                            <goal>copy-dependencies</goal>
-                                            <goal>unpack-dependencies</goal>
                                             <goal>build-classpath</goal>
-                                            <goal>unpack</goal>
+                                        </goals>
+                                    </pluginExecutionFilter>
+                                    <action>
+                                        <ignore/>
+                                    </action>
+                                </pluginExecution>
+                                <pluginExecution>
+                                    <pluginExecutionFilter>
+                                        <groupId>org.apache.maven.plugins</groupId>
+                                        <artifactId>maven-enforcer-plugin</artifactId>
+                                        <versionRange>[1.0,)</versionRange>
+                                        <goals>
+                                            <goal>enforce</goal>
                                         </goals>
                                     </pluginExecutionFilter>
                                     <action>

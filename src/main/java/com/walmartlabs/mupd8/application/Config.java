@@ -90,6 +90,7 @@ public class Config {
 		return destination;
 	}
 
+	@SuppressWarnings("unchecked")
 	private static void apply(JSONObject destination, JSONObject source) {
 		for (Object k : source.keySet()) {
 			String key = (String) k;
@@ -155,6 +156,7 @@ public class Config {
 	}
 
 	// Call before loadAppConfig.
+	@SuppressWarnings("unchecked")
 	private void loadSysConfig(String filename) throws IOException, Exception {
 		JSONObject sysJson = (JSONObject)JSONValue.parse(readWithPreprocessing(new FileReader(filename)));
 		configuration = new JSONObject();
@@ -167,10 +169,12 @@ public class Config {
 			// ...
 		}
 		*/
+		
 		configuration.put("mupd8", sysJson);
 	}
 
 	// Call only after loadSysConfig.
+	@SuppressWarnings("unchecked")
 	private void loadAppConfig(String filename) throws Exception {
 		JSONObject appJson = (JSONObject)JSONValue.parse(readWithPreprocessing(new FileReader(filename)));
 
