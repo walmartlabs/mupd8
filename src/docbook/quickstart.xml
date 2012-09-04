@@ -26,7 +26,7 @@
     </para>
     
     <para>
-      First, for a conceptual overview of MapUpdate data-stream processing, please see the ISD Tech Fair 2012 slides for Big Fast Data @WalmartLabs.
+      First, for a conceptual overview of MapUpdate data-stream processing, please see the PVLDB Vol. 5 No. 12 paper or its corresponding presentation at VLDB 2012: Muppet: MapReduce-Style Processing of Fast Data.
     </para>
     <para>
       This document details the steps to start a simple example application
