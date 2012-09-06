@@ -434,7 +434,7 @@ class CassandraPool(
   def fetch(name : String, key : Key, next : Option[Slate] => Unit) {
     pool.submit(run{
       val start = java.lang.System.nanoTime()
-      val col = excToOption(selector.getColumnFromRow(getCF(name), new Bytes(key), new Bytes(name.getBytes), ConsistencyLevel.ONE))
+      val col = excToOption(selector.getColumnFromRow(getCF(name), Bytes.fromByteArray(key), Bytes.fromByteArray(name.getBytes), ConsistencyLevel.ONE))
       log("Fetch " + (java.lang.System.nanoTime() - start)/1000000 + " " + name + " " + str(key))
       next(col.map { col =>
         assert(col != null)
@@ -449,8 +449,8 @@ class CassandraPool(
     val mutator = Pelops.createMutator(poolName)
     mutator.writeColumn(
       getCF(columnName),
-      new Bytes(key),
-      mutator.newColumn(new Bytes(columnName.getBytes), new Bytes(compressed), getTTL(columnName))
+      Bytes.fromByteArray(key),
+      mutator.newColumn(Bytes.fromByteArray(columnName.getBytes), Bytes.fromByteArray(compressed), getTTL(columnName))
     )
     excToOptionWithLog{mutator.execute(ConsistencyLevel.ONE)} != None
   }
@@ -1022,8 +1022,13 @@ class AppRuntime(appID    : Int,
     def initiateWork(performerID : Int, stream : String, data : Mupd8DataPair) { //} key: String, payload : Array[Byte]) {
       log("Posting")
       // TODO: Sleep if the pending IO count is in excess of ????
-       // Throttle the Source if we have a hot conductor
-      //(0 until pool.maxQueueBacklog-10000) foreach { _ => extractKey(payload) }
+      // Throttle the Source if we have a hot conductor
+      // var exponent = 20;
+      // while (pool.maxQueueBacklog > 10000) {
+      //   if (exponent >= 28) exponent = 10 else exponent += 1
+      //   val sleepTime = 1 << exponent;
+      //   Thread.sleep(sleepTime)
+      // }
       if (data._key.size <= 0) {
     	  println("No key/Invalid key in Source Event " + excToOption(str(data._value)))
       } else {
