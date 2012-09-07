@@ -53,15 +53,8 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
     new BufferedReader(new InputStreamReader(socket.getInputStream()))
   }
 
-  val keys = keyStr.split(':')
-  def getValue(keyindex: Int, maps: Option[Any]): Option[String] = {
-    maps map {
-      x =>  x match {
-        case x: Map[String, _] => getValue(keyindex + 1, x.get(keys(keyindex))).get
-        case x: String => x
-      }
-    }
-  }
+  def getValue(key: String, map: Option[Any]) : Option[Any] =
+    key.split(':').foldLeft(map)((m, k) => { println(m); m.asInstanceOf[Option[Map[String, Any]]].map{_.get(k)}.get } )
 
   override def hasNext() = {
     if (reader == null) false
@@ -72,7 +65,7 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
   override def getNextDataPair: Mupd8DataPair = {
     val rtn = new Mupd8DataPair
     val json = JSON.parseFull(currentLine)
-    rtn._key = new String(getValue(0, json).get)
+    rtn._key = new String(getValue(keyStr, json).get.asInstanceOf[String])
     rtn._value = new String(currentLine).getBytes("UTF-8")
     rtn
   }
