@@ -38,6 +38,8 @@ class KnUpdater (config : Config, val name : String) extends Updater {
   override def getName = name
 
   override def update(perfUtil : PerformerUtilities, stream : String, key : Array[Byte], event : Array[Byte], slate : Array[Byte]) {
+    println("in testapp's update")
+    Thread.sleep(1000000*300)
     val slatej = new JSONObject(new String(slate, "UTF-8"))
     val eventj = new JSONObject(new String(event, "UTF-8"))
     val count = slatej.optInt("counter",0) + 1

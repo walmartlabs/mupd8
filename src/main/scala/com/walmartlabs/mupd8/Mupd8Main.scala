@@ -1,18 +1,18 @@
 /**
  * Copyright 2011-2012 @WalmartLabs, a division of Wal-Mart Stores, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * 
+ *
  */
 
 package com.walmartlabs.mupd8
@@ -682,8 +682,8 @@ class AppStaticInfo(val configDir : Option[String], val appConfig : Option[Strin
   val javaSetting       = Option(config.getScopedValue(Array("mupd8", "java_setting"))).getOrElse("-Xmx200M -Xms200M").asInstanceOf[String]
 
   val sources           = Option(config.getScopedValue(Array("mupd8", "sources"))).map{
-	  					  x => x.asInstanceOf[java.util.List[org.json.simple.JSONObject]]
-	  					  }.getOrElse(new java.util.ArrayList[org.json.simple.JSONObject]())
+                x => x.asInstanceOf[java.util.List[org.json.simple.JSONObject]]
+                }.getOrElse(new java.util.ArrayList[org.json.simple.JSONObject]())
 
   val messageServerHost = Option(config.getScopedValue(Array("mupd8", "messageserver", "host")))
   val messageServerPort = Option(config.getScopedValue(Array("mupd8", "messageserver", "port")))
@@ -1030,7 +1030,7 @@ class AppRuntime(appID    : Int,
       //   Thread.sleep(sleepTime)
       // }
       if (data._key.size <= 0) {
-    	  println("No key/Invalid key in Source Event " + excToOption(str(data._value)))
+        println("No key/Invalid key in Source Event " + excToOption(str(data._value)))
       } else {
             pool.putSource(PerformerPacket(
               source,
@@ -1040,11 +1040,11 @@ class AppRuntime(appID    : Int,
               stream,
               this
             ))
-          }
+      }
     }
 
     class SourceThread(sourceClassName: String,
-    				   sourceParams: java.util.List[String],
+               sourceParams: java.util.List[String],
                        continuation: Mupd8DataPair => Unit)
     extends Runnable {
       override def run() {
@@ -1193,8 +1193,8 @@ object Mupd8Main {
                val ssources = JavaConversions.asScalaBuffer(app.sources)
                println("start source from sys cfg")
                object O {
-                 def unapply(a: Any): Option[org.json.simple.JSONObject] = 
-                   if (a.isInstanceOf[org.json.simple.JSONObject]) 
+                 def unapply(a: Any): Option[org.json.simple.JSONObject] =
+                   if (a.isInstanceOf[org.json.simple.JSONObject])
                      Some(a.asInstanceOf[org.json.simple.JSONObject])
                    else None
                }
