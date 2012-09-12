@@ -1,0 +1,461 @@
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+   <title>Starting a New Application in MUPD8</title><meta name="generator" content="DocBook XSL-NS Stylesheets V1.76.1"></head><body bgcolor="white" text="black" link="#0000FF" vlink="#840084" alink="#0000FF"><div class="article" title="Starting a New Application in MUPD8"><div class="titlepage"><div><div><h2 class="title"><a name="d5e1"></a>Starting a New Application in MUPD8</h2></div></div><hr></div><div class="toc"><p><b>Table of Contents</b></p><dl><dt><span class="section"><a href="#d5e3">Introduction</a></span></dt><dt><span class="section"><a href="#d5e20">Start Cassandra (4 minutes)</a></span></dt><dt><span class="section"><a href="#d5e44">Build MUPD8 (4 minutes)</a></span></dt><dt><span class="section"><a href="#d5e56">Write Application (2 minutes)</a></span></dt><dt><span class="section"><a href="#d5e101">Run Application (1 minute)</a></span></dt><dt><span class="section"><a href="#d5e128">In Review</a></span></dt></dl></div>
+  
+  <div class="section" title="Introduction"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e3"></a>Introduction</h2></div></div></div>
+    
+    <p>
+      Getting a new application started in the JVM <span class="application">MUPD8</span>
+      is easy.
+    </p>
+    
+    <p>
+      First, for a conceptual overview of MapUpdate data-stream processing, please see the PVLDB Vol. 5 No. 12 paper or its corresponding presentation at VLDB 2012: Muppet: MapReduce-Style Processing of Fast Data.
+    </p>
+    <p>
+      This document details the steps to start a simple example application
+      consisting of one Mapper and one Updater.  The application will
+      maintain live counts over an existing input stream of HTTP-request events
+      by the filetype (specifically: the filename extension) of the requested URI.
+    </p>
+
+    <p>
+      The steps are straightforward:  Fetch and install
+	<span class="application">Apache Cassandra</span>
+      (a durable key-value store for MUPD8); fetch and install MUPD8;
+      then write and run the new MUPD8 application.
+      The commands enumerated can be followed verbatim in about 10&#8211;15 minutes.
+    </p>
+    
+    <div class="note" title="Note" style="margin-left: 0.5in; margin-right: 0.5in;"><h3 class="title">Note</h3>
+      <p>
+	The commands that follow use the following software:
+	  </p><div class="itemizedlist"><ul class="itemizedlist" type="disc"><li class="listitem"><p>Maven 3.0+ (already ships with Mac OS X 10.6.8)</p></li><li class="listitem"><p>Git</p></li><li class="listitem"><p>curl (already ships with Mac OS X)</p></li></ul></div><p>
+	You may wish to have three terminals open at the directory where you'd like to run the following commands.  (One terminal can run Cassandra, one can run MUPD8, and one can fetch slates to inspect results.)  The steps that follow will populate the directory with Cassandra, MUPD8, and an example application written from scratch.
+      </p>
+    </div>
+  </div>
+  <div class="section" title="Start Cassandra (4 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e20"></a>Start Cassandra (4 minutes)</h2></div></div></div>
+    
+    <p>
+       In the directory where we'd like to fetch and install Cassandra locally, we can download the Cassandra distribution from an Apache mirror:
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>curl -L 'http://www.apache.org/dyn/closer.cgi?path=/cassandra/1.1.2/apache-cassandra-1.1.2-bin.tar.gz' |\
+  grep '&lt;strong&gt;' | head -1 | sed 's/.*&lt;strong&gt;\(.*\)&lt;\/strong&gt;.*/\1/' | xargs curl -L -O</code></strong>
+
+<code class="prompt">$</code> <strong class="userinput"><code>openssl md5 apache-cassandra-1.1.2-bin.tar.gz</code></strong>
+<code class="computeroutput">MD5(apache-cassandra-1.1.2-bin.tar.gz)= 9811e8aa7af459db824e03489ac7ca3a</code>
+</pre><p>
+    </p>
+    <p>
+      Configure Cassandra to write in the local directory (which does not require root as writing in /var would):
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>tar xf apache-cassandra-1.1.2-bin.tar.gz</code></strong>
+<code class="prompt">$</code> <strong class="userinput"><code>sed -i.original "s#/var#$PWD/var#" apache-cassandra-1.1.2/conf/{cassandra.yaml,log4j-server.properties}</code></strong>
+</pre><p>
+    </p>
+    <p>
+      Run Cassandra in one terminal (or run Cassandra in the background if you prefer)&#8212;
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>(cd apache-cassandra-1.1.2 &amp;&amp; bin/cassandra -f)</code></strong>
+</pre><p>
+      &#8212;and create a keyspace for our MUPD8-application data in another terminal:
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>(cd apache-cassandra-1.1.2 &amp;&amp; echo 'create keyspace Mupd8;' | bin/cassandra-cli --host localhost )</code></strong>
+<code class="computeroutput">
+Connected to: "Test Cluster" on localhost/9160
+Welcome to Cassandra CLI version 1.1.2
+
+Type 'help;' or '?' for help.
+Type 'quit;' or 'exit;' to quit.
+
+[default@unknown] create keyspace Mupd8;
+</code>
+:
+<code class="computeroutput">
+INFO 20:19:10,645 Completed flushing [...]/var/lib/cassandra/data/system/Schema-hc-1-Data.db (3121 bytes)
+9ecde970-77bb-11e1-0000-242d50cf1ffd
+Waiting for schema agreement...
+... schemas agree across the cluster
+</code>
+</pre><p>
+    </p>
+  </div>
+  <div class="section" title="Build MUPD8 (4 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e44"></a>Build MUPD8 (4 minutes)</h2></div></div></div>
+    
+    <p>
+      Users of Maven 3.0+
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>mvn -v</code></strong>
+<code class="computeroutput">
+Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</code>
+:
+</pre><p>
+      can simply fetch and build MUPD8 source:
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>git clone git://github.com/walmartlabs/mupd8.git</code></strong>
+
+<code class="prompt">$</code> <strong class="userinput"><code>(cd mupd8/ &amp;&amp; mvn install assembly:single)</code></strong>
+</pre><p>
+    </p>
+  </div>
+  <div class="section" title="Write Application (2 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e56"></a>Write Application (2 minutes)</h2></div></div></div>
+    
+    <p>
+      To make the process of writing an application concrete, we write
+      a simple application below.
+      While the steps below use Maven to set up the build,
+      MUPD8 applications can also be written and run
+      without using Maven at all.
+    </p>
+    <p>
+      Set up the build for a new application <strong class="userinput"><code>mupd8_demo</code></strong> in package namespace <strong class="userinput"><code>com.walmartlabs.example</code></strong> (this example application uses SLF4J, as shown in the code below):
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>mvn -v</code></strong>
+<code class="computeroutput">
+Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</code>
+:
+
+<code class="prompt">$</code> <strong class="userinput"><code>mvn archetype:generate \
+  -DinteractiveMode=false \
+  -DarchetypeGroupId=org.apache.maven.archetypes \
+  -DarchetypeArtifactId=maven-archetype-quickstart \
+  -DgroupId=com.walmartlabs.example \
+  -DartifactId=mupd8_demo \
+  -Dpackage=com.walmartlabs.example \
+  -Dversion=1.0-SNAPSHOT
+</code></strong>
+
+<code class="prompt">$</code> <strong class="userinput"><code>cd mupd8_demo/</code></strong>
+<code class="prompt">$</code> <strong class="userinput"><code>patch pom.xml &lt;&lt;EOF
+--- pom.xml	2012-04-06 02:18:51.000000000 -0700
++++ pom.xml	2012-04-10 15:25:23.000000000 -0700
+@@ -21,5 +21,20 @@
+       &lt;version&gt;3.8.1&lt;/version&gt;
+       &lt;scope&gt;test&lt;/scope&gt;
+     &lt;/dependency&gt;
++    &lt;dependency&gt;
++      &lt;groupId&gt;com.walmartlabs.mupd8&lt;/groupId&gt;
++      &lt;artifactId&gt;mupd8&lt;/artifactId&gt;
++      &lt;version&gt;1.0-SNAPSHOT&lt;/version&gt;
++    &lt;/dependency&gt;
++    &lt;dependency&gt;
++      &lt;groupId&gt;org.slf4j&lt;/groupId&gt;
++      &lt;artifactId&gt;slf4j-api&lt;/artifactId&gt;
++      &lt;version&gt;1.6.4&lt;/version&gt;
++    &lt;/dependency&gt;
++    &lt;dependency&gt;
++      &lt;groupId&gt;org.slf4j&lt;/groupId&gt;
++      &lt;artifactId&gt;slf4j-simple&lt;/artifactId&gt;
++      &lt;version&gt;1.6.4&lt;/version&gt;
++    &lt;/dependency&gt;
+   &lt;/dependencies&gt;
+ &lt;/project&gt;
+EOF
+</code></strong>
+</pre><p>
+    </p>
+    <p>
+      Write the Mapper code for the new application:
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>cat &gt; src/main/java/com/walmartlabs/example/PathMapper.java &lt;&lt;EOF
+
+package com.walmartlabs.example;
+
+import com.walmartlabs.mupd8.application.Config;
+import com.walmartlabs.mupd8.application.binary.Mapper;
+import com.walmartlabs.mupd8.application.binary.PerformerUtilities;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.charset.Charset;
+
+public class PathMapper implements Mapper {
+    private final Logger logger = LoggerFactory.getLogger(PathMapper.class);
+    private final Charset charset = Charset.forName("UTF-8");
+
+    private String name;
+
+    public PathMapper(Config config, String n) { name = n; }
+
+    @Override
+    public String getName() { return name; }
+
+    @Override
+    public void map(PerformerUtilities submitter, String stream, byte[] key, byte[] event) {
+        String path = new String(key, charset);
+        logger.info("Processing event of key "+path);
+        String extension = "html";
+        int lastDot = path.lastIndexOf('.');
+	int lastSlash = path.lastIndexOf('/');
+	if ((lastDot != -1) &amp;&amp; ((lastSlash == -1) || (lastDot &gt; lastSlash))) {
+            extension = path.substring(lastDot+1);
+        }
+        try {
+            logger.info("Publishing event to key "+extension);
+            submitter.publish("request_by_extension", extension.getBytes(charset), event);
+        } catch(Exception e) {
+            logger.error("Could not publish event: "+e.toString());
+        }
+    }
+}
+EOF
+</code></strong>
+</pre><p>
+    </p>
+    <p>
+      Write the Updater code for the new application:
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>cat &gt; src/main/java/com/walmartlabs/example/Counter.java &lt;&lt;EOF
+
+package com.walmartlabs.example;
+
+import com.walmartlabs.mupd8.application.Config;
+import com.walmartlabs.mupd8.application.binary.PerformerUtilities;
+import com.walmartlabs.mupd8.application.binary.Updater;
+import com.walmartlabs.mupd8.application.SlateSizeException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.charset.Charset;
+
+public class Counter implements Updater {
+    private final Logger logger = LoggerFactory.getLogger(Counter.class);
+    private final Charset charset = Charset.forName("UTF-8");
+
+    private String name;
+
+    public Counter(Config config, String n) { name = n; }
+
+    @Override
+    public String getName() { return name; }
+
+    @Override
+    public void update(PerformerUtilities submitter, String stream, byte[] key, byte[] event, byte[] slate) {
+        logger.info("Updating count for key "+new String(key, charset));
+        int count = 0;
+        try {
+            count = Integer.parseInt(new String(slate, charset));
+        } catch (NumberFormatException e) {
+            count = 0;
+        }
+        logger.info("Count for key "+new String(key, charset)+": "+count);
+        ++count;
+        byte[] updatedSlate = Integer.toString(count).getBytes(charset);
+        try {
+            submitter.replaceSlate(updatedSlate);
+        } catch (SlateSizeException e) {
+            System.err.println("Slate update for slate ["+updatedSlate+"] failed.");
+        }
+    }
+}
+EOF
+</code></strong>
+</pre><p>
+    </p>
+    <p>
+      Finally, configure the application by linking the Mapper and Updater in a directed graph.  Notice that the Mapper code publishes to a stream named <code class="code">request_by_extension</code>, so we connect that stream name accordingly in the configuration:
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>mkdir -p etc/ &amp;&amp; cat &gt; etc/100-application.cfg &lt;&lt;EOF
+{
+  "mupd8" : {
+    "application" : {
+      "mupd8_demo" : {
+        "performers" : {
+          "request_source" : {
+            "mupd8_type"   : "Source",
+            "publishes_to"  : [ "source_stream" ]
+          },
+          "path_map" : {
+            "mupd8_type"   : "Mapper",
+            "type"          : "java",
+            "class"         : "com.walmartlabs.example.PathMapper",
+            "subscribes_to" : [ "source_stream" ],
+            "publishes_to"  : [ "request_by_extension" ],
+            "#clone"         : "false",
+            "#column_family" : "mupd8_demo"
+          },
+          "count_by_extension" : {
+            "mupd8_type"   : "Updater",
+            "type"          : "java",
+            "class"         : "com.walmartlabs.example.Counter",
+            "subscribes_to" : [ "request_by_extension" ],
+            "publishes_to"  : [ ],
+            "slate_ttl"     : 86400,
+            "#clone"         : "false",
+            "#column_family" : "mupd8_demo"
+          }
+        }
+      }
+    },
+    "mupd8_status" : {
+      "#http_port"      : 6001
+    },
+    "slate_store" : {
+      "port"           : 9160,
+      "keyspace"       : "Mupd8",
+      "hosts"          : [ "localhost" ],
+      "#write_interval" : 15
+      "#compression"    : "gzip"
+    },
+    "system_hosts"     : [ "localhost" ],
+    "#java_class_path"  : "share/java/*",
+    "#java_setting"     : "-Xmx200M -Xms200M",
+    "sources" : [
+         {       
+             "source" : "com.walmartlabs.mupd8.JSONSource",
+             "host" : "localhost",
+             "performer" : "request_source",
+             "parameters" : [ "file:sample.txt",  "request:requestUrl" ]
+         }
+    ]
+  }
+}
+EOF
+</code></strong>
+</pre><p>
+    </p>
+    <div class="note" title="Note" style="margin-left: 0.5in; margin-right: 0.5in;"><h3 class="title">Note</h3>
+      <p>
+	 The configuration keys above that begin with a <strong class="userinput"><code>#</code></strong> symbol simply show some default values for reference; the actual parameter omits the <strong class="userinput"><code>#</code></strong> prefix.
+      </p>
+    </div>
+    <p>
+      Each string in the <code class="code">mupd8:sources</code> array describes how the application reads its input events:  The source performer <code class="code">request_source</code> on system host <code class="code">localhost</code> connects to <code class="code">file:sample.txt</code> to read one event value per line.  The source performer parses the line as JSON and extracts its <code class="code">request</code>'s <code class="code">requestUrl</code> value as the event key.  The source performer publishes the resulting key-value pair as an event.
+    </p>
+    <p>
+      Finally, build the application:
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>mvn package</code></strong>
+:
+<code class="computeroutput">
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: 5.924s
+[INFO] Finished at: Tue Apr 10 20:13:12 PDT 2012
+[INFO] Final Memory: 20M/305M
+[INFO] ------------------------------------------------------------------------
+</code>
+</pre><p>
+      </p>
+    </div>
+    <div class="section" title="Run Application (1 minute)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e101"></a>Run Application (1 minute)</h2></div></div></div>
+      
+      <p>
+	Provide a little input for the application to verify its effect when run:
+	</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>cat &gt; sample.txt &lt;&lt;EOF
+{"server":{"requestStartTime":1333683371266,"processId":"10811@localhost","processStartTime":1333683287172,"threadId":49,"threadRequestNumber":1,"localAddress":"127.0.0.1","localName":"127.0.0.1","localPort":60101,"requestEndTime":1333683371283,"applicationMicroseconds":16303},"request":{"remoteAddress":"127.0.0.1","remotePort":50543,"method":"GET","requestUrl":"/path/beacon.gif","queryString":"q=v","protocol":"HTTP/1.0","requestSize":0},"response":{"status":204,"responseHeaderList":[{"name":"Expires","valueList":["Thu, 01 Jan 1970 00:00:00 GMT"]},{"name":"Content-Type","valueList":["image/gif"]},{"name":"Connection","valueList":["close"]},{"name":"Cache-Control","valueList":["no-store, no-cache, must-revalidate"]}],"responseSize":0}}
+EOF
+</code></strong>
+<code class="prompt">$</code> <strong class="userinput"><code>wc -l sample.txt</code></strong>
+<code class="computeroutput">1 sample.txt</code>
+</pre><p>
+    </p>
+    <p>
+      Tell Cassandra about the new application before running the application for the first time:
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>(cd ../apache-cassandra-1.1.2 &amp;&amp; \
+      echo 'create column family mupd8_demo;' | \
+      bin/cassandra-cli --host localhost --keyspace Mupd8 )</code></strong>
+</pre><p>
+    </p>
+    <p>
+      Run MUPD8:
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>java -cp ~/.m2/repository/org/slf4j/slf4j-simple/1.6.4/slf4j-simple-1.6.4.jar:~/.m2/repository/org/slf4j/slf4j-api/1.6.4/slf4j-api-1.6.4.jar:../mupd8/target/mupd8-1.0-SNAPSHOT.jar:../mupd8/target/mupd8-1.0-SNAPSHOT-jar-with-dependencies.jar:target/mupd8_demo-1.0-SNAPSHOT.jar \
+    com.walmartlabs.mupd8.Mupd8Main -d etc/ -pidFile mupd8.pid</code></strong>
+</pre><p>
+    </p>
+    <p>
+      While MUPD8 is running, we can see the result in another terminal:
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>curl http://localhost:6001/mupd8/slate/mupd8_demo/count_by_extension/gif</code></strong>
+<code class="computeroutput">1</code>
+</pre><p>
+    </p>
+    <p>
+      The URI path is <strong class="userinput"><code>/mupd8/slate/</code></strong> followed by the name of the application (as named inside the application configuration), the name of the updater (as named within performers in the configuration), and the key.
+    </p>
+    <p>
+      In this case, the "entire" stream of one event (<code class="uri">file:stream.txt</code>) is fully processed so the count is stable.  When connected to a live input stream (as <strong class="userinput"><code>hostname:port</code></strong>), the count would vary with each fetch as a reflection of the current slate contents.
+    </p>
+  </div>
+  <div class="section" title="In Review"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e128"></a>In Review</h2></div></div></div>
+    
+    <p>
+      What did this example application do?
+    </p>
+    <p>
+      Recall that a MUPD8 application is a directed graph of Map and Update performers:
+      </p><div class="itemizedlist"><ul class="itemizedlist" type="disc"><li class="listitem">
+	  <p>Each performer takes an input key-value event from one of its input streams, and in response, publishes zero or more key-value events onto its output streams.</p>
+	</li><li class="listitem">
+	  <p>Each Updater's input also includes a slate associated with the input-event key, and the 	Updater may modify ("update") that slate in response to maintain its application state.</p>
+	</li><li class="listitem">
+	  <p>Each time the Updater gets an event of the same key, it gets its slate back as input (as last updated for the most recent event of this key).</p>
+	</li></ul></div><p>
+    </p>
+    <p>
+      This example application reads JSON objects describing HTTP requests
+      and maintains live counters of requests by URI "filename" extension:
+      </p><div class="orderedlist"><ol class="orderedlist" type="1"><li class="listitem">
+	  <p>
+	    The Source receives JSON for each HTTP request
+	    extracts the <strong class="userinput"><code>requestUrl</code></strong>
+	    field's value as the event key.
+	  </p>
+	</li><li class="listitem">
+	  <p>
+	    A Mapper extracts the URI-filename extension from each request, and
+	    publishes each request as an event using the extension as the event key.
+	  </p>
+	</li><li class="listitem">
+	  <p>
+	    An Updater receives the events keyed by extension, and
+	    increments a simple counter (as plaintext, for easy reading).
+	  </p>
+	</li></ol></div><p>
+      </p><div class="tip" title="Tip" style="margin-left: 0.5in; margin-right: 0.5in;"><h3 class="title">Tip</h3>
+	<p>
+	  In more elaborate applications, a serialized data structure
+	  for the slate, e.g., JSON or Google Protocol Buffers, may be
+	  more convenient for maintaining additional data.
+	</p>
+      </div><p>
+    </p>
+    <p>
+      Finally, note these details about the application configuration:
+      </p><div class="itemizedlist"><ul class="itemizedlist" type="disc"><li class="listitem">
+	  <p>
+	    Because these example performers are reentrant, the <strong class="userinput"><code>clone</code></strong>
+	    setting is (default) <strong class="userinput"><code>false</code></strong>.
+	    If set <strong class="userinput"><code>true</code></strong>,
+	    a separate (clone) instance of the performer is created
+	    for each thread in MUPD8.
+	    Cloning performer instances is wasteful of memory better used as slate cache and
+	    event queues, so please write reentrant performer methods instead of setting
+	    <strong class="userinput"><code>clone</code></strong>.
+            </p><div class="warning" title="Warning" style="margin-left: 0.5in; margin-right: 0.5in;"><h3 class="title">Warning</h3>
+              <p>
+                The <strong class="userinput"><code>clone</code></strong> setting is deprecated, so please update any code that requires it to be <strong class="userinput"><code>true</code></strong>.
+              </p>
+            </div><p>
+	  </p>
+	</li><li class="listitem">
+	  <p>
+	    Consider setting a finite slate TTL for every Updater.  Doing so allows
+	    long-unmodified slates to expire at Cassandra, which prevents the
+	    application from growing its storage requirements without bound
+	    with stale or obsolete data; and
+	    allows unused slates in a changed application to eventually expire.
+	    Cassandra's expired-slate garbage collection is automatic;
+	    identifying and deleting select slates by manual sweep is much less so.
+	  </p>
+	</li></ul></div><p>
+    </p>
+  </div>
+</div></body></html>
