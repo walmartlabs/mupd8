@@ -1035,7 +1035,7 @@ class AppRuntime(appID    : Int,
             pool.putSource(PerformerPacket(
               source,
               performerID,
-              data._key.getBytes("UTF-8"),
+              data._key.getBytes(),
               data._value,
               stream,
               this

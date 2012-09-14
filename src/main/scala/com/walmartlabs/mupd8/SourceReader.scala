@@ -54,7 +54,7 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
   }
 
   def getValue(key: String, map: Option[Any]) : Option[Any] =
-    key.split(':').foldLeft(map)((m, k) => {println(m); m.asInstanceOf[Option[Map[String, Any]]].map{_.get(k)}.get} )
+    key.split(':').foldLeft(map)((m, k) => m.asInstanceOf[Option[Map[String, Any]]].map{_.get(k)}.get )
 
   override def hasNext() = {
     if (reader == null) false
@@ -66,7 +66,7 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
     val rtn = new Mupd8DataPair
     val json = JSON.parseFull(currentLine)
     rtn._key = new String(getValue(keyStr, json).get.asInstanceOf[String])
-    rtn._value = new String(currentLine).getBytes("UTF-8")
+    rtn._value = new String(currentLine).getBytes()
     rtn
   }
 }
