@@ -22,10 +22,9 @@ import java.net.Socket
 import java.io._
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorService
-
 import joptsimple._
-
 import scala.collection.mutable
+import scala.collection.mutable.Buffer
 
 object config {
   val threshold = 100000 // Must be >= 1
@@ -72,6 +71,14 @@ class HostTracker {
 
   def removeHost(host : String) : Unit = synchronized {
     mupd8Hosts.remove(host)
+  }
+
+  // Get all hosts' name into sorted array,
+  // and combine them into string formated as ["host.1", "host.2"]
+  def getSortedHostsString : String = {
+    val hostArr = mupd8Hosts.keySet.toArray.sorted
+    if (hostArr.isEmpty) "[]"
+    else "[" + hostArr.tail.foldLeft("\""+hostArr.head+"\"")((x, y) => x + ", \""+y+"\"") + "]"
   }
 
   def broadcast(message : String) = synchronized {
@@ -154,6 +161,7 @@ class RequestHandler(
   }
 
   def cmdResponse(cmd : String, out : OutputStream) : String = {
+    // cmd format: "update remove/add " + host
     println("#" + cmd)
     val tokens = cmd.trim.split("[ \n\t]")
       val cmdNo = Misc.excToOption(tokens(0).toInt)
@@ -162,9 +170,7 @@ class RequestHandler(
       optResp =
       tokens(1) match {
         case "update" => {
-          if (tokens(2) != "remove" && tokens(2) != "source") {
-            Some("Unrecognized update command")
-          } else {
+          if (tokens(2) == "remove" || tokens(2) == "source") {
             if (msgTracker.propose(cmdNo.get, tokens.toList.tail.reduceLeft(_+ " " + _))) {
               hostTracker.broadcast(msgTracker.getLastCmd.get + "\n")
               if (tokens(2) == "remove") hostTracker.removeHost(tokens(3))
@@ -176,6 +182,15 @@ class RequestHandler(
             } else {
               res
             }
+          } else if (tokens(2) == "add") {
+            // broadcasting new host list as string ["host.1", "host.2"]
+            if (msgTracker.propose(cmdNo.get, "update add " + hostTracker.getSortedHostsString)) {
+              hostTracker.broadcast(msgTracker.getLastCmd.get + "\n")
+            }
+            // need to return cmd to confirm with client msg is processed
+            Some(cmd)
+          } else {
+            Some("Unrecognized update command")
           }
         }
         case "hosts" => Some(hostTracker.toString)

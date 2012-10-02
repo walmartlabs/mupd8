@@ -30,7 +30,7 @@ class MessageServerTest extends FunSuite {
   test("MessageServer/Client update remove") {
     
     val random = new Random(0)
-	val array = new ArrayList[String]
+    val array = new ArrayList[String]
     def storeMsg(msg : String ) = {
       array.add(msg)
     }
@@ -41,14 +41,20 @@ class MessageServerTest extends FunSuite {
     val client = new MessageServerClient(storeMsg, "localhost", 4568, 50L)
     val t = new Thread(client)
     t.start
-    (0 until 5).foreach { i =>
-      client.addMessage("machine" + random.nextInt(10) + ".example.com")
-    }
+    for ( i <- 0 until 5)
+      client.addRemoveMessage("machine" + random.nextInt(10).toString + ".example.com")
+    for ( i <- 0 until 5)
+      client.addAddMessage("machine" + random.nextInt(10) + ".example.com")
+    // give up cpu for client/server to process msgs
+
+    Thread.sleep(2000)
+    println("storemsg arr size = " + array.size())
     for (i <- 0 until array.size()) {
       val tokens = array.get(i).trim.split("[ \n\t]")
       assertTrue(tokens(0).toInt == (i + 1))
     }
-    
+    assertTrue(array.size == 10)
+    println("MessageServer Test is done")
   }
 
 }
