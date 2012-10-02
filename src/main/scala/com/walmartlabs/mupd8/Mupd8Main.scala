@@ -112,7 +112,7 @@ trait MapUpdateClass[T] extends OneToOneEncoder with Runnable with Comparable[T]
 }
 
 class MUCluster[T <: MapUpdateClass[T]]
-  (val hosts        : Array[(String,Int)],
+  (private var _hosts   : Array[(String,Int)],
    val port         : Int,
    encoder          : OneToOneEncoder,
    decoderFactory   : () => ReplayingDecoder[network.common.Decoder.DecodingState],
@@ -125,6 +125,14 @@ class MUCluster[T <: MapUpdateClass[T]]
 
   private val callableFactory = new Callable[ReplayingDecoder[network.common.Decoder.DecodingState]] {
     override def call() = decoderFactory()
+  }
+
+  // hosts can be updated at runtime
+  def hosts = _hosts
+  def hosts_=(hs: Array[(String, Int)]) = {
+    _hosts = hs
+  }
+  def hosts_=(hs: String) = {
   }
 
   val server = new Server(port,new Listener() {
@@ -149,6 +157,17 @@ class MUCluster[T <: MapUpdateClass[T]]
   }
   println("Host id is " + self)
 
+  def updateHosts: Unit = {
+    val localhost = if (hosts.isEmpty) Some(InetAddress.getLocalHost()) else None
+    if (localhost != None && hosts.isEmpty) {
+      // if there is no hosts setup in config file,
+      // add this node to message server and get updated host list
+      println("Add node: " + localhost.get + " to cluster")
+
+      
+    }
+  }
+  
   def init() {
     server.start()
     client.init()
@@ -676,7 +695,7 @@ class AppStaticInfo(val configDir : Option[String], val appConfig : Option[Strin
   val cassWriteInterval = Option(config.getScopedValue(Array("mupd8", "slate_store", "write_interval"))) map {_.asInstanceOf[Number].intValue()} getOrElse 15
   val compressionCodec  = Option(config.getScopedValue(Array("mupd8", "slate_store", "compression"))).getOrElse("gzip").asInstanceOf[String].toLowerCase
 
-  val systemHosts       = config.getScopedValue(Array("mupd8", "system_hosts")).asInstanceOf[ArrayList[String]].asScala.toArray
+  val systemHosts       = config.getScopedValue(Array("mupd8", "system_hosts")).asInstanceOf[ArrayList[String]].asScala
 
   val javaClassPath     = Option(config.getScopedValue(Array("mupd8", "java_class_path"))).getOrElse("share/java/*").asInstanceOf[String]
   val javaSetting       = Option(config.getScopedValue(Array("mupd8", "java_setting"))).getOrElse("-Xmx200M -Xms200M").asInstanceOf[String]
@@ -687,6 +706,8 @@ class AppStaticInfo(val configDir : Option[String], val appConfig : Option[Strin
 
   val messageServerHost = Option(config.getScopedValue(Array("mupd8", "messageserver", "host")))
   val messageServerPort = Option(config.getScopedValue(Array("mupd8", "messageserver", "port")))
+
+  def internalPort = statusPort + 100;
 }
 
 object PerformerPacket {
@@ -897,14 +918,18 @@ class AppRuntime(appID    : Int,
   val ring : HashRing = new HashRing(app.systemHosts.length, 0)
 
   def actOnMessage(msg : String) = {
-    val host = msg.replaceFirst("\\d+ update remove ", "")
-    val index = {
-      app.systemHosts.zipWithIndex.find { case(h,i) =>
-        getIPAddress(h) == host
-      }.get._2
+    val trimmedMsg = msg.trim
+    // cases
+    if (trimmedMsg.startsWith("update remove")) {
+      val host = msg.replaceFirst("\\d+ update remove ", "")
+      val index = app.systemHosts.zipWithIndex.find{
+        case(h,i) => getIPAddress(h) == host}.get._2
+      println("WARN: remove " + host + " with index " + index)
+      ring.remove(index)
+    } else if (trimmedMsg.startsWith("update add")) {
+      // add host msg: "update add ["host1","host2",...]"
+      val newhosts = trimmedMsg.trim.replaceFirst("update add", "").replaceAll("[\\[\\]]", "").split(",").map (x => x.trim.replaceAll("\"", ""))
     }
-    println("WARN: remove " + host + " with index " + index)
-    ring.remove(index)
   }
 
   var msClient : MessageServerClient = null
@@ -919,9 +944,10 @@ class AppRuntime(appID    : Int,
   val pool = new MapUpdatePool[PerformerPacket](
     poolsize,
     ring,
+    // TODO: maybe we should put def of port into one place
     action => new MUCluster[PerformerPacket](
-      app.systemHosts.map((_,app.statusPort+100)),
-      app.statusPort+100,
+      app.systemHosts.toArray.map((_,app.internalPort)),
+      app.internalPort,
       PerformerPacket(0,0,Array(),Array(),"",this),
       () => {new Decoder(this)},
       action,
@@ -1044,7 +1070,7 @@ class AppRuntime(appID    : Int,
     }
 
     class SourceThread(sourceClassName: String,
-               sourceParams: java.util.List[String],
+                       sourceParams: java.util.List[String],
                        continuation: Mupd8DataPair => Unit)
     extends Runnable {
       override def run() {
@@ -1190,7 +1216,7 @@ object Mupd8Main {
              p.get("-pidFile").map(x => writePID(x.head))
              val api = new AppRuntime(0, threads, app)
              if (app.sources.size > 0) {
-               val ssources = JavaConversions.asScalaBuffer(app.sources)
+               val ssources = app.sources.asScala
                println("start source from sys cfg")
                object O {
                  def unapply(a: Any): Option[org.json.simple.JSONObject] =
@@ -1203,6 +1229,8 @@ object Mupd8Main {
                    if (isLocalHost(obj.get("host").asInstanceOf[String])) {
                      val params = obj.get("parameters").asInstanceOf[java.util.List[String]]
                      api.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
+                     // Sleep 1 sec to let performer be ready before source starts to spit out data
+                     Thread.sleep(1000000)
                    }
                  }
                  case _ => {println("Wrong source format")}
@@ -1210,6 +1238,8 @@ object Mupd8Main {
              } else {
                println("start source from cmdLine")
                api.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
+               // Sleep 1 sec to let performer be ready before source starts to spit out data
+               Thread.sleep(1000000)
              }
              log("Goodbye")
            }
