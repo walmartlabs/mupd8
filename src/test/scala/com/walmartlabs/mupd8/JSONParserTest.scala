@@ -21,9 +21,11 @@ package com.walmartlabs.mupd8;
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.FunSuite
+import scala.collection.JavaConverters._
 
 import org.json.simple._
 
+import com.walmartlabs.mupd8._
 import com.walmartlabs.mupd8.Misc._
 
 @RunWith(classOf[JUnitRunner])
@@ -55,6 +57,48 @@ class JSONParserTest extends FunSuite {
     assert(out3.isDefined)
     assert(out3.getOrElse(0) == 789)
     assert(out3.getOrElse(0).toString() == "789")
+  }
+
+  test("test multi-thread source reader running on one node") {
+    val source = new JSONSource(List("file:./src/test/resources/testapp/T10.data", "k1").asJava)
+    val source1 = new JSONSource(List("file:./src/test/resources/testapp/T10.data", "k1").asJava)
+    val source2 = new JSONSource(List("file:./src/test/resources/testapp/T10.data", "k1").asJava)
+    new Thread() {
+      override def run() {
+        for (i <- 0 until 5000) {
+          if (source.hasNext) {
+            val dataPair = source.getNextDataPair
+            assert(dataPair != null)
+            assert(dataPair._key != null)
+            assert(dataPair._value != null)
+          }
+        }
+      }
+    }.start()
+    new Thread() {
+      override def run() {
+        for (i <- 0 until 5000) {
+          if (source1.hasNext) {
+            val dataPair = source1.getNextDataPair
+            assert(dataPair != null)
+            assert(dataPair._key != null)
+            assert(dataPair._value != null)
+          }
+        }
+      }
+    }.start()
+    new Thread() {
+      override def run() {
+        for (i <- 0 until 5000) {
+          if (source2.hasNext) {
+            val dataPair = source2.getNextDataPair
+            assert(dataPair != null)
+            assert(dataPair._key != null)
+            assert(dataPair._value != null)
+          }
+        }
+      }
+    }.start()
   }
 }
 
