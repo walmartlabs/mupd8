@@ -17,7 +17,7 @@
 
 package com.walmartlabs.mupd8
 
-import scala.collection.mutable
+import scala.collection._
 import scala.collection.breakOut
 import scala.collection.JavaConverters._
 import scala.util.parsing.json.JSON
@@ -695,7 +695,7 @@ class AppStaticInfo(val configDir : Option[String], val appConfig : Option[Strin
   val cassWriteInterval = Option(config.getScopedValue(Array("mupd8", "slate_store", "write_interval"))) map {_.asInstanceOf[Number].intValue()} getOrElse 15
   val compressionCodec  = Option(config.getScopedValue(Array("mupd8", "slate_store", "compression"))).getOrElse("gzip").asInstanceOf[String].toLowerCase
 
-  val systemHosts       = config.getScopedValue(Array("mupd8", "system_hosts")).asInstanceOf[ArrayList[String]].asScala
+  var systemHosts       = config.getScopedValue(Array("mupd8", "system_hosts")).asInstanceOf[ArrayList[String]].asScala
 
   val javaClassPath     = Option(config.getScopedValue(Array("mupd8", "java_class_path"))).getOrElse("share/java/*").asInstanceOf[String]
   val javaSetting       = Option(config.getScopedValue(Array("mupd8", "java_setting"))).getOrElse("-Xmx200M -Xms200M").asInstanceOf[String]
@@ -913,7 +913,7 @@ class AppRuntime(appID    : Int,
                  val app  : AppStaticInfo,
                  useNullPool : Boolean = false
                 ) {
-  private var sourceThreads : List[(String,List[java.lang.Thread])] = Nil
+  private val sourceThreads : mutable.ListBuffer[(String,List[java.lang.Thread])] = new mutable.ListBuffer
 
   val ring : HashRing = new HashRing(app.systemHosts.length, 0)
 
@@ -934,10 +934,10 @@ class AppRuntime(appID    : Int,
 
   val msClient : MessageServerClient = 
   if (app.messageServerHost != None && app.messageServerPort != None) {
-    msClient = new MessageServerClient(actOnMessage,
-                                       app.messageServerHost.get.asInstanceOf[String],
-                                       app.messageServerPort.get.asInstanceOf[Number].intValue(),
-                                       1000L)
+    new MessageServerClient(actOnMessage,
+                            app.messageServerHost.get.asInstanceOf[String],
+                            app.messageServerPort.get.asInstanceOf[Number].intValue(),
+                            1000L)
   } else null
   if (msClient != null) new Thread(msClient, "MessageServerClient").start
 
@@ -1093,7 +1093,7 @@ class AppRuntime(appID    : Int,
    ) yield (new java.lang.Thread(input))
 
     if (!threads.isEmpty)
-      sourceThreads = (sourcePerformer,threads) :: sourceThreads
+      sourceThreads += ((sourcePerformer,threads))
     else
       log("Unable to set up source for " + sourcePerformer + " server class " + sourceClassName + " with params: " + sourceClassParams )
 
