@@ -932,14 +932,14 @@ class AppRuntime(appID    : Int,
     }
   }
 
-  var msClient : MessageServerClient = null
+  val msClient : MessageServerClient = 
   if (app.messageServerHost != None && app.messageServerPort != None) {
     msClient = new MessageServerClient(actOnMessage,
                                        app.messageServerHost.get.asInstanceOf[String],
                                        app.messageServerPort.get.asInstanceOf[Number].intValue(),
                                        1000L)
-    new Thread(msClient, "MessageServerClient").start
-  }
+  } else null
+  if (msClient != null) new Thread(msClient, "MessageServerClient").start
 
   val pool = new MapUpdatePool[PerformerPacket](
     poolsize,
