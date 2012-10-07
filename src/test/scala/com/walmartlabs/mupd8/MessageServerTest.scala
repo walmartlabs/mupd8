@@ -23,6 +23,7 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest.FunSuite
 import java.util.ArrayList
 import scala.util.Random
+import scala.collection.JavaConverters._
 
 @RunWith(classOf[JUnitRunner])
 class MessageServerTest extends FunSuite {
@@ -49,11 +50,12 @@ class MessageServerTest extends FunSuite {
 
     Thread.sleep(2000)
     println("storemsg arr size = " + array.size())
+    
     for (i <- 0 until array.size()) {
       val tokens = array.get(i).trim.split("[ \n\t]")
-      assertTrue(tokens(0).toInt == (i + 1))
+      assert(tokens(0).toInt === (i + 1))
     }
-    assertTrue(array.size == 10)
+    assert(array.size === 10, "# of received msg is wrong")
     println("MessageServer Test is done")
   }
 

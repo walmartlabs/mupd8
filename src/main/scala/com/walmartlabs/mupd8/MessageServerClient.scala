@@ -77,8 +77,7 @@ class MessageServerClient (
     try {
       socket = new Socket(serverHost, serverPort)
       out = socket.getOutputStream
-      in = new BufferedReader(new InputStreamReader
-          (socket.getInputStream))
+      in = new BufferedReader(new InputStreamReader(socket.getInputStream))
     } catch {
       case e : Exception => e.printStackTrace()
     }
@@ -95,7 +94,6 @@ class MessageServerClient (
   }
 
   def sendMessage (input : String) = {
-
     try {
       out.write((input+"\n").getBytes)
       out.flush()
@@ -132,7 +130,7 @@ class MessageServerClient (
       sendMessage(msg)
       res = receiveMessage
       applyMessage(res)
-    } while (res.trim != msg.trim)
+    } while (res.replaceFirst("\\d+\\s", "") != cmd)
   }
 
   def processBroadcastMessage(msg : String) : Unit = {
@@ -143,8 +141,8 @@ class MessageServerClient (
   // for now, only update lastCmd #
   def applyMessage(msg : String) : Unit = {
     val tokens = msg.trim.split("[ \t\n]")
-    if (tokens(0).toInt < lastCmd+1) {
-      println("warning: something msg is missed")
+    if (tokens(0).toInt < lastCmd + 1) {
+      println("warning: something msg is missed, tokens(0) = " + tokens(0) + ", lastCmd = " + lastCmd)
     }
     lastCmd = tokens(0).toInt  // fast forward to the lastCmd provided by server
   }

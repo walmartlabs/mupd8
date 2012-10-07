@@ -17,7 +17,7 @@
 
 package com.walmartlabs.mupd8
 
-import scala.collection.mutable
+import scala.collection._
 import scala.collection.breakOut
 import scala.collection.JavaConverters._
 import scala.util.parsing.json.JSON
@@ -695,7 +695,7 @@ class AppStaticInfo(val configDir : Option[String], val appConfig : Option[Strin
   val cassWriteInterval = Option(config.getScopedValue(Array("mupd8", "slate_store", "write_interval"))) map {_.asInstanceOf[Number].intValue()} getOrElse 15
   val compressionCodec  = Option(config.getScopedValue(Array("mupd8", "slate_store", "compression"))).getOrElse("gzip").asInstanceOf[String].toLowerCase
 
-  val systemHosts       = config.getScopedValue(Array("mupd8", "system_hosts")).asInstanceOf[ArrayList[String]].asScala
+  var systemHosts       = config.getScopedValue(Array("mupd8", "system_hosts")).asInstanceOf[ArrayList[String]].asScala
 
   val javaClassPath     = Option(config.getScopedValue(Array("mupd8", "java_class_path"))).getOrElse("share/java/*").asInstanceOf[String]
   val javaSetting       = Option(config.getScopedValue(Array("mupd8", "java_setting"))).getOrElse("-Xmx200M -Xms200M").asInstanceOf[String]
@@ -913,33 +913,52 @@ class AppRuntime(appID    : Int,
                  val app  : AppStaticInfo,
                  useNullPool : Boolean = false
                 ) {
-  private var sourceThreads : List[(String,List[java.lang.Thread])] = Nil
+  private val sourceThreads : mutable.ListBuffer[(String,List[java.lang.Thread])] = new mutable.ListBuffer
+  val hostUpdateLock = new Object
 
-  val ring : HashRing = new HashRing(app.systemHosts.length, 0)
-
+  // start message server client
   def actOnMessage(msg : String) = {
     val trimmedMsg = msg.trim
     // cases
-    if (trimmedMsg.startsWith("update remove")) {
+    if (trimmedMsg.matches("^\\d+ update remove.*")) {
       val host = msg.replaceFirst("\\d+ update remove ", "")
-      val index = app.systemHosts.zipWithIndex.find{
-        case(h,i) => getIPAddress(h) == host}.get._2
+      val index = app.systemHosts.zipWithIndex.find{case(h,i) => getIPAddress(h) == host}.get._2
       println("WARN: remove " + host + " with index " + index)
       ring.remove(index)
-    } else if (trimmedMsg.startsWith("update add")) {
+    } else if (trimmedMsg.matches("^\\d+ update add.*")) {
       // add host msg: "update add ["host1","host2",...]"
-      val newhosts = trimmedMsg.trim.replaceFirst("update add", "").replaceAll("[\\[\\]]", "").split(",").map (x => x.trim.replaceAll("\"", ""))
+      val newhosts = trimmedMsg.trim.replaceFirst("\\d+ update add ", "").replaceAll("[\\[\\]]", "").split(",").map (x => x.trim.replaceAll("\"", ""))
+      print("new host list = "); newhosts.foreach(x => print(x + " ")); println
+      // for now only reset systemHosts if it is null
+      // TODO: in future it is needed to remove if when it is ready to change hash ring
+      if (app.systemHosts.isEmpty) {
+        app.systemHosts = newhosts.toBuffer
+        hostUpdateLock.synchronized {
+          hostUpdateLock.notify
+        }
+      }
     }
   }
+  val msClient : MessageServerClient = 
+    if (app.messageServerHost != None && app.messageServerPort != None) {
+      new MessageServerClient(actOnMessage,
+                              app.messageServerHost.get.asInstanceOf[String],
+                              app.messageServerPort.get.asInstanceOf[Number].intValue(),
+                              1000L)
+    } else null
+  if (msClient != null) new Thread(msClient, "MessageServerClient").start
 
-  var msClient : MessageServerClient = null
-  if (app.messageServerHost != None && app.messageServerPort != None) {
-    msClient = new MessageServerClient(actOnMessage,
-                                       app.messageServerHost.get.asInstanceOf[String],
-                                       app.messageServerPort.get.asInstanceOf[Number].intValue(),
-                                       1000L)
-    new Thread(msClient, "MessageServerClient").start
+  // talk to message server and update system host list
+  if (app.systemHosts.isEmpty) {
+    msClient.addAddMessage(InetAddress.getLocalHost.getHostName)
+    hostUpdateLock.synchronized {
+      while (app.systemHosts.isEmpty) {
+        hostUpdateLock.wait
+      }
+    }
   }
+  
+  val ring : HashRing = new HashRing(app.systemHosts.length, 0)
 
   val pool = new MapUpdatePool[PerformerPacket](
     poolsize,
@@ -1093,7 +1112,7 @@ class AppRuntime(appID    : Int,
    ) yield (new java.lang.Thread(input))
 
     if (!threads.isEmpty)
-      sourceThreads = (sourcePerformer,threads) :: sourceThreads
+      sourceThreads += ((sourcePerformer,threads))
     else
       log("Unable to set up source for " + sourcePerformer + " server class " + sourceClassName + " with params: " + sourceClassParams )
 
