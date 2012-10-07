@@ -37,13 +37,14 @@ class MessageTracker {
   private val cmdQueue = new mutable.Queue[String]
 
   def propose(newCmd : Int, cmd : String) : Boolean = synchronized {
-    val ok = newCmd == lastCmd + 1
-    if (ok) {
-      lastCmd = newCmd
-      cmdQueue.enqueue(cmd)
-      if (cmdQueue.size > config.threshold) cmdQueue.dequeue()
-    }
-    ok
+    // In case one node is shutdown and added back again, cmd # is
+    // is reset to 1 so that this queue is not working again for
+    // now regardless of cmd#, put all new cmd at the end of queue
+    // TODO: remove queue and make message server stateless
+    cmdQueue.enqueue(cmd)
+    if (cmdQueue.size > config.threshold) cmdQueue.dequeue()
+    lastCmd = cmdQueue.size
+    true
   }
 
   def getLastCmd : Option[String] = synchronized {
@@ -140,7 +141,7 @@ class RequestHandler(
     val hostAddr : String = socket.getInetAddress.getHostAddress()
     val port : Int = socket.getPort()
     hostTracker.registerHost(hostAddr, out)
-    println("connected to " + hostAddr)
+    println("register " + hostAddr)
     try {
       var line : Option[String] = None
       while ({
@@ -164,11 +165,10 @@ class RequestHandler(
     // cmd format: "update remove/add " + host
     println("#" + cmd)
     val tokens = cmd.trim.split("[ \n\t]")
-      val cmdNo = Misc.excToOption(tokens(0).toInt)
-      var optResp : Option[String] = None
+    val cmdNo = Misc.excToOption(tokens(0).toInt)
+    var optResp : Option[String] = None
     if (cmdNo.get == 0 || (cmdNo.get > 0 && tokens(1) == "update")) {
-      optResp =
-      tokens(1) match {
+      optResp = tokens(1) match {
         case "update" => {
           if (tokens(2) == "remove" || tokens(2) == "source") {
             if (msgTracker.propose(cmdNo.get, tokens.toList.tail.reduceLeft(_+ " " + _))) {
@@ -176,7 +176,6 @@ class RequestHandler(
               if (tokens(2) == "remove") hostTracker.removeHost(tokens(3))
             }
             val res = msgTracker.getLastCmd
-            //println("res: " + res)
             if (res == None) {
               Some("CmdNo too High or too Old")
             } else {
@@ -185,6 +184,7 @@ class RequestHandler(
           } else if (tokens(2) == "add") {
             // broadcasting new host list as string ["host.1", "host.2"]
             if (msgTracker.propose(cmdNo.get, "update add " + hostTracker.getSortedHostsString)) {
+              println("broadcasting : " + msgTracker.getLastCmd.get)
               hostTracker.broadcast(msgTracker.getLastCmd.get + "\n")
             }
             // need to return cmd to confirm with client msg is processed

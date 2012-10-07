@@ -914,32 +914,51 @@ class AppRuntime(appID    : Int,
                  useNullPool : Boolean = false
                 ) {
   private val sourceThreads : mutable.ListBuffer[(String,List[java.lang.Thread])] = new mutable.ListBuffer
+  val hostUpdateLock = new Object
 
-  val ring : HashRing = new HashRing(app.systemHosts.length, 0)
-
+  // start message server client
   def actOnMessage(msg : String) = {
     val trimmedMsg = msg.trim
     // cases
-    if (trimmedMsg.startsWith("update remove")) {
+    if (trimmedMsg.matches("^\\d+ update remove.*")) {
       val host = msg.replaceFirst("\\d+ update remove ", "")
-      val index = app.systemHosts.zipWithIndex.find{
-        case(h,i) => getIPAddress(h) == host}.get._2
+      val index = app.systemHosts.zipWithIndex.find{case(h,i) => getIPAddress(h) == host}.get._2
       println("WARN: remove " + host + " with index " + index)
       ring.remove(index)
-    } else if (trimmedMsg.startsWith("update add")) {
+    } else if (trimmedMsg.matches("^\\d+ update add.*")) {
       // add host msg: "update add ["host1","host2",...]"
-      val newhosts = trimmedMsg.trim.replaceFirst("update add", "").replaceAll("[\\[\\]]", "").split(",").map (x => x.trim.replaceAll("\"", ""))
+      val newhosts = trimmedMsg.trim.replaceFirst("\\d+ update add ", "").replaceAll("[\\[\\]]", "").split(",").map (x => x.trim.replaceAll("\"", ""))
+      print("new host list = "); newhosts.foreach(x => print(x + " ")); println
+      // for now only reset systemHosts if it is null
+      // TODO: in future it is needed to remove if when it is ready to change hash ring
+      if (app.systemHosts.isEmpty) {
+        app.systemHosts = newhosts.toBuffer
+        hostUpdateLock.synchronized {
+          hostUpdateLock.notify
+        }
+      }
     }
   }
-
   val msClient : MessageServerClient = 
-  if (app.messageServerHost != None && app.messageServerPort != None) {
-    new MessageServerClient(actOnMessage,
-                            app.messageServerHost.get.asInstanceOf[String],
-                            app.messageServerPort.get.asInstanceOf[Number].intValue(),
-                            1000L)
-  } else null
+    if (app.messageServerHost != None && app.messageServerPort != None) {
+      new MessageServerClient(actOnMessage,
+                              app.messageServerHost.get.asInstanceOf[String],
+                              app.messageServerPort.get.asInstanceOf[Number].intValue(),
+                              1000L)
+    } else null
   if (msClient != null) new Thread(msClient, "MessageServerClient").start
+
+  // talk to message server and update system host list
+  if (app.systemHosts.isEmpty) {
+    msClient.addAddMessage(InetAddress.getLocalHost.getHostName)
+    hostUpdateLock.synchronized {
+      while (app.systemHosts.isEmpty) {
+        hostUpdateLock.wait
+      }
+    }
+  }
+  
+  val ring : HashRing = new HashRing(app.systemHosts.length, 0)
 
   val pool = new MapUpdatePool[PerformerPacket](
     poolsize,
