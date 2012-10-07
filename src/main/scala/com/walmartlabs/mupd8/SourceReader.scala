@@ -17,7 +17,6 @@
 
 package com.walmartlabs.mupd8
 
-import scala.util.parsing.json.JSON
 import com.walmartlabs.mupd8.application.Mupd8Source
 import com.walmartlabs.mupd8.application.Mupd8DataPair
 import com.walmartlabs.mupd8.Misc._
@@ -25,6 +24,8 @@ import java.io.BufferedReader
 import java.net.Socket
 import java.io.InputStreamReader
 import java.io.FileReader
+import org.codehaus.jackson._
+import org.codehaus.jackson.map.ObjectMapper
 
 /** A default JSON Source Reader
  *
@@ -42,7 +43,8 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
     case _      => try {socketReader} catch { case _ => println("Source failed. : " + sourceStr + " " + keyStr); null}
   }
 
-  var currentLine : String = null;
+  private var currentLine : String = null
+  private val objMapper = new ObjectMapper
 
   def fileReader : BufferedReader = {
     new BufferedReader(new FileReader(sourceArr(1)))
@@ -53,20 +55,31 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
     new BufferedReader(new InputStreamReader(socket.getInputStream()))
   }
 
-  def getValue(key: String, map: Option[Any]) : Option[Any] =
-    key.split(':').foldLeft(map)((m, k) => m.asInstanceOf[Option[Map[String, Any]]].map{_.get(k)}.get )
-
+  def getValue(key: String, node: JsonNode) : Option[JsonNode] = {
+    try {
+      Some(key.split(':').foldLeft(node)((m, k) => m.path(k)))
+    } catch {
+      case e: Exception => {println("ndoe = " + node.toString); e.printStackTrace(); None}
+    }
+  }
+  
   override def hasNext() = {
-    if (reader == null) false
-    currentLine = reader.readLine()
+    if (reader == null) {println("readder is null"); false}
+    currentLine = try { reader.readLine() } catch { case e: Exception => {println("reader.readLine returns null");null} }
     currentLine != null
   }
 
   override def getNextDataPair: Mupd8DataPair = {
-    val rtn = new Mupd8DataPair
-    val json = JSON.parseFull(currentLine)
-    rtn._key = new String(getValue(keyStr, json).get.asInstanceOf[String])
-    rtn._value = new String(currentLine).getBytes()
-    rtn
+    try {
+      assert(currentLine != null, "Input line couldn't be null in getNextDataPair: " + currentLine)
+      val rtn = new Mupd8DataPair
+      val key = getValue(keyStr, objMapper.readTree(currentLine))
+      assert(key != None, "key from source is wrong: " + currentLine)
+      rtn._key = key.get.asText
+      rtn._value = new String(currentLine).getBytes()
+      rtn
+    } catch {
+       case e: Exception => {e.printStackTrace; null}
+    }
   }
 }

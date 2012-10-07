@@ -34,6 +34,16 @@
       <artifactId>json</artifactId>
       <version>20090211</version>
     </dependency>
+		<dependency>
+			<groupId>org.codehaus.jackson</groupId>
+			<artifactId>jackson-core-asl</artifactId>
+			<version>1.9.9</version>
+		</dependency>
+		<dependency>
+			<groupId>org.codehaus.jackson</groupId>
+			<artifactId>jackson-mapper-asl</artifactId>
+			<version>1.9.9</version>
+		</dependency>
     <dependency>
       <groupId>org.scale7</groupId>
       <artifactId>scale7-pelops</artifactId>
