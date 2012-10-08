@@ -43,15 +43,9 @@ class MessageServerClient (
 
   def messageDecoder(callback : String => Unit, str : String) = callback(str)
 
-  def addMessage(msg : String) = msgQueue.add(msg)
+  def addRemoveMessage(host: String): Unit = msgQueue.add(REMOVE_HEADER + host)
 
-  def addRemoveMessage(host: String): Unit = {
-    msgQueue.add(REMOVE_HEADER + host)
-  }
-
-  def addAddMessage(host: String) = {
-    msgQueue.add(ADD_HEADER + host)
-  }
+  def addAddMessage(host: String) = msgQueue.add(ADD_HEADER + host)
 
   def run() {
     connect

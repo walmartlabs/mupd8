@@ -182,7 +182,7 @@ class MUCluster[T <: MapUpdateClass[T]]
           println("Connected to " + i + " " + host + ":" + port)
         else {
           if (msClient != null)
-            msClient.addMessage(getIPAddress(hosts(i)._1))
+            msClient.addRemoveMessage(getIPAddress(hosts(i)._1))
           println("Failed to connect to" + i + " " + host + ":" + port)
         }
       }
@@ -193,7 +193,7 @@ class MUCluster[T <: MapUpdateClass[T]]
     assert(dest < hosts.size)
     if (!client.send(dest.toString, obj)) {
       if (msClient != null)
-        msClient.addMessage(getIPAddress(hosts(dest)._1))
+        msClient.addRemoveMessage(getIPAddress(hosts(dest)._1))
       log("Failed to send msg to dest " + dest)
     }
   }
