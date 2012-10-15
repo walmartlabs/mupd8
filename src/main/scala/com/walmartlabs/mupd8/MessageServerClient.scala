@@ -30,10 +30,6 @@ class MessageServerClient (
     timeout : Long = 2000L)
     extends Runnable {
 
-  // Message headers need to be synced with MessageServer
-  val REMOVE_HEADER = "update remove "
-  val ADD_HEADER = "update add "
-
   var lastCmd = 0
   var socket : Socket = null
   var out : OutputStream = null
@@ -43,9 +39,9 @@ class MessageServerClient (
 
   def messageDecoder(callback : String => Unit, str : String) = callback(str)
 
-  def addRemoveMessage(host: String): Unit = msgQueue.add(REMOVE_HEADER + host)
+  def addRemoveMessage(host: String): Unit = msgQueue.add(MessageServer.REMOVE_HEADER + host)
 
-  def addAddMessage(host: String) = msgQueue.add(ADD_HEADER + host)
+  def addAddMessage(host: String) = msgQueue.add(MessageServer.ADD_HEADER + host)
 
   def run() {
     connect

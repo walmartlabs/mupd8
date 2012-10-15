@@ -163,8 +163,6 @@ class MUCluster[T <: MapUpdateClass[T]]
       // if there is no hosts setup in config file,
       // add this node to message server and get updated host list
       println("Add node: " + localhost.get + " to cluster")
-
-      
     }
   }
   
@@ -922,9 +920,9 @@ class AppRuntime(appID    : Int,
     // cases
     if (trimmedMsg.matches("^\\d+ update remove.*")) {
       val host = msg.replaceFirst("\\d+ update remove ", "")
-      val index = app.systemHosts.zipWithIndex.find{case(h,i) => getIPAddress(h) == host}.get._2
+      val index = app.systemHosts.zipWithIndex.find{case(h,i) => getIPAddress(h) == host} map {_._2}
       println("WARN: remove " + host + " with index " + index)
-      ring.remove(index)
+      index map {ring.remove(_)}
     } else if (trimmedMsg.matches("^\\d+ update add.*")) {
       // add host msg: "update add ["host1","host2",...]"
       val newhosts = trimmedMsg.trim.replaceFirst("\\d+ update add ", "").replaceAll("[\\[\\]]", "").split(",").map (x => x.trim.replaceAll("\"", ""))

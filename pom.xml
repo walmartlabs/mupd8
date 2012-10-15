@@ -339,6 +339,7 @@
         <!-- Attach sources the packaged jar. http://goo.gl/HjLbg -->
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-source-plugin</artifactId>
+				<version>2.2</version>
         <executions>
           <execution>
             <id>attach-sources</id>
