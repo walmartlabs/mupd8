@@ -1204,6 +1204,7 @@ class MasterNode(args : Array[String], config : AppStaticInfo, shutdown : Boolea
 object Mupd8Main {
 
   def main(args : Array[String]) {
+    Thread.setDefaultUncaughtExceptionHandler(new Misc.TerminatingExceptionHandler())
     val syntax = Map("-s"       -> (1, "Sys config file name"),
                      "-a"       -> (1, "App config file name"),
                      "-d"       -> (1, "Unified-config directory name"),
