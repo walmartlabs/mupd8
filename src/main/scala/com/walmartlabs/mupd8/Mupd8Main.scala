@@ -261,7 +261,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]]
   }
 
   val pool    = 0 until poolsize map { new ThreadData(_) }
-  private val rand = new java.util.Random(0)  // TODO: DO we need to serialize this?
+  private val rand = new java.util.Random(System.currentTimeMillis)
   val cluster = clusterFactory(p => putLocal(p.getKey,p))
   def init()  { cluster.init() }
 
@@ -1062,7 +1062,7 @@ class AppRuntime(appID    : Int,
 
   def startSource(sourcePerformer : String, sourceClassName : String, sourceClassParams : java.util.List[String]) = {
 
-    def initiateWork(performerID : Int, stream : String, data : Mupd8DataPair) { //} key: String, payload : Array[Byte]) {
+    def initiateWork(performerID : Int, stream : String, data : Mupd8DataPair) {
       log("Posting")
       // TODO: Sleep if the pending IO count is in excess of ????
       // Throttle the Source if we have a hot conductor
