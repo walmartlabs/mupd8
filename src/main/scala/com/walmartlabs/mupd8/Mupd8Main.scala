@@ -39,6 +39,10 @@ import com.walmartlabs.mupd8.compression.CompressionFactory
 import com.walmartlabs.mupd8.compression.CompressionService
 import com.walmartlabs.mupd8.Misc._
 import com.walmartlabs.mupd8.application._
+import com.walmartlabs.mupd8.application.statistics.StatisticsBootstrap
+import com.walmartlabs.mupd8.application.statistics.StatisticsConstants
+import com.walmartlabs.mupd8.application.statistics.MapWrapper
+import com.walmartlabs.mupd8.application.statistics.UpdateWrapper
 
 import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
 import scala.collection.JavaConversions
@@ -261,7 +265,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]]
   }
 
   val pool    = 0 until poolsize map { new ThreadData(_) }
-  private val rand = new java.util.Random(0)  // TODO: DO we need to serialize this?
+  private val rand = new java.util.Random(System.currentTimeMillis)
   val cluster = clusterFactory(p => putLocal(p.getKey,p))
   def init()  { cluster.init() }
 
@@ -621,6 +625,7 @@ case class Performer (name    : String,
                       mtype   : Mupd8Type,
                       ptype   : Option[String],
                       jclass  : Option[String],
+                      wrapperClass: Option[String],
                       workers : Int,
                       cf      : Option[String],
                       ttl     : Int,
@@ -646,6 +651,7 @@ object loadConfig {
         mtype   = Mupd8Type.withName(p._2.get("mupd8_type").asInstanceOf[String]),
         ptype   = Option(p._2.get("type").asInstanceOf[String]),
         jclass  = Option(p._2.get("class").asInstanceOf[String]),
+        wrapperClass = { System.out.println(" wrapper class is :" + p._2.get("wrapper_class")); Option(p._2.get("wrapper_class").asInstanceOf[String]) },
         workers = if (p._2.get("workers") == null) 1.toInt else p._2.get("workers").asInstanceOf[Number].intValue(),
         cf      = Option(p._2.get("column_family").asInstanceOf[String]),
         ttl     = if (p._2.get("slate_ttl") == null) Mutator.NO_TTL else p._2.get("slate_ttl").asInstanceOf[Number].intValue(),
@@ -656,30 +662,57 @@ object loadConfig {
 
 }
 
-class AppStaticInfo(val configDir : Option[String], val appConfig : Option[String], val sysConfig : Option[String], val loadClasses : Boolean) {
+class AppStaticInfo(val configDir : Option[String], val appConfig : Option[String], val sysConfig : Option[String], val loadClasses : Boolean, collectStatistics: Boolean) {
   assert(appConfig.size == sysConfig.size && appConfig.size != configDir.size)
   val config            = configDir map { p => new application.Config(new File(p))} getOrElse new application.Config(sysConfig.get, appConfig.get)
   val performers        = loadConfig.convertPerformers(config.workerJSONs)
   val statusPort        = Option(config.getScopedValue(Array("mupd8", "mupd8_status", "http_port"))).getOrElse(new Integer(6001)).asInstanceOf[Number].intValue()
   val performerName2ID  = Map(performers.map(_.name).zip(0 until performers.size):_*)
   val edgeName2IDs      = performers.map(p => p.subs.map((_,performerName2ID(p.name)))).flatten.groupBy(_._1).mapValues(_.map(_._2))
+  var performerArray: Array[binary.Performer] = new Array(performers.size)
 
   val performerFactory  : Vector[Option[() => binary.Performer]] = if (loadClasses) (
     0 until performers.size map { i =>
       val p = performers(i)
+      var isMapper = false
+      // the wrapper class that wraps a performer instance
+      var wrapperClass: Option[String] = null
       log("\nMupd8App loading ... " + p.name + " " + p.mtype)
       val classObject = p.mtype match {
-        case Mapper  => p.jclass.map(Class.forName(_).asInstanceOf[Class[binary.Mapper ]])
-        case Updater => p.jclass.map(Class.forName(_).asInstanceOf[Class[binary.Updater]])
+        case Mapper  => isMapper = true; wrapperClass = p.wrapperClass; p.jclass.map(Class.forName(_).asInstanceOf[Class[binary.Mapper ]])
+        case Updater => isMapper = false; wrapperClass = p.wrapperClass; p.jclass.map(Class.forName(_).asInstanceOf[Class[binary.Updater]])
         case _       => None
       }
       classObject.map { x =>
         val classobject = x.getConstructor(config.getClass, "".getClass)
+        val userProvidedPerformer = classobject.newInstance(config, p.name)
+
+        val wrappedPerformer =
+          if (collectStatistics) {
+            System.out.println(" creating a prePerformer for collection statistics:");
+            val wrapperClassname = wrapperClass match {
+              case None => StatisticsConstants.DEFAULT_PRE_PERFORMER
+              case Some(x) => x
+            }
+            var constructor = Class.forName(wrapperClassname).asInstanceOf[Class[com.walmartlabs.mupd8.application.statistics.PrePerformer]].getConstructor("".getClass());
+            val prePerformer = constructor.newInstance(p.name)
+            System.out.println(" PRE PERFORMER :" + prePerformer);
+            if (isMapper) {
+              new MapWrapper(userProvidedPerformer, prePerformer)
+            } else {
+              new UpdateWrapper(userProvidedPerformer, prePerformer)
+            }
+          } else {
+            userProvidedPerformer
+          }
+
+        performerArray(i) = wrappedPerformer
+        
         if (p.copy) {
 //        if ((p.name == "fbEntityProcessor")||(p.name == "interestStatsFetcher")) {
-          () => { log("Building object " + p.name) ; classobject.newInstance(config,p.name) }
+          () => { log("Building object " + p.name) ; wrappedPerformer }
         } else {
-          val obj = classobject.newInstance(config,p.name)
+          val obj = wrappedPerformer
           () => obj
         }
       }
@@ -706,6 +739,10 @@ class AppStaticInfo(val configDir : Option[String], val appConfig : Option[Strin
   val messageServerPort = Option(config.getScopedValue(Array("mupd8", "messageserver", "port")))
 
   def internalPort = statusPort + 100;
+
+  def getPerformers(): Array[binary.Performer] = {
+    performerArray
+  }
 }
 
 object PerformerPacket {
@@ -1062,7 +1099,7 @@ class AppRuntime(appID    : Int,
 
   def startSource(sourcePerformer : String, sourceClassName : String, sourceClassParams : java.util.List[String]) = {
 
-    def initiateWork(performerID : Int, stream : String, data : Mupd8DataPair) { //} key: String, payload : Array[Byte]) {
+    def initiateWork(performerID : Int, stream : String, data : Mupd8DataPair) {
       log("Posting")
       // TODO: Sleep if the pending IO count is in excess of ????
       // Throttle the Source if we have a hot conductor
@@ -1208,6 +1245,7 @@ class MasterNode(args : Array[String], config : AppStaticInfo, shutdown : Boolea
 object Mupd8Main {
 
   def main(args : Array[String]) {
+    Thread.setDefaultUncaughtExceptionHandler(new Misc.TerminatingExceptionHandler())
     val syntax = Map("-s"       -> (1, "Sys config file name"),
                      "-a"       -> (1, "App config file name"),
                      "-d"       -> (1, "Unified-config directory name"),
@@ -1216,7 +1254,9 @@ object Mupd8Main {
                      "-to"      -> (1, "Stream to which data from the URI is sent"),
                      "-threads" -> (1, "Optional number of execution threads, default is 5"),
                      "-shutdown"-> (0, "Shut down the Mupd8 App"),
-                     "-pidFile" -> (1, "Optional PID filename"))
+                     "-pidFile" -> (1, "Optional PID filename"),
+                      // flag for turning on/off collection of statistics as a mupd8 app runs
+                     "-statistics" -> (1, "Collect statistics for monitoring?")) 
 
     {
       val argMap = argParser(syntax, args)
@@ -1228,14 +1268,24 @@ object Mupd8Main {
            if p.get("-s").size != p.get("-d").size
            threads <- excToOption(p.get("-threads").map(_.head.toInt).getOrElse(5))
            val launcher = p.get("-pidFile") == None
+           // obtain the flag
+           //val collectStatistics = p.get("-statistics").get(0).equalsIgnoreCase("true")
+           val collectStatistics = if (p.get("-statistics") !=  None) {
+                                     p.get("-statistics").get(0).equalsIgnoreCase("true")
+                                   } else {
+                                     false
+                                   }
          } yield  {
            //Misc.configureLoggerFromXML("log4j.xml")
-           val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head), !launcher)
+           val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head), !launcher, collectStatistics)
            if (launcher) {
              new MasterNode(args, app, shutdown)
            } else {
              p.get("-pidFile").map(x => writePID(x.head))
              val api = new AppRuntime(0, threads, app)
+             if (collectStatistics) {
+               StatisticsBootstrap.INSTANCE.bootstrap()
+             }
              if (app.sources.size > 0) {
                val ssources = app.sources.asScala
                println("start source from sys cfg")

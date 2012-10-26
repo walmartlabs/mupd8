@@ -59,6 +59,15 @@ object Misc {
     }
     anon
   }
+
+  /** A way to force the JVM to exit on uncaught Throwable. */
+  class TerminatingExceptionHandler extends Thread.UncaughtExceptionHandler {
+    override def uncaughtException(t : Thread, e : Throwable) : Unit = {
+      println("Uncaught Throwable for thread " + t.getName() + " : " + e.getMessage() + ", exiting.");
+      e.printStackTrace(new java.io.PrintStream(System.out));
+      System.exit(2);
+    }
+  }
   
   def writePID(file : String) {
     // Code works only with advisory locks, could be non-portable

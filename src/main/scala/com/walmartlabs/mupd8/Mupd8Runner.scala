@@ -58,10 +58,11 @@ object Mupd8Runner {
       System.exit(1)
     }
     /* XXX: loadClasses is always true in Mupd8Runner; TODO: get rid of the parameter */
+    var collectStatistics = false
     val appInfo = new AppStaticInfo(if (options.has(folderOpt)) Option(options.valueOf(folderOpt)) else None,
                                     if (options.has(appOpt)) Option(options.valueOf(appOpt)) else None,
                                     if (options.has(sysOpt)) Option(options.valueOf(sysOpt)) else None,
-                                    true)
+                                    true, collectStatistics)
     // source(s) are required
     if (appInfo.sources.size == 0 &&
         !(options.has(scOpt) && options.has(toOpt) && options.has(spOpt))) {
