@@ -1093,9 +1093,13 @@ class AppRuntime(appID    : Int,
       override def run() {
         val cls = Class.forName(sourceClassName)
         val ins = cls.getConstructor(Class.forName("java.util.List")).newInstance(sourceParams).asInstanceOf[com.walmartlabs.mupd8.application.Mupd8Source]
-        while (ins.hasNext()) {
-          val data = ins.getNextDataPair();
-          continuation(data)
+        while (true) {
+          try {
+            while (ins.hasNext()) {
+              val data = ins.getNextDataPair();
+              continuation(data)
+            }
+          } catch {case _ => } // catch everything to keep source running
         }
       }
     }
