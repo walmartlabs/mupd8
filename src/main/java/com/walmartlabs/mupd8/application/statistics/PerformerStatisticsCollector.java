@@ -43,7 +43,8 @@ public class PerformerStatisticsCollector extends AbstractStatisticsCollector
 		}
 	}
 
-	public void prePerform(byte[] key, byte[] event) { // TODO: need to support concurrent access 
+	public void prePerform(byte[] key, byte[] event) { 
+                System.out.println("MESSAGE: Inside per-perform");
 		if (!isEnabled) {
 			return;
 		}
