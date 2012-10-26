@@ -44,7 +44,6 @@ public class PerformerStatisticsCollector extends AbstractStatisticsCollector
 	}
 
 	public void prePerform(byte[] key, byte[] event) { 
-                System.out.println("MESSAGE: Inside per-perform");
 		if (!isEnabled) {
 			return;
 		}

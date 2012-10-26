@@ -1265,7 +1265,12 @@ object Mupd8Main {
            threads <- excToOption(p.get("-threads").map(_.head.toInt).getOrElse(5))
            val launcher = p.get("-pidFile") == None
            // obtain the flag
-           val collectStatistics = p.get("-statistics").get(0).equalsIgnoreCase("true")
+           //val collectStatistics = p.get("-statistics").get(0).equalsIgnoreCase("true")
+           val collectStatistics = if (p.get("-statistics") !=  None) {
+                                     p.get("-statistics").get(0).equalsIgnoreCase("true")
+                                   } else {
+                                     false
+                                   }
          } yield  {
            //Misc.configureLoggerFromXML("log4j.xml")
            val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head), !launcher, collectStatistics)
