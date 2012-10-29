@@ -573,7 +573,6 @@ class SlateCache(val io : IoPool, val usageLimit : Long) {
         } else {
           currentUsage -= 2*item.length + p.slate.size + 2*objOverhead
           table.remove(item)
-          println("Freeing memory of "+item)
         }
       } getOrElse {
         assert(false)
