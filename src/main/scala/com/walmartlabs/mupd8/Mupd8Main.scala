@@ -1135,7 +1135,7 @@ class AppRuntime(appID    : Int,
               val data = ins.getNextDataPair();
               continuation(data)
             }
-          } catch {case _ => } // catch everything to keep source running
+          } catch {case _ => java.lang.Thread.sleep(10000) } // catch everything to keep source running. We wait for 10 sec before retrying.
         }
       }
     }
