@@ -1098,7 +1098,7 @@ class AppRuntime(appID    : Int,
 
   def startSource(sourcePerformer : String, sourceClassName : String, sourceClassParams : java.util.List[String]) = {
 
-    def initiateWork(performerID : Int, stream : String, data : Mupd8DataPair) {
+    def initiateWork(performerID : Int, stream : String, data : Mupd8DataPair) = {
       log("Posting")
       // TODO: Sleep if the pending IO count is in excess of ????
       // Throttle the Source if we have a hot conductor
@@ -1126,16 +1126,16 @@ class AppRuntime(appID    : Int,
                        sourceParams: java.util.List[String],
                        continuation: Mupd8DataPair => Unit)
     extends Runnable {
-      override def run() {
+      override def run() = {
         val cls = Class.forName(sourceClassName)
         val ins = cls.getConstructor(Class.forName("java.util.List")).newInstance(sourceParams).asInstanceOf[com.walmartlabs.mupd8.application.Mupd8Source]
         while (true) {
           try {
-            while (ins.hasNext()) {
+            if (ins.hasNext()) {
               val data = ins.getNextDataPair();
               continuation(data)
             }
-          } catch {case _ => } // catch everything to keep source running
+          } catch {case e: Exception => println("SourceThread: hit exception"); e.printStackTrace} // catch everything to keep source running
         }
       }
     }

@@ -39,33 +39,53 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
   val keyStr = args.get(1)
   val sourceArr = sourceStr.split(":")
   val reader = sourceArr(0) match {
-    case "file" => try {fileReader} catch { case _ => println("Source failed. : " + sourceStr + " " + keyStr); null}
-    case _      => try {socketReader} catch { case _ => println("Source failed. : " + sourceStr + " " + keyStr); null}
+    case "file" => val r = fileReader; if (r != null) r else fileReader
+    case _      => val r = socketReader; if (r != null) r else socketReader
   }
 
   private var currentLine : String = null
   private val objMapper = new ObjectMapper
 
   def fileReader : BufferedReader = {
-    new BufferedReader(new FileReader(sourceArr(1)))
+    try {
+      new BufferedReader(new FileReader(sourceArr(1)))
+    } catch {
+      case e: Throwable => {println("JSONSource: fileReader hit exception");
+                            e.printStackTrace;
+                            Thead.sleep(10000);
+                            null}
+    }
   }
 
   def socketReader : BufferedReader = {
-    val socket = new Socket(sourceArr(0), sourceArr(1).toInt)
-    new BufferedReader(new InputStreamReader(socket.getInputStream()))
+    try {
+      val socket = new Socket(sourceArr(0), sourceArr(1).toInt)
+      new BufferedReader(new InputStreamReader(socket.getInputStream()))
+    } catch {
+      case e: Throwable => {println("JSONSource: socketReader hit exception");
+                            e.printStackTrace;
+                            Thread.sleep(10000);
+                            null}
+    }
   }
 
   def getValue(key: String, node: JsonNode) : Option[JsonNode] = {
     try {
       Some(key.split(':').foldLeft(node)((m, k) => m.path(k)))
     } catch {
-      case e: Exception => {println("ndoe = " + node.toString); e.printStackTrace(); None}
+      case e: Exception => {println("JSONSource: getValue hit exception with ndoe = " + node.toString);
+                            e.printStackTrace();
+                            None}
     }
   }
   
   override def hasNext() = {
-    if (reader == null) {println("readder is null"); false}
-    currentLine = try { reader.readLine() } catch { case e: Exception => {println("reader.readLine returns null");null} }
+    if (reader == null) {println("JSONSource: reader is null"); false}
+    currentLine = try {
+      reader.readLine()
+    } catch {
+      case e: Exception => println("JSONSource: reader.readLine returns null"); e.printStackTrace; null
+    }
     currentLine != null
   }
 
