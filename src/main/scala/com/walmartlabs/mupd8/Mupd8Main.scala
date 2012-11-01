@@ -455,7 +455,7 @@ class CassandraPool(
   def fetch(name : String, key : Key, next : Option[Slate] => Unit) {
     pool.submit(run{
       val start = java.lang.System.nanoTime()
-      val col = excToOption(selector.getColumnFromRow(getCF(name), Bytes.fromByteArray(key), Bytes.fromByteArray(name.getBytes), ConsistencyLevel.QUORUM))
+      val col = excToOptionWithLog(selector.getColumnFromRow(getCF(name), Bytes.fromByteArray(key), Bytes.fromByteArray(name.getBytes), ConsistencyLevel.QUORUM))
       log("Fetch " + (java.lang.System.nanoTime() - start)/1000000 + " " + name + " " + str(key))
       next(col.map { col =>
         assert(col != null)
@@ -1161,21 +1161,26 @@ class AppRuntime(appID    : Int,
   val writerThread = new Thread(run{
     val interval = app.cassWriteInterval*1000 / threadVect.size
     while (true) {
-      threadVect foreach { tls =>
+      threadVect foreach { tls => {
         val target = java.lang.System.currentTimeMillis + interval
         val items = tls.slateCache.getDirtyItems
         // println("num of dirty items " + items.length)
-        items.zipWithIndex.foreach { case((key,item),i) =>
+        items.zipWithIndex.foreach { case((key,item),i) => {
           val colname = key.take(key.indexOf("~~~"))
-          storeIo.write(colname, key.drop(colname.length + 3).getBytes, item.slate) // TODO: .getBytes may not work the way you want it to!! Encoding issues!
-          item.dirty = false
-          log("Wrote record for " + colname + " " + key)
+          // TODO: .getBytes may not work the way you want it to!! Encoding issues!
+          val suc = storeIo.write(colname, key.drop(colname.length + 3).getBytes, item.slate)
+          if (suc) {
+            item.dirty = false
+            log("Wrote record for " + colname + " " + key)
+          } else {
+            item.dirty = true
+            log("Failed to write record for " + colname + " " + key)            
+          }
           val sleepTime = (target - java.lang.System.currentTimeMillis)/(items.size-i)
           if (sleepTime > 0) java.lang.Thread.sleep(sleepTime)
-        }
+        }}
         java.lang.Thread.sleep(10)
-      }
-    }
+      }}}
   }, "writerThread")
   writerThread.start()
 
