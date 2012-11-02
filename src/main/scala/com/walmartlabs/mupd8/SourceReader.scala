@@ -52,7 +52,7 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
     } catch {
       case e: Throwable => {println("JSONSource: fileReader hit exception");
                             e.printStackTrace;
-                            Thead.sleep(10000);
+                            Thread.sleep(10000);
                             null}
     }
   }
