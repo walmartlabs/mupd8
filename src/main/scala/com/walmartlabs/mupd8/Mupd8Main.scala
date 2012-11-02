@@ -455,7 +455,7 @@ class CassandraPool(
   def fetch(name : String, key : Key, next : Option[Slate] => Unit) {
     pool.submit(run{
       val start = java.lang.System.nanoTime()
-      val col = excToOptionWithLog(selector.getColumnFromRow(getCF(name), Bytes.fromByteArray(key), Bytes.fromByteArray(name.getBytes), ConsistencyLevel.QUORUM))
+      val col = excToOption(selector.getColumnFromRow(getCF(name), Bytes.fromByteArray(key), Bytes.fromByteArray(name.getBytes), ConsistencyLevel.QUORUM))
       log("Fetch " + (java.lang.System.nanoTime() - start)/1000000 + " " + name + " " + str(key))
       next(col.map { col =>
         assert(col != null)
