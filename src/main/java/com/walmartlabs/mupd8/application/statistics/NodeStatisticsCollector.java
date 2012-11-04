@@ -33,12 +33,9 @@ public class NodeStatisticsCollector extends AbstractStatisticsCollector
 	}
 
 	private static String getHostIPAddress() {
-		String hostname;
 		try {
 			InetAddress addr = InetAddress.getLocalHost();
-			byte[] ipAddr = addr.getAddress();
-			hostname = addr.getHostName();
-			return hostname + "_" + new String(ipAddr);
+			return addr.getHostName() + "_" + addr.getHostAddress();
 		} catch (UnknownHostException e) {
 			System.out.println(" Exception in obtaining hostname/IpAddress!");
 			return null;
