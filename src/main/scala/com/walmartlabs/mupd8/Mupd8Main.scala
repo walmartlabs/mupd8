@@ -1147,7 +1147,7 @@ class AppRuntime(appID    : Int,
       edgeName    <- app.performers(perfID).pubs ;
       destID      <- app.edgeName2IDs(edgeName) ;
       input       <- excToOptionWithLog(new SourceThread(sourceClassName, sourceClassParams, initiateWork(destID, edgeName, _)))
-   ) yield (new java.lang.Thread(input))
+   ) yield (new java.lang.Thread(input, "SourceReader:" + sourcePerformer + ":" + (sourceClassParams.asScala mkString ":")))
 
     if (!threads.isEmpty)
       sourceThreads += ((sourcePerformer,threads))
