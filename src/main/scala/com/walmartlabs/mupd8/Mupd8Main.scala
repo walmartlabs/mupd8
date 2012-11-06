@@ -178,7 +178,7 @@ class MUCluster[T <: MapUpdateClass[T]]
       println("Host id " + i + " is " + (host,p))
       if (i != self) {
         while (!client.connect(i.toString,host,p) && java.lang.System.currentTimeMillis < finaltime) {
-          java.lang.Thread.sleep(100)
+          java.lang.Thread.sleep(1000)
         }
         if (client.isConnected(i.toString))
           println("Connected to " + i + " " + host + ":" + port)
@@ -1305,7 +1305,7 @@ object Mupd8Main {
                      val params = obj.get("parameters").asInstanceOf[java.util.List[String]]
                      api.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
                      // Sleep 1 sec to let performer be ready before source starts to spit out data
-                     Thread.sleep(1000000)
+                     Thread.sleep(1000)
                    }
                  }
                  case _ => {println("Wrong source format")}
@@ -1314,7 +1314,7 @@ object Mupd8Main {
                println("start source from cmdLine")
                api.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
                // Sleep 1 sec to let performer be ready before source starts to spit out data
-               Thread.sleep(1000000)
+               Thread.sleep(1000)
              }
              log("Goodbye")
            }
