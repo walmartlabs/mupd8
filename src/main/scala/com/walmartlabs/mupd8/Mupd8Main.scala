@@ -1304,8 +1304,6 @@ object Mupd8Main {
                    if (isLocalHost(obj.get("host").asInstanceOf[String])) {
                      val params = obj.get("parameters").asInstanceOf[java.util.List[String]]
                      api.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
-                     // Sleep 1 sec to let performer be ready before source starts to spit out data
-                     Thread.sleep(1000)
                    }
                  }
                  case _ => {println("Wrong source format")}
@@ -1313,8 +1311,6 @@ object Mupd8Main {
              } else {
                println("start source from cmdLine")
                api.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
-               // Sleep 1 sec to let performer be ready before source starts to spit out data
-               Thread.sleep(1000)
              }
              log("Goodbye")
            }
