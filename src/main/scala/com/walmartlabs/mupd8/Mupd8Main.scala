@@ -178,7 +178,7 @@ class MUCluster[T <: MapUpdateClass[T]]
       println("Host id " + i + " is " + (host,p))
       if (i != self) {
         while (!client.connect(i.toString,host,p) && java.lang.System.currentTimeMillis < finaltime) {
-          java.lang.Thread.sleep(1000)
+          java.lang.Thread.sleep(100)
         }
         if (client.isConnected(i.toString))
           println("Connected to " + i + " " + host + ":" + port)
