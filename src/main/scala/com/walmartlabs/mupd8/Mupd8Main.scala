@@ -46,6 +46,7 @@ import com.walmartlabs.mupd8.application.statistics.UpdateWrapper
 
 import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
 import scala.collection.JavaConversions
+import grizzled.slf4j.Logging
 
 object miscM {
 
@@ -169,7 +170,7 @@ class MUCluster[T <: MapUpdateClass[T]]
       println("Add node: " + localhost.get + " to cluster")
     }
   }
-  
+
   def init() {
     server.start()
     client.init()
@@ -706,7 +707,7 @@ class AppStaticInfo(val configDir : Option[String], val appConfig : Option[Strin
           }
 
         performerArray(i) = wrappedPerformer
-        
+
         if (p.copy) {
 //        if ((p.name == "fbEntityProcessor")||(p.name == "interestStatsFetcher")) {
           () => { log("Building object " + p.name) ; wrappedPerformer }
@@ -973,7 +974,7 @@ class AppRuntime(appID    : Int,
       }
     }
   }
-  val msClient : MessageServerClient = 
+  val msClient : MessageServerClient =
     if (app.messageServerHost != None && app.messageServerPort != None) {
       new MessageServerClient(actOnMessage,
                               app.messageServerHost.get.asInstanceOf[String],
@@ -991,7 +992,7 @@ class AppRuntime(appID    : Int,
       }
     }
   }
-  
+
   val ring : HashRing = new HashRing(app.systemHosts.length, 0)
 
   val pool = new MapUpdatePool[PerformerPacket](
@@ -1174,7 +1175,7 @@ class AppRuntime(appID    : Int,
             log("Wrote record for " + colname + " " + key)
           } else {
             item.dirty = true
-            log("Failed to write record for " + colname + " " + key)            
+            log("Failed to write record for " + colname + " " + key)
           }
           val sleepTime = (target - java.lang.System.currentTimeMillis)/(items.size-i)
           if (sleepTime > 0) java.lang.Thread.sleep(sleepTime)
@@ -1201,9 +1202,9 @@ class AppRuntime(appID    : Int,
     threadVect(pool.getPreferredPoolIndex(PerformerPacket.getKey(pid,key)))
 }
 
-class MasterNode(args : Array[String], config : AppStaticInfo, shutdown : Boolean) {
+class MasterNode(args : Array[String], config : AppStaticInfo, shutdown : Boolean) extends Logging {
   val targetNodes = config.systemHosts
-  println("Target nodes are " + targetNodes.reduceLeft(_+","+_))
+  info("Target nodes are " + targetNodes.reduceLeft(_+","+_))
 
   val machine = "$machine"
   def execCmds(cmd : Array[String], successMsg : String, failMsg : String, wait : Boolean = true) {
@@ -1214,9 +1215,9 @@ class MasterNode(args : Array[String], config : AppStaticInfo, shutdown : Boolea
     if (wait) {
       val procResults = procs map {_.waitFor()}
       if (procResults.forall(_ == 0))
-        println(successMsg)
+        info(successMsg)
       else
-        println(failMsg + procResults.zip(targetNodes).filter(_._1 != 0).map(_._2).reduceLeft(_+","+_))
+        error(failMsg + procResults.zip(targetNodes).filter(_._1 != 0).map(_._2).reduceLeft(_+","+_))
     }
   }
 
@@ -1239,14 +1240,14 @@ class MasterNode(args : Array[String], config : AppStaticInfo, shutdown : Boolea
              "nohup java " + config.javaSetting + " -cp " + mupd8CP + ":" + config.javaClassPath +
              " com.walmartlabs.mupd8.Mupd8Main -pidFile log/mupd8.pid " + args.reduceLeft(_ + " " + _) + " > log/run.log 2>&1"),
              "","",false)
-    println("Started Mupd8[OK]")
+    info("Started Mupd8[OK]")
   } else {
     execCmds(Array("ssh", machine, "cat " + currDir + "/log/mupd8.pid | xargs kill" ),
              "Completed shutdown[OK]", "shutdown failed for ")
   }
 }
 
-object Mupd8Main {
+object Mupd8Main extends Logging {
 
   def main(args : Array[String]) {
     Thread.setDefaultUncaughtExceptionHandler(new Misc.TerminatingExceptionHandler())
@@ -1260,7 +1261,7 @@ object Mupd8Main {
                      "-shutdown"-> (0, "Shut down the Mupd8 App"),
                      "-pidFile" -> (1, "Optional PID filename"),
                       // flag for turning on/off collection of statistics as a mupd8 app runs
-                     "-statistics" -> (1, "Collect statistics for monitoring?")) 
+                     "-statistics" -> (1, "Collect statistics for monitoring?"))
 
     {
       val argMap = argParser(syntax, args)
@@ -1292,7 +1293,7 @@ object Mupd8Main {
              }
              if (app.sources.size > 0) {
                val ssources = app.sources.asScala
-               println("start source from sys cfg")
+               info("start source from sys cfg")
                object O {
                  def unapply(a: Any): Option[org.json.simple.JSONObject] =
                    if (a.isInstanceOf[org.json.simple.JSONObject])
@@ -1306,18 +1307,18 @@ object Mupd8Main {
                      api.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
                    }
                  }
-                 case _ => {println("Wrong source format")}
+                 case _ => error("Wrong source format")
                }
              } else {
-               println("start source from cmdLine")
+               info("start source from cmdLine")
                api.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
              }
-             log("Goodbye")
+             info("Goodbye")
            }
          }
     } getOrElse {
-      System.err.println("Command Syntax error")
-      System.err.println("Syntax is\n" + syntax.map(p => p._1 + " " + p._2._2 + "\n").reduceLeft(_+_))
+      error("Command Syntax error")
+      error("Syntax is\n" + syntax.map(p => p._1 + " " + p._2._2 + "\n").reduceLeft(_+_))
     }
 
   }

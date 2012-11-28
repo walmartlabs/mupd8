@@ -15,7 +15,34 @@
       <artifactId>scala-library</artifactId>
       <version>2.9.2</version>
     </dependency>
+		<dependency>
+			<groupId>org.clapper</groupId>
+			<artifactId>grizzled-slf4j_2.9.2</artifactId>
+			<version>0.6.9</version>
+		</dependency>
     <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>jcl-over-slf4j</artifactId>
+      <version>1.6.4</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>1.6.4</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-log4j12</artifactId>
+      <version>1.6.4</version>
+    </dependency>
+    <dependency>
+      <groupId>log4j</groupId>
+      <artifactId>log4j</artifactId>
+      <version>1.2.16</version>
+    </dependency>
+
+		<dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
       <version>4.10</version>
@@ -236,7 +263,7 @@
               <goal>add-source</goal>
               <goal>compile</goal>
             </goals>
-          </execution>                                    
+          </execution>
           <execution>
             <id>scala-test-compile</id>
             <phase>process-test-resources</phase>
@@ -318,23 +345,23 @@
           </execution>
         </executions>
       </plugin>
-      <plugin>  
-        <groupId>com.agilejava.docbkx</groupId>  
-        <artifactId>docbkx-maven-plugin</artifactId>  
+      <plugin>
+        <groupId>com.agilejava.docbkx</groupId>
+        <artifactId>docbkx-maven-plugin</artifactId>
         <version>2.0.14</version>
-        <executions>  
+        <executions>
           <execution>
-            <phase>pre-site</phase>  
-            <goals>  
-              <goal>generate-html</goal>  
-            </goals>  
+            <phase>pre-site</phase>
+            <goals>
+              <goal>generate-html</goal>
+            </goals>
             <configuration>
               <sourceDirectory>${basedir}/src/docbook</sourceDirectory>
               <!-- <chunkedOutput>true</chunkedOutput> -->
             </configuration>
-          </execution>  
-        </executions>  
-      </plugin>  
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <!-- Attach sources the packaged jar. http://goo.gl/HjLbg -->
         <groupId>org.apache.maven.plugins</groupId>
