@@ -36,7 +36,7 @@ class HashRing(numTargets : Int, randomSeed : Int = 0) {
    *  The value of each array cell is a randomly assigned target
    *  (if target has been subsequently removed, then continue to next cell).
    */
-  val assignment = random.shuffle( (1 to margin*numTargets).flatMap(_ => 0 until numTargets) )
+  var assignment = random.shuffle( (1 to margin*numTargets).flatMap(_ => 0 until numTargets) ).toBuffer
   assert(assignment.length == pieces)
 
   // Some versions of Scala do not implement @volatile correctly.
@@ -62,12 +62,20 @@ class HashRing(numTargets : Int, randomSeed : Int = 0) {
     getTarget(offset % pieces)
   }
 
+  def getOffset(key: Float): Int = {
+    (floor(key * pieces).toInt) % pieces
+  }
+   
   /** Remove a target [0, numTargets) (so apply will never return it again).
    *  Do we need synchronized?
    */
   def remove(target: Int) = synchronized {
     assert(target < numTargets, "cannot remove target number too large for ring")
     dropped = dropped :+ target
+  }
+  
+  def modifyAssignment(offset: Int, dest : Int) = synchronized {
+    assignment(offset) = dest
   }
 
 }

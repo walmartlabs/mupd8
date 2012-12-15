@@ -34,6 +34,10 @@ public class PerformerStatisticsCollector extends AbstractStatisticsCollector
 		super("walmartlabs.com:" + "name" + "=" + name);
 	}
 
+	public String[] getHotKeys() {
+		return hotKeys.toArray(new String[] {});
+	}
+
 	@Override
 	public int getKeyCount(String key) {
 		if (keyCounts.get(key) != null) {
@@ -43,7 +47,7 @@ public class PerformerStatisticsCollector extends AbstractStatisticsCollector
 		}
 	}
 
-	public void prePerform(byte[] key, byte[] event) { 
+	public void prePerform(byte[] key, byte[] event) {
 		if (!isEnabled) {
 			return;
 		}

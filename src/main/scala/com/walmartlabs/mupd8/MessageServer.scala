@@ -25,6 +25,14 @@ import java.util.concurrent.ExecutorService
 import joptsimple._
 import scala.collection.mutable
 import scala.collection.mutable.Buffer
+import com.walmartlabs.mupd8.messaging.MessageParser
+import com.walmartlabs.mupd8.messaging.NodeFailureMessage
+import com.walmartlabs.mupd8.messaging.NodeJoinMessage
+import com.walmartlabs.mupd8.messaging.HostRequestMessage
+import com.walmartlabs.mupd8.messaging.NodeStatusReportMessage
+import com.walmartlabs.mupd8.messaging.LoadDistInstructMessage
+import com.walmartlabs.mupd8.messaging.UpdateRingMessage
+import com.walmartlabs.mupd8.messaging.MessageKind
 
 object config {
   val threshold = 100000 // Must be >= 1
@@ -91,6 +99,23 @@ class HostTracker {
         } catch { case e : IOException => e.printStackTrace() }
       })
   }
+  
+   // used to send message directly to a specific host, e.g. planner
+  def unicast(host: String, msgContent: String) = {
+    var ipAddress = Misc.getIPAddress(host)
+    if (Misc.isLocalHost(host)) {
+      ipAddress = "127.0.0.1"
+    }
+    
+    mupd8Hosts.filter(_._1.equals(ipAddress)).foreach((entry) => {
+      try {
+        entry._2.write(msgContent.getBytes())
+        entry._2.flush
+      } catch {
+        case e: IOException => e.printStackTrace()
+      }
+    })
+  }
 
   override def toString() : String = synchronized {
     mupd8Hosts.keySet.toString
@@ -105,6 +130,7 @@ class MessageServerThread(val port : Int) {
   val pool : ExecutorService = Executors.newCachedThreadPool()
   var ssocket : ServerSocket = null
   def run() = {
+    println(" attemp to listen TO :" + port)
     ssocket = new ServerSocket(port)
     println("server started, listening " + port)
     try {
@@ -148,8 +174,7 @@ class RequestHandler(
           line = Misc.excToOption(in.readLine)
           line != None
         }) {
-        out.write(cmdResponse(line.get, out).getBytes)
-        out.flush
+        cmdResponse(line.get)
       }
     } catch {
       case e : Exception => {
@@ -170,6 +195,7 @@ class RequestHandler(
     }
   }
 
+  /*
   def cmdResponse(cmd : String, out : OutputStream) : String = {
     // cmd format: "update remove/add " + host
     println("#" + cmd)
@@ -207,7 +233,51 @@ class RequestHandler(
       }
     }
     optResp.getOrElse("Syntax error") + "\n"
+  }*/
+  
+  
+   def cmdResponse(cmd: String): Unit = {
+
+    def constructMessage(msgKind: MessageKind.Value, msgContent: String): String = {
+      MessageKind.MessageBegin + msgKind + ":" + msgContent.toString() + "\n"
+    }
+
+    MessageParser.getMessage(cmd) match {
+      case msg: NodeFailureMessage =>
+        hostTracker.broadcast(msgTracker.getLastCmd.get + "\n")
+        hostTracker.removeHost(msg.getFailedNodeName())
+      case msg: NodeJoinMessage => hostTracker.broadcast(constructMessage(MessageKind.NODE_JOIN, msg.toString()))
+      case msg: HostRequestMessage =>
+        println(" PROCESSING HOST REQUEST")
+        var hostlist = ""
+        var hostArray = hostTracker.mupd8Hosts.keySet.toArray.sorted
+        for ((x, i) <- hostArray.view.zipWithIndex) {
+          hostlist += hostArray(i)
+          hostlist += ","
+        }
+        var mesg = constructMessage(MessageKind.HOST_LIST, hostlist)
+        hostTracker.unicast((msg.asInstanceOf[HostRequestMessage]).getSender(), mesg)
+      case msg: NodeStatusReportMessage =>
+        println(" received message :" + msg)
+        var mesg = constructMessage(MessageKind.NODE_STATUS_REPORT, msg.toString())
+        hostTracker.unicast((msg.asInstanceOf[NodeStatusReportMessage]).getRecipient, mesg)
+      case msg: LoadDistInstructMessage =>
+        println(" reeived request for redistribution" + msg)
+        var mesg = constructMessage(MessageKind.LOAD_DIST_INSTRUCT, msg.toString())
+        hostTracker.unicast((msg.asInstanceOf[LoadDistInstructMessage]).getDestHost, mesg)
+        hostTracker.unicast((msg.asInstanceOf[LoadDistInstructMessage]).getSourceHost, mesg)
+      case msg: UpdateRingMessage =>
+        println("changing ring" + msg)
+        hostTracker.broadcast(constructMessage(MessageKind.UPDATE_RING, msg.toString()))
+      case _ => "Syntax Error"
+    }
+    null
+
   }
+  
+  
+  
+  
 }
 
 object MessageServer {

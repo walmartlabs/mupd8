@@ -22,11 +22,13 @@ public class NodeStatisticsReport {
 	private final long timestamp;
 	private final double avgLoad;
 	private final String[] hotKeys;
+	private String[] redistKeys;
 
 	public static final String host_name = "hostname";
 	public static final String time_stamp = "timestamp";
 	public static final String avg_load = "avgload";
 	public static final String hot_keys = "hotkeys";
+	public static final String redist_keys = "redistkeys";
 
 	public NodeStatisticsReport(String hostname, long timestamp,
 			double avgLoad, String[] hotKeys) {
@@ -34,6 +36,7 @@ public class NodeStatisticsReport {
 		this.timestamp = timestamp;
 		this.avgLoad = avgLoad;
 		this.hotKeys = hotKeys;
+		assessNeedToRedistribute();
 	}
 
 	public String getHostname() {
@@ -46,6 +49,10 @@ public class NodeStatisticsReport {
 
 	public String[] getHotKeys() {
 		return hotKeys;
+	}
+
+	public String[] getRedistKeys() {
+		return redistKeys;
 	}
 
 	public static String getTimeStamp() {
@@ -72,6 +79,19 @@ public class NodeStatisticsReport {
 			}
 		}
 		builder.append(")");
+		builder.append(",");
+		builder.append(redist_keys + "->");
+		builder.append("(");
+		if (redistKeys != null) {
+			for (String hotKey : redistKeys) {
+				builder.append(hotKey);
+				builder.append(",");
+			}
+			if (redistKeys.length > 0) {
+				builder.deleteCharAt(builder.length() - 1);
+			}
+		}
+		builder.append(")");
 		return new String(builder);
 	};
 
@@ -79,14 +99,19 @@ public class NodeStatisticsReport {
 		String hostname = getProperty(content, host_name);
 		String timestamp = getProperty(content, time_stamp);
 		String avgLoad = getProperty(content, avg_load);
-		String hotKeys = content.substring(content.indexOf(hot_keys + "->")
-				+ hot_keys.length() + 2);
-		String[] keys = null;
-		if (!hotKeys.equals("()")) {
-			keys = hotKeys.substring(1, hotKeys.length() - 1).split(",");
-		}
+		String [] hotKeys = getPropertyList(content, hot_keys);
 		return new NodeStatisticsReport(hostname, Long.parseLong(timestamp),
-				Double.parseDouble(avgLoad), keys);
+				Double.parseDouble(avgLoad), hotKeys);
+	}
+
+	private void assessNeedToRedistribute() {
+		if (hotKeys != null && hotKeys.length > 0 && avgLoad > 1.5) {
+			int numKeysToRedist = hotKeys.length == 1 ? 1 : hotKeys.length / 2;
+			redistKeys = new String[numKeysToRedist];
+			for (int i = 0; i < redistKeys.length; i++) {
+				redistKeys[i] = hotKeys[i];
+			}
+		}
 	}
 
 	private static String getProperty(String content, String key) {
@@ -94,12 +119,17 @@ public class NodeStatisticsReport {
 				content.indexOf(key + "->") + key.length() + 2,
 				content.indexOf(",", content.indexOf(key + "->")));
 		return value;
-
+	}
+	
+	private static String[] getPropertyList(String content, String key) {
+		String value = content.substring(content.indexOf("(", content.indexOf(key + "->")) + 1,
+				          content.indexOf(")"));
+		return value.split(",");
 	}
 
 	public static void main(String args[]) {
 		NodeStatisticsReport report = new NodeStatisticsReport("localhost",
-				System.currentTimeMillis(), 49.334,
+				System.currentTimeMillis(), 1.501,
 				new String[] { "abc", "def" });
 		String rep = report.toString();
 		System.out.println(" initial report: " + rep);
