@@ -15,10 +15,7 @@
  *
  */
 package com.walmartlabs.mupd8.messaging
-import com.walmartlabs.mupd8.messaging.Message
-import com.walmartlabs.mupd8.messaging.MessageHandler
-import com.walmartlabs.mupd8.messaging.NodeFailureMessage
-import com.walmartlabs.mupd8.messaging.HostRequestMessage
+
 import com.walmartlabs.mupd8.AppStaticInfo
 import com.walmartlabs.mupd8.HashRing
 import com.walmartlabs.mupd8.Misc._
@@ -26,7 +23,7 @@ import com.walmartlabs.mupd8.Misc._
 class BasicMessageHandler(val staticInfo: AppStaticInfo, var ring: HashRing) extends MessageHandler {
 
   override def initialize() = {}
-  
+
   def actOnMessage(msg: Message) {
 
     def handleFailedNodeMessage(msg: NodeFailureMessage): Unit = {
@@ -44,12 +41,12 @@ class BasicMessageHandler(val staticInfo: AppStaticInfo, var ring: HashRing) ext
     def handleNodeJoinMessage(msg: NodeJoinMessage): Unit = {
       System.out.println(" Welcome :" + msg.getJoiningNode())
     }
-    
+
     def handleHostListMessage(msg: HostListMessage): Unit = {
       System.out.println(" Received host list from message server");
       staticInfo.setSystemHosts(msg.getHostList())
     }
-    
+
     val response = msg match {
       case msg: NodeFailureMessage => handleFailedNodeMessage(msg)
       case msg: HostListMessage => handleHostListMessage(msg)

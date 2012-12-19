@@ -15,8 +15,6 @@
  *
  */
 package com.walmartlabs.mupd8.messaging
-import com.walmartlabs.mupd8.messaging.Message
-
 
 trait MessageHandler {
   def actOnMessage(message: Message)

@@ -15,7 +15,6 @@
  *
  */
 package com.walmartlabs.mupd8
-import com.walmartlabs.mupd8.AppStaticInfo
 import com.walmartlabs.mupd8.Misc._
 
 
@@ -31,12 +30,12 @@ object Mupd8Utils {
     index
   }
 
-   
-   
+
+
   def hash2Float(key: Any): Float = {
     val INTMAX: Long = Int.MaxValue.toLong
     val HASH_BASE: Long = Int.MaxValue.toLong - Int.MinValue.toLong
     (key.hashCode.toLong + INTMAX).toFloat / HASH_BASE
   }
-  
+
 }
