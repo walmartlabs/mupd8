@@ -35,6 +35,8 @@ import org.jboss.netty.buffer.{ ChannelBuffers, ChannelBuffer }
 import org.jboss.netty.channel.{ ChannelHandlerContext, Channel }
 import org.jboss.netty.handler.codec.oneone.OneToOneEncoder
 import org.jboss.netty.handler.codec.replay.ReplayingDecoder
+import com.walmartlabs.mupd8.application.binary.Slate
+import com.walmartlabs.mupd8.application.binary.IdentityPerformers
 import com.walmartlabs.mupd8.application.binary
 import com.walmartlabs.mupd8.compression.CompressionFactory
 import com.walmartlabs.mupd8.compression.CompressionService
@@ -417,7 +419,6 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
 object GT {
   type Key = Array[Byte]
   type Event = Array[Byte]
-  type Slate = Array[Byte]
   type Priority = Int
 
   val source: Priority = 96 * 1024
@@ -429,14 +430,14 @@ object GT {
 import GT._
 
 trait IoPool {
-  def fetch(name: String, key: Key, next: Option[Slate] => Unit)
-  def write(columnName: String, key: Key, slate: Slate): Boolean
+  def fetch(name: String, key: Key, next: Option[Array[Byte]] => Unit)
+  def write(columnName: String, key: Key, slate: Array[Byte]): Boolean
   def pendingCount = 0
 }
 
 class NullPool extends IoPool {
-  def fetch(name: String, key: Key, next: Option[Slate] => Unit) { next(None) }
-  def write(columnName: String, key: Key, slate: Slate): Boolean = true
+  def fetch(name: String, key: Key, next: Option[Array[Byte]] => Unit) { next(None) }
+  def write(columnName: String, key: Key, slate: Array[Byte]): Boolean = true
 }
 
 class CassandraPool(
@@ -470,7 +471,7 @@ class CassandraPool(
   val selector = Pelops.createSelector(poolName) // TODO: Should this be per thread?
   val pool = new java.util.concurrent.ThreadPoolExecutor(10, 50, 5, TimeUnit.SECONDS, new LinkedBlockingQueue[Runnable]) // TODO: We can drop events unless we have a Rejection Handler or LinkedQueue
 
-  def fetch(name: String, key: Key, next: Option[Slate] => Unit) {
+  def fetch(name: String, key: Key, next: Option[Array[Byte]] => Unit) {
     pool.submit(run {
       val start = java.lang.System.nanoTime()
       val col = excToOption(selector.getColumnFromRow(getCF(name), Bytes.fromByteArray(key), Bytes.fromByteArray(name.getBytes), ConsistencyLevel.QUORUM))
@@ -483,7 +484,7 @@ class CassandraPool(
     })
   }
 
-  def write(columnName: String, key: Key, slate: Slate) = {
+  def write(columnName: String, key: Key, slate: Array[Byte]) = {
     val compressed = cService.compress(slate)
     val mutator = Pelops.createMutator(poolName)
     mutator.writeColumn(
@@ -554,7 +555,7 @@ class SlateCache(val io: IoPool, val usageLimit: Long) {
     item.map(_.slate)
   }
 
-  def waitForSlate(akey: (String, Key), action: Slate => Unit) {
+  def waitForSlate(akey: (String, Key), action: Slate => Unit, updater : binary.Updater, doSafePut : Boolean = true) {
     val skey = buildKey(akey._1, akey._2)
     lock.acquire()
     val item = table.get(skey)
@@ -567,19 +568,26 @@ class SlateCache(val io: IoPool, val usageLimit: Long) {
       action(p.slate)
     } getOrElse {
       while (io.pendingCount > 200) java.lang.Thread.sleep(100)
-      io.fetch(akey._1, akey._2, p => action(safePut(akey, p.getOrElse("{}" getBytes))))
+      def slateFromBytes(p:Array[Byte]) = { updater.toSlate(p) }
+      if( doSafePut ) {
+        io.fetch(akey._1, akey._2, p => action(safePut(akey, p.map {slateFromBytes}.getOrElse(updater.getDefaultSlate()))))
+      } else {
+        io.fetch(akey._1, akey._2, p => action(p.map {slateFromBytes}.getOrElse(updater.getDefaultSlate())))
+      }
     }
   }
+
+  @inline private def bytesConsumed(skey : String, item : Slate) = 2*skey.length + item.getBytesSize + 2*objOverhead
 
   private def unLockedPut(skey: String, value: Slate, dirty: Boolean = true) = {
     val newVal = new SlateValue(value, new Node(skey), dirty)
     lru.add(newVal.keyRef)
-    currentUsage += 2 * skey.length + value.size + 2 * objOverhead
+    currentUsage += bytesConsumed(skey, value)
     val oldVal = table.put(skey, newVal)
     assert(dirty || oldVal == None)
     oldVal map { p =>
       lru.remove(p.keyRef)
-      currentUsage -= 2 * skey.length + p.slate.size + 2 * objOverhead
+      currentUsage -= bytesConsumed(skey, value)
     }
 
     var count = 0
@@ -592,7 +600,7 @@ class SlateCache(val io: IoPool, val usageLimit: Long) {
           // Potential infinite loop here, which is why we are forced to use count
           lru.add(p.keyRef)
         } else {
-          currentUsage -= 2 * item.length + p.slate.size + 2 * objOverhead
+          currentUsage -= bytesConsumed(skey, value)
           table.remove(item)
         }
       } getOrElse {
@@ -849,23 +857,28 @@ case class PerformerPacket(
     val name = performer.name
 
     val cache = appRun.getTLS(pid, key).slateCache
-    val optSlate = Option(performer.mtype == Updater) map { _ =>
-      val s = cache.getSlate((name, key))
-      s map {
-        p => log("Succeeded for " + name + "," + new String(key) + " " + p)
-      } getOrElse {
-        log("Failed fetch for " + name + "," + new String(key))
-        // Re-introduce self after issuing a read
-        cache.waitForSlate((name, key), _ => appRun.pool.put(this.getKey, this))
+    val optSlate = 
+      if (performer.mtype == Updater) {
+        Some { 
+          val s = cache.getSlate((name,key))
+          s map {
+            p => log("Succeeded for " +  name + "," + new String(key) + " " + p)
+          } getOrElse {
+            log("Failed fetch for " + name + "," + new String(key))
+            // Re-introduce self after issuing a read
+            cache.waitForSlate((name,key),_ => appRun.pool.put(this.getKey, this), appRun.getUpdater(pid))
+          }
+          s
+        }
+      } else {
+        None
       }
-      s
-    }
 
     if (optSlate != Some(None)) {
       val slate = optSlate.flatMap(p => p)
 
       slate.map(s =>
-        log("Update now " + "DBG for performer " + name + " Key " + str(key) + " \nEvent " + str(event) + "\nSlate " + str(s)))
+        log("Update now " + "DBG for performer " + name + " Key " + str(key) + " \nEvent " + str(event) + "\nSlate " + str(s.toBytes())))
 
       val tls = appRun.getTLS
       tls.perfPacket = this
@@ -987,9 +1000,9 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities {
 
   //  import com.walmartlabs.mupd8.application.SlateSizeException
   @throws(classOf[SlateSizeException])
-  override def replaceSlate(slate: Array[Byte]) {
-    if (slate.size >= Misc.SLATE_CAPACITY)
-      throw new SlateSizeException(slate.size, Misc.SLATE_CAPACITY - 1)
+  override def replaceSlate(slate: Slate) {
+    if (slate.getBytesSize() >= Misc.SLATE_CAPACITY) 
+      throw new SlateSizeException(slate.getBytesSize(), Misc.SLATE_CAPACITY-1)
     // TODO: Optimize replace slate to avoid hash table look ups
     val name = appRun.app.performers(perfPacket.pid).name
     assert(appRun.app.performers(perfPacket.pid).mtype == Updater)
@@ -1069,8 +1082,8 @@ class AppRuntime(appID: Int,
   def getSlate(key: (String, Key)) = {
     assert(pool.getDestinationHost(PerformerPacket.getKey(app.performerName2ID(key._1), key._2)) == pool.cluster.self)
     val future = new Later[Slate]
-    getTLS(app.performerName2ID(key._1), key._2).slateCache.waitForSlate(key, future.set(_))
-    Option(future.get())
+    getTLS(app.performerName2ID(key._1), key._2).slateCache.waitForSlate(key, future.set(_), IdentityPerformers.IDENTITY_UPDATER_INSTANCE, false)
+    Option((future.get()).toBytes())
   }
 
   val maxWorkerCount = 2 * Runtime.getRuntime.availableProcessors
@@ -1231,7 +1244,7 @@ class AppRuntime(appID: Int,
     val slateVal = item._2
     val colname = key.take(key.indexOf("~~~"))
     // TODO: .getBytes may not work the way you want it to!! Encoding issues!
-    val suc = storeIo.write(colname, key.drop(colname.length + 3).getBytes, slateVal.slate)
+    val suc = storeIo.write(colname, key.drop(colname.length + 3).getBytes, slateVal.slate.toBytes())
     if (suc) {
       slateVal.dirty = false
       log("Wrote record for " + colname + " " + key)

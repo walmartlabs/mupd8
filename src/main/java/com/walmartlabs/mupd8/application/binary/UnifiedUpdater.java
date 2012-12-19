@@ -18,6 +18,7 @@
 package com.walmartlabs.mupd8.application.binary;
 
 
+
 /** An Updater component of an application.
  *
  * This Updater takes all incoming events and slates and folds/merges them.
@@ -42,5 +43,5 @@ public interface UnifiedUpdater extends Performer {
      *                    (not a Set<byte[]> because slates to be merged
      *                     need not be unique)
      */
-	void update(PerformerUtilities submitter, String stream, byte[] key, byte[][] events, byte[][] slates);
+	void update(PerformerUtilities submitter, String stream, byte[] key, byte[][] events, Slate[] slates);
 }

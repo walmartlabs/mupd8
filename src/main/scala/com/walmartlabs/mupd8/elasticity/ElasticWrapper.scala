@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.collection.mutable.HashMap
 import java.util.ArrayList
 import com.walmartlabs.mupd8.Mupd8Utils
+import com.walmartlabs.mupd8.application.binary.Slate
 import com.walmartlabs.mupd8.application.binary.Updater;
 import com.walmartlabs.mupd8.application.statistics.PrePerformer
 import com.walmartlabs.mupd8.application.binary.PerformerUtilities
@@ -59,12 +60,12 @@ class ElasticWrapper(val updater: Updater, prePerformer: PrePerformer) extends U
     buffer.clear()
   }
 
-  def actualUpdate(submitter: PerformerUtilities, stream: String, key: Array[Byte], event: Array[Byte], slate: Array[Byte]) = {
+  def actualUpdate(submitter: PerformerUtilities, stream: String, key: Array[Byte], event: Array[Byte], slate: Slate) = {
     prePerformer.prePerform(key, event)
     updater.update(submitter, stream, key, event, slate)
   }
 
-  override def update(submitter: PerformerUtilities, stream: String, key: Array[Byte], event: Array[Byte], slate: Array[Byte]) = {
+  override def update(submitter: PerformerUtilities, stream: String, key: Array[Byte], event: Array[Byte], slate: Slate) = {
     if (loadRedistributionInProgress && oracle.isMovingKey(key)) {
       var fl = Mupd8Utils.hash2Float(key)
       keyHashes += (fl -> key)
@@ -80,6 +81,14 @@ class ElasticWrapper(val updater: Updater, prePerformer: PrePerformer) extends U
     } else {
       actualUpdate(submitter, stream, key, event, slate)
     }
+  }
+  
+  override def toSlate(bytes : Array[Byte]) = {
+    updater.toSlate(bytes)
+  }
+  
+  override def getDefaultSlate() = {
+    updater.getDefaultSlate()
   }
 
 }
