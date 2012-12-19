@@ -18,6 +18,7 @@ package com.walmartlabs.mupd8.application.statistics;
 
 import com.walmartlabs.mupd8.application.binary.Performer;
 import com.walmartlabs.mupd8.application.binary.PerformerUtilities;
+import com.walmartlabs.mupd8.application.binary.Slate;
 import com.walmartlabs.mupd8.application.binary.Updater;
 
 public class UpdateWrapper implements Updater {
@@ -48,7 +49,7 @@ public class UpdateWrapper implements Updater {
 
 	@Override
 	public void update(PerformerUtilities submitter, String stream, byte[] key,
-			byte[] event, byte[] slate) {
+			byte[] event, Slate slate) {
 		prePerformer.prePerform(key, event);
 		updater.update(submitter, stream, key, event, slate);
 	}
@@ -56,5 +57,15 @@ public class UpdateWrapper implements Updater {
 	public void setUpdater(Updater updater) {
 		this.updater = updater;
 	}
+
+    @Override
+    public Slate toSlate(byte[] bytes) {
+        return updater.toSlate(bytes);
+    }
+    
+    @Override
+    public Slate getDefaultSlate() {
+        return updater.getDefaultSlate();
+    }
 
 }
