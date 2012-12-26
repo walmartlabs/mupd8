@@ -1165,7 +1165,7 @@ class AppRuntime(appID: Int,
       //   Thread.sleep(sleepTime)
       // }
       if (data._key.size <= 0) {
-        println("No key/Invalid key in Source Event " + excToOption(str(data._value)))
+        log("No key/Invalid key in Source Event " + excToOption(str(data._value)))
       } else {
         pool.putSource(PerformerPacket(
           source,
