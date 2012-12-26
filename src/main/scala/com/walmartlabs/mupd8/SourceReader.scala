@@ -27,6 +27,8 @@ import java.io.FileReader
 import java.lang.Exception
 import org.codehaus.jackson._
 import org.codehaus.jackson.map.ObjectMapper
+import annotation.tailrec
+import java.util.Random
 
 /** A default JSON Source Reader
  *
@@ -39,7 +41,8 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
   val sourceStr = args.get(0)
   val keyStr = args.get(1)
   val sourceArr = sourceStr.split(":")
-  var reader = constructReader
+  private var reader = constructReader
+  private val random = new Random(System.currentTimeMillis());
   val reconnectOnEof = sourceArr(0) match {
     case "file" => false
     case _      => true
@@ -86,35 +89,38 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
                             None}
     }
   }
-  
-  override def hasNext() : Boolean = {
-    var repeat = true
-    while (repeat) {
-      currentLine = readLine(reader)
 
-      if ((currentLine == null) && reconnectOnEof) {
-        println("JSONSource: pausing 10000 ms before reconnecting to source")
-        Thread.sleep(10000);
-        reader = constructReader
-      } else {
-        repeat = false
-      }
-    }
+  override def hasNext() : Boolean = {
+    currentLine = readLine(reconnectOnEof, 0)
     currentLine != null
   }
 
-  def readLine(reader : BufferedReader) : String = {
-    try {
-      if (reader != null) {
-        val line = reader.readLine()
-        // if (line == null) println("JSONSource: reached end of input")
-        line
-      } else {
+  @tailrec
+  private final def readLine(repeat : Boolean, repeatTimes: Int) : String = {
+    val rlt: String = if (reader == null) {
+      if (repeat) {
+        val sleepTime = if (repeatTimes > 6) 6 else repeatTimes;
+        // sleep exponential time
+        Thread.sleep(random.nextInt(1 << (10 + sleepTime)))
+        reader = constructReader
+        // need to call readLine again to double check if reader is well constructed
+        null
+      } else null
+    } else {
+      try {
+        reader readLine
+      } catch {
+        case _ => println("JSONSource: reader readLine failed")
+        if (reader != null) {reader close; reader = null}
         null
       }
-    } catch {
-      case e: Exception => println("JSONSource: reader.readLine threw Exception:"); e.printStackTrace; null
     }
+
+    if (rlt != null) rlt
+    else if (!repeat) {
+      if (reader != null) {reader close; reader = null}
+      null
+    } else readLine(repeat, repeatTimes + 1)
   }
 
   override def getNextDataPair: Mupd8DataPair = {

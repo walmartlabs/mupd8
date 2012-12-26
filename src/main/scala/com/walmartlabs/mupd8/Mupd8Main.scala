@@ -22,6 +22,7 @@ import scala.collection.breakOut
 import scala.collection.JavaConverters._
 import scala.util.Sorting
 import scala.util.parsing.json.JSON
+import util.control.Breaks._
 import java.util.concurrent._
 import java.util.ArrayList
 import java.io.{ File, InputStream, OutputStream }
@@ -1171,13 +1172,16 @@ class AppRuntime(appID: Int,
       override def run() = {
         val cls = Class.forName(sourceClassName)
         val ins = cls.getConstructor(Class.forName("java.util.List")).newInstance(sourceParams).asInstanceOf[com.walmartlabs.mupd8.application.Mupd8Source]
-        while (true) {
-          try {
-            if (ins.hasNext()) {
-              val data = ins.getNextDataPair();
-              continuation(data)
-            }
-          } catch { case e: Exception => println("SourceThread: hit exception"); e.printStackTrace } // catch everything to keep source running
+        breakable {
+          while (true) {
+            try {
+              if (ins.hasNext()) {
+                val data = ins.getNextDataPair();
+                continuation(data)
+              } else break() // end source thread at first no next returns
+            } catch {
+              case e: Exception => println("SourceThread: hit exception"); e.printStackTrace } // catch everything to keep source running
+          }
         }
       }
     }
