@@ -33,7 +33,7 @@ stop() {
 }
 
 status() {
-   curl http://$HOSTNAME:5001/app/status
+   curl http://localhost:6001/app/status
 }
 
 case $1 in
