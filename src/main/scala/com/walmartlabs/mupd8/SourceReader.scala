@@ -24,6 +24,7 @@ import java.io.BufferedReader
 import java.net.Socket
 import java.io.InputStreamReader
 import java.io.FileReader
+import java.lang.Exception
 import org.codehaus.jackson._
 import org.codehaus.jackson.map.ObjectMapper
 
@@ -38,33 +39,40 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
   val sourceStr = args.get(0)
   val keyStr = args.get(1)
   val sourceArr = sourceStr.split(":")
-  val reader = sourceArr(0) match {
-    case "file" => val r = fileReader; if (r != null) r else fileReader
-    case _      => val r = socketReader; if (r != null) r else socketReader
+  var reader = constructReader
+  val reconnectOnEof = sourceArr(0) match {
+    case "file" => false
+    case _      => true
   }
 
   private var currentLine : String = null
   private val objMapper = new ObjectMapper
 
+  def constructReader : BufferedReader = {
+    sourceArr(0) match {
+      case "file" => fileReader
+      case _      => socketReader
+    }
+  }
+
   def fileReader : BufferedReader = {
     try {
       new BufferedReader(new FileReader(sourceArr(1)))
     } catch {
-      case e: Throwable => {println("JSONSource: fileReader hit exception");
+      case e: Exception => {println("JSONSource: fileReader hit exception");
                             e.printStackTrace;
-                            Thread.sleep(10000);
                             null}
     }
   }
 
   def socketReader : BufferedReader = {
     try {
+      println("JSONSource: connecting to "+sourceArr(0)+" port "+sourceArr(1))
       val socket = new Socket(sourceArr(0), sourceArr(1).toInt)
       new BufferedReader(new InputStreamReader(socket.getInputStream()))
     } catch {
-      case e: Throwable => {println("JSONSource: socketReader hit exception");
+      case e: Exception => {println("JSONSource: socketReader hit exception");
                             e.printStackTrace;
-                            Thread.sleep(10000);
                             null}
     }
   }
@@ -79,14 +87,34 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
     }
   }
   
-  override def hasNext() = {
-    if (reader == null) {println("JSONSource: reader is null"); false}
-    currentLine = try {
-      reader.readLine()
-    } catch {
-      case e: Exception => println("JSONSource: reader.readLine returns null"); e.printStackTrace; null
+  override def hasNext() : Boolean = {
+    var repeat = true
+    while (repeat) {
+      currentLine = readLine(reader)
+
+      if ((currentLine == null) && reconnectOnEof) {
+        println("JSONSource: pausing 10000 ms before reconnecting to source")
+        Thread.sleep(10000);
+        reader = constructReader
+      } else {
+        repeat = false
+      }
     }
     currentLine != null
+  }
+
+  def readLine(reader : BufferedReader) : String = {
+    try {
+      if (reader != null) {
+        val line = reader.readLine()
+        // if (line == null) println("JSONSource: reached end of input")
+        line
+      } else {
+        null
+      }
+    } catch {
+      case e: Exception => println("JSONSource: reader.readLine threw Exception:"); e.printStackTrace; null
+    }
   }
 
   override def getNextDataPair: Mupd8DataPair = {

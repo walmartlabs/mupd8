@@ -19,6 +19,7 @@ package com.walmartlabs.mupd8
 
 import scala.collection._
 import scala.collection.breakOut
+import scala.collection.immutable.StringOps
 import scala.collection.JavaConverters._
 import scala.util.Sorting
 import scala.util.parsing.json.JSON
@@ -866,7 +867,7 @@ case class PerformerPacket(
           } getOrElse {
             log("Failed fetch for " + name + "," + new String(key))
             // Re-introduce self after issuing a read
-            cache.waitForSlate((name,key),_ => appRun.pool.put(this.getKey, this), appRun.getUpdater(pid))
+            cache.waitForSlate((name,key),_ => appRun.pool.put(new StringOps(this.getKey), this), appRun.getUpdater(pid))
           }
           s
         }
@@ -877,8 +878,8 @@ case class PerformerPacket(
     if (optSlate != Some(None)) {
       val slate = optSlate.flatMap(p => p)
 
-      slate.map(s =>
-        log("Update now " + "DBG for performer " + name + " Key " + str(key) + " \nEvent " + str(event) + "\nSlate " + str(s.toBytes())))
+      // slate.map(s =>
+      //   log("Update now " + "DBG for performer " + name + " Key " + str(key) + " \nEvent " + str(event) + "\nSlate " + str(s.toBytes())))
 
       val tls = appRun.getTLS
       tls.perfPacket = this
@@ -994,7 +995,7 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities {
         if (app.performers(pid).mtype == Mapper)
           appRun.pool.put(packet)
         else
-          appRun.pool.put(packet.getKey, packet)
+          appRun.pool.put(new StringOps(packet.getKey), packet)
       })).getOrElse(log("Bad Stream name" + stream))
   }
 
@@ -1165,7 +1166,7 @@ class AppRuntime(appID: Int,
       //   Thread.sleep(sleepTime)
       // }
       if (data._key.size <= 0) {
-        println("No key/Invalid key in Source Event " + excToOption(str(data._value)))
+        log("No key/Invalid key in Source Event " + excToOption(str(data._value)))
       } else {
         pool.putSource(PerformerPacket(
           source,
