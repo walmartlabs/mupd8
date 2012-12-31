@@ -20,6 +20,10 @@ import scala.collection.parallel.mutable.ParArray
 import com.walmartlabs.mupd8.AppRuntime
 import com.walmartlabs.mupd8.GT._
 
+/*
+ COMMENT: An implementation of LoadTransporter that flushes the in-memory state (cached slates 
+ corresponding to keys in the key-space that is being moved) to cassandra. 
+*/
 class FlushReloadTransporter extends LoadTransporter {
 
   def transferSlates(oracle: ElasticOracle) = {

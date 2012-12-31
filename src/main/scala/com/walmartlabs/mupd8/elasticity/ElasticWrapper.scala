@@ -46,6 +46,12 @@ class ElasticWrapper(val updater: Updater, prePerformer: PrePerformer) extends U
     //TODO: ensure proper synchronization
   }
 
+  /*
+   COMMENT: When the in-memory state (set of cached slates belonging to the key space being shifted) 
+   has been transferred to another node, this method is invoked. The wrapped instance of Updater now acts
+   as a Mapper and re-publishes the key,event pairs received at this node but now owned by another node
+   as the ownership of a key space has been changed. 
+  */
   def setLoadRedistStateTransferCompleted(): Unit = {
     // before we begin emptying the buffer, it must be guaranteed that 
     // the buffer is bounded that is no  more traffic is being routed to this buffer
@@ -59,12 +65,21 @@ class ElasticWrapper(val updater: Updater, prePerformer: PrePerformer) extends U
     buffer.clear()
   }
 
+  /*
+   prePerform using the configured PrePerformer followed by a regular update call.
+  */
   def actualUpdate(submitter: PerformerUtilities, stream: String, key: Array[Byte], event: Array[Byte], slate: Array[Byte]) = {
     prePerformer.prePerform(key, event)
     updater.update(submitter, stream, key, event, slate)
   }
 
   override def update(submitter: PerformerUtilities, stream: String, key: Array[Byte], event: Array[Byte], slate: Array[Byte]) = {
+    /*
+     COMMENT: if load distribution is in progress and this key belongs to a kep space that is being moved, 
+     then the key,event pair is parked aside and not processed until any in-memory state has been transferred to 
+     the chosen recipient of the key space. Once done, the buffer of key,event pairs is iterated and each element is 
+     sent to the new owner where is is processed as usual.
+    */
     if (loadRedistributionInProgress && oracle.isMovingKey(key)) {
       var fl = Mupd8Utils.hash2Float(key)
       keyHashes += (fl -> key)

@@ -770,6 +770,10 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 
   def isElastic(): Boolean = elastic
 
+  /*
+  COMMENT: A method to deterministically elect a planner. It is called during initialization as well as 
+  in the event when an elected Planner node fails. 
+  */
   def electPlanner(): Unit = synchronized {
     plannerHost = if (systemHosts.length > 0) {
       Sorting.quickSort(systemHosts)
@@ -791,6 +795,10 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 
   def getPlannerHost() = synchronized { plannerHost }
 
+  /*
+   COMMENT: This method is called when a HostListMessage is received from the MessageServer, contianing
+   the list of system hosts. 
+  */
   def setSystemHosts(hosts: Array[String]) = {
     systemHosts = hosts
     this.synchronized {
@@ -1014,6 +1022,15 @@ class AppRuntime(appID: Int,
     new MapUpdatePool[PerformerPacket](poolsize, ring, clusterFactory)
   def getMapUpdatePool() = pool
 
+  /* COMMENT:
+   Mup8 runtme has a MessageHandler that handles all messages received from the MessageServer. 
+   If dynamic load balancing is not configured (elastic flag = false), then a BasicMessageHandler implementation 
+   is chosen, else an AdvancedMessageHandler implementation is chosen that supports handling of messages 
+   echanged as part of the two phase load balancing protocol.
+   Please note that if elastic flag is set true, ElasticAppRuntime (a derived class) is chosen with overriden 
+   methods. Please see ElasticAppRuntime for the overriden methods. 
+  */
+
   val messageHandler = getMessageHandler
   var msClient: MessageServerClient = null
   if (app.messageServerHost != None && app.messageServerPort != None) {
@@ -1028,6 +1045,9 @@ class AppRuntime(appID: Int,
 
   Thread.sleep(2000)
   // talk to message server and update system host list
+  // COMMNENT: if Mud8 runtime is configured without a system host list,
+  // (this may happen when a new node needs to join an exisiting Mup8 cluster)
+  // a HostRequestMessage is sent to the MessageServer. The response contains a list of system hosts.
   if (app.systemHosts.isEmpty) {
     println(" watiing for host")
     msClient.sendMessage(new HostRequestMessage(InetAddress.getLocalHost.getHostAddress))
@@ -1040,6 +1060,8 @@ class AppRuntime(appID: Int,
   Thread.sleep(2000)
   val ring: HashRing = new HashRing(app.systemHosts.length, 0)
 
+  //COMMENT: if dynamic load balancing is configured as true, then 
+  // each mupd8 node deterministically elects a particular planner node
   if (app.isElastic()) {
     app.electPlanner()
   }
@@ -1230,6 +1252,8 @@ class AppRuntime(appID: Int,
   // to avoid exposing the JVM to external input before it is ready
   pool.init()
 
+
+  //COMMMENT:  A utility method to write slate to cassandra. 
   def writeSlateToCassandra(item: (String, SlateValue)) = {
     val key = item._1
     val slateVal = item._2
@@ -1331,6 +1355,10 @@ object Mupd8Main extends Logging {
         if p.get("-s").size != p.get("-d").size
         threads <- excToOption(p.get("-threads").map(_.head.toInt).getOrElse(5))
         val launcher = p.get("-pidFile") == None
+        /*
+        COMMENT: Obtain the 'statistics' and 'elastic' flag from the configuration. These flags determine if monitoring and 
+                dyanmic load balancing is enabled, respectively.  
+        */
         val collectStatistics = if (p.get("-statistics") != None) { p.get("-statistics").get(0).equalsIgnoreCase("true") } else { false }
         val elastic = if (p.get("-elastic") != None) { p.get("-elastic").get(0).equalsIgnoreCase("true") } else { false }
       } yield {

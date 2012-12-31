@@ -100,7 +100,7 @@ class HostTracker {
       })
   }
   
-   // used to send message directly to a specific host, e.g. planner
+   // COMMENT: used to send message directly to a specific host, e.g. planner
   def unicast(host: String, msgContent: String) = {
     var ipAddress = Misc.getIPAddress(host)
     if (Misc.isLocalHost(host)) {
@@ -195,47 +195,9 @@ class RequestHandler(
     }
   }
 
-  /*
-  def cmdResponse(cmd : String, out : OutputStream) : String = {
-    // cmd format: "update remove/add " + host
-    println("#" + cmd)
-    val tokens = cmd.trim.split("[ \n\t]")
-    val cmdNo = Misc.excToOption(tokens(0).toInt)
-    var optResp : Option[String] = None
-    if (cmdNo.get == 0 || (cmdNo.get > 0 && tokens(1) == "update")) {
-      optResp = tokens(1) match {
-        case "update" => {
-          if (tokens(2) == "remove" || tokens(2) == "source") {
-            if (msgTracker.propose(cmdNo.get, tokens.toList.tail.reduceLeft(_+ " " + _))) {
-              hostTracker.broadcast(msgTracker.getLastCmd.get + "\n")
-              if (tokens(2) == "remove") hostTracker.removeHost(tokens(3))
-            }
-            val res = msgTracker.getLastCmd
-            if (res == None) {
-              Some("CmdNo too High or too Old")
-            } else {
-              res
-            }
-          } else if (tokens(2) == "add") {
-            // broadcasting new host list as string ["host.1", "host.2"]
-            if (msgTracker.propose(cmdNo.get, "update add " + hostTracker.getSortedHostsString)) {
-              println("broadcasting : " + msgTracker.getLastCmd.get)
-              hostTracker.broadcast(msgTracker.getLastCmd.get + "\n")
-            }
-            // need to return cmd to confirm with client msg is processed
-            Some(cmd)
-          } else {
-            Some("Unrecognized update command")
-          }
-        }
-        case "hosts" => Some(hostTracker.toString)
-        case _       => None
-      }
-    }
-    optResp.getOrElse("Syntax error") + "\n"
-  }*/
-  
-  
+ /*
+ COMMENT: Construct response to a message received by the MessageServer. 
+ */  
    def cmdResponse(cmd: String): Unit = {
 
     def constructMessage(msgKind: MessageKind.Value, msgContent: String): String = {
@@ -248,7 +210,6 @@ class RequestHandler(
         hostTracker.removeHost(msg.getFailedNodeName())
       case msg: NodeJoinMessage => hostTracker.broadcast(constructMessage(MessageKind.NODE_JOIN, msg.toString()))
       case msg: HostRequestMessage =>
-        println(" PROCESSING HOST REQUEST")
         var hostlist = ""
         var hostArray = hostTracker.mupd8Hosts.keySet.toArray.sorted
         for ((x, i) <- hostArray.view.zipWithIndex) {

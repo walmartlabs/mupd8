@@ -26,6 +26,15 @@ import com.walmartlabs.mupd8.messaging.ActivityStatus._
 import com.walmartlabs.mupd8.elasticity.TransporterKind
 import com.walmartlabs.mupd8.PerformerPacket
 
+/* COMMMENT
+ Implements the send side part of the two-phase load balancing protocol.
+ The node that is off loading a key space to a another node is termed as the send-side. 
+ At first, the load transporter is invoked to transfe the in-memory state. This is followed by 
+ a mutation of the hash ring reflecting change of ownership. Finally all performer instances
+ are instructed to empty their buffer of parked key,event pairs that are now owned by 
+ another node (the receieve side).  These key,event pairs are then moved over to the
+ received side for actual processing.
+*/
 class LoadDistSendSideExecutor(messageQueue: LinkedBlockingQueue[Message], staticInfo: AppStaticInfo, appRuntime: AppRuntime, ring: HashRing,
   messageHandler: AdvancedMessageHandler, elasticMapUpdatePool: ElasticMapUpdatePool[PerformerPacket]) extends Thread {
 

@@ -26,6 +26,10 @@ import com.walmartlabs.mupd8.application.statistics.PrePerformer
 import java.util.ArrayList
 import scala.collection.mutable.MutableList
 
+/*
+COMMENT: A provider of various entities including MessageHandler, AppRuntime, PlannerHost, StatisticsCollector, TransportHandler
+for a Mupd8 runtime. This class facilitates obtaining the useful entities from elswehere in the code.
+*/
 object RuntimeProvider {
 
   var loadPlanner: LoadPlanner = null;

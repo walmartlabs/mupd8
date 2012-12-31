@@ -16,6 +16,9 @@
  */
 package com.walmartlabs.mupd8.messaging
 
+/*
+COMMENT: Parses the stringified message obtained by a MessageServer and returns the corresponding Message instance.
+*/
 object MessageParser extends App {
 
   def getMessage(msg: String): Message = {
