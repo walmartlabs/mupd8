@@ -121,7 +121,7 @@ object miscM {
     }
   }
 
-  def hash2Float(key: Any): Float = (key.hashCode.toLong + INTMAX).toFloat / HASH_BASE
+  def hash2Double(key: Any): Double = (key.hashCode.toLong + INTMAX).toDouble / HASH_BASE
 
 }
 
@@ -305,7 +305,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
   }
 
   def getDestinationHost(key: Any) =
-    ring(hash2Float(key))
+    ring(hash2Double(key))
 
   private def lock(i1: Int, i2: Int) {
     val (k1, k2) = if (i1 < i2) (i1, i2) else (i2, i1)
