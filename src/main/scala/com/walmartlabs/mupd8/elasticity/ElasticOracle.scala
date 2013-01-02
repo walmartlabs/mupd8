@@ -34,14 +34,14 @@ class ElasticOracle(ring: HashRing, msg: LoadDistInstructMessage) {
   var index = 0
   for (key <- msg.getDistKeys) {
     val keyBytes = key.getBytes()
-    keySpaces(index) = ring.getOffset(hash2Float(key))
+    keySpaces(index) = ring.getOffset(hash2Double(key))
     index += 1
   }
 
   def getRedistKeys() = redistKeys
 
   def isMovingKey(key: Array[Byte]): Boolean = {
-    var keySpace = ring.getOffset((hash2Float(key)))
+    var keySpace = ring.getOffset((hash2Double(key)))
     for (ks <- keySpaces) {
       if (keySpace.equals(ks)) {
         true
