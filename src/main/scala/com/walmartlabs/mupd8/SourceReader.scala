@@ -108,7 +108,9 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source {
       } else null
     } else {
       try {
-        reader readLine
+        val line = reader readLine;
+        if (line == null) {reader close; reader = null}
+        line
       } catch {
         case _ => println("JSONSource: reader readLine failed")
         if (reader != null) {reader close; reader = null}
