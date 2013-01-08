@@ -106,7 +106,9 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
       } else null
     } else {
       try {
-        reader readLine
+        val line = reader readLine;
+        if (line == null) {reader close; reader = null}
+        line
       } catch {
         case e: Exception => error("JSONSource: reader readLine failed", e)
         if (reader != null) {reader close; reader = null}
