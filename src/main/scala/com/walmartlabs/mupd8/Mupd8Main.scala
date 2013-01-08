@@ -19,6 +19,7 @@ package com.walmartlabs.mupd8
 
 import scala.collection._
 import scala.collection.breakOut
+import scala.collection.immutable.StringOps
 import scala.collection.JavaConverters._
 import scala.util.Sorting
 import scala.util.parsing.json.JSON
@@ -865,7 +866,7 @@ case class PerformerPacket(
       } getOrElse {
         log("Failed fetch for " + name + "," + new String(key))
         // Re-introduce self after issuing a read
-        cache.waitForSlate((name, key), _ => appRun.pool.put(this.getKey, this))
+        cache.waitForSlate((name, key), _ => appRun.pool.put(new StringOps(this.getKey), this))
       }
       s
     }
@@ -990,7 +991,7 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities {
         if (app.performers(pid).mtype == Mapper)
           appRun.pool.put(packet)
         else
-          appRun.pool.put(packet.getKey, packet)
+          appRun.pool.put(new StringOps(packet.getKey), packet)
       })).getOrElse(log("Bad Stream name" + stream))
   }
 
