@@ -56,13 +56,13 @@ class HashRing(numTargets : Int, randomSeed : Int = 0) {
   }
 
   /** Map from key [0.0, 1.0] to an unremoved target [0, numTargets). */
-  def apply(key : Float) : Int = {
+  def apply(key : Double) : Int = {
     assert(key > 0, "key must be between [0.0, 1.0]")
     val offset = floor(key * pieces).toInt
     getTarget(offset % pieces)
   }
 
-  def getOffset(key: Float): Int = {
+  def getOffset(key: Double): Int = {
     (floor(key * pieces).toInt) % pieces
   }
    
