@@ -16,7 +16,9 @@
  */
 package com.walmartlabs.mupd8.messaging
 
+import com.walmartlabs.mupd8.HashRing
+
 trait MessageHandler {
   def actOnMessage(message: Message)
-  def initialize()
+  def initialize(ring: HashRing)
 }

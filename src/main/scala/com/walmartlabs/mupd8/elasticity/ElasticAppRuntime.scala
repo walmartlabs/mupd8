@@ -35,7 +35,7 @@ class ElasticAppRuntime(appID: Int,
    two-phase load balancing protocol. 
   */
   override def getMessageHandler(): MessageHandler = {
-    new AdvancedMessageHandler(app, ring, this)
+    new AdvancedMessageHandler(app, this)
   }
 
   /*

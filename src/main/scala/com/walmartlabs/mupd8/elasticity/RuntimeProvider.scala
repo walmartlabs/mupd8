@@ -68,7 +68,8 @@ object RuntimeProvider {
           appRuntime = new ElasticAppRuntime(appID, poolsize, app, useNullPool);
       }
       init(appRuntime)
-      appRuntime.getMessageHandler().initialize()
+      var ring=appRuntime.getHashRing()
+      appRuntime.getMessageHandler().initialize(ring)
       appRuntime
       
     } else {

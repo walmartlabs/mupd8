@@ -43,13 +43,6 @@ class MessageServerClient(
 
   def messageDecoder(callback: MessageHandler, str: String) = callback.actOnMessage(MessageParser.getMessage(str))
 
-  def addRemoveMessage(host: String): Unit = msgQueue.add(MessageServer.REMOVE_HEADER + host)
-
-  
-  def addMessage(msg: Message) = {
-    msgQueue.add(MessageKind.MessageBegin + msg.getKind() + ":" + msg.toString())
-  }
-  
   def run() {
     connect
     while (true) {
@@ -120,7 +113,6 @@ class MessageServerClient(
   }
   
   def processMessage(msg: String): Unit = {
-    val trimmed = msg.substring(msg.indexOf(MessageKind.MessageBegin) + MessageKind.MessageBegin.length())
     messageDecoder(messageHandler, msg)
   }
    

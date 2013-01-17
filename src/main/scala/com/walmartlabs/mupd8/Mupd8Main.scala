@@ -201,7 +201,7 @@ class MUCluster[T <: MapUpdateClass[T]](private var _hosts: Array[(String, Int)]
             println("Connected to " + i + " " + host + ":" + port)
           else {
             if (msClient != null)
-              msClient.addRemoveMessage(getIPAddress(hosts(i)._1))
+             msClient.sendMessage(new NodeFailureMessage(getIPAddress(hosts(i)._1)))
             println("Failed to connect to" + i + " " + host + ":" + port)
           }
         }
@@ -212,8 +212,8 @@ class MUCluster[T <: MapUpdateClass[T]](private var _hosts: Array[(String, Int)]
     assert(dest < hosts.size)
     if (!client.send(dest.toString, obj)) {
       if (msClient != null)
-        msClient.addRemoveMessage(getIPAddress(hosts(dest)._1))
-      log("Failed to send msg to dest " + dest)
+        msClient.sendMessage(new NodeFailureMessage(getIPAddress(hosts(dest)._1)))
+        log("Failed to send msg to dest " + dest)
     }
   }
 }
@@ -790,7 +790,9 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 
   def removeHost(index: Int): Unit = {
     systemHosts = systemHosts.zipWithIndex.filter(_._2 != index) map { case (host, index) => host }
-    electPlanner()
+    if(isElastic()){
+      electPlanner()
+    }
   }
 
   def getPlannerHost() = synchronized { plannerHost }
@@ -1016,8 +1018,7 @@ class AppRuntime(appID: Int,
   val hostUpdateLock = new Object
 
   def getAppStaticInfo(): AppStaticInfo = app
-  def getHashRing(): HashRing = ring
-  def getMessageHandler(): MessageHandler = new BasicMessageHandler(app, ring)
+  def getMessageHandler(): MessageHandler = new BasicMessageHandler(app)
   def initMapUpdatePool(poolsize: Int, ring: HashRing, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
     new MapUpdatePool[PerformerPacket](poolsize, ring, clusterFactory)
   def getMapUpdatePool() = pool
@@ -1059,6 +1060,7 @@ class AppRuntime(appID: Int,
   }
   Thread.sleep(2000)
   val ring: HashRing = new HashRing(app.systemHosts.length, 0)
+  def getHashRing() : HashRing = ring
 
   //COMMENT: if dynamic load balancing is configured as true, then 
   // each mupd8 node deterministically elects a particular planner node

@@ -33,8 +33,9 @@ import com.walmartlabs.mupd8.Misc._
 import com.walmartlabs.mupd8.Mupd8Utils
 import com.walmartlabs.mupd8.Mupd8Main
 
-class AdvancedMessageHandler(val staticInfo: AppStaticInfo, var ring: HashRing, val appRuntime: ElasticAppRuntime) extends MessageHandler {
+class AdvancedMessageHandler(val staticInfo: AppStaticInfo, val appRuntime: ElasticAppRuntime) extends MessageHandler {
 
+  var ring: HashRing = null
   val elasticMapUpdatePool: ElasticMapUpdatePool[PerformerPacket] = appRuntime.getMapUpdatePool().asInstanceOf[ElasticMapUpdatePool[PerformerPacket]]
   var performers: List[Performer] = Nil
   val loadDistSendSideMsgInbox = new LinkedBlockingQueue[Message]
@@ -45,23 +46,31 @@ class AdvancedMessageHandler(val staticInfo: AppStaticInfo, var ring: HashRing, 
 
   def getSendSideHandler() = loadReDistSendSideHandler
 
-  override def initialize() = {
+  override def initialize(ring:HashRing) = {
     loadReDistSendSideHandler.start()
+    this.ring=ring
   }
 
   def actOnMessage(message: Message): Unit = {
 
     def handleFailedNodeMessage(msg: NodeFailureMessage): Unit = {
       val failedHost = msg.getFailedNodeName()
-      val index = {
-        staticInfo.systemHosts.zipWithIndex.find {
-          case (h, i) =>
-            getIPAddress(h) == failedHost
-        }.get._2
+      val failedHostIpAddress = getIPAddress(failedHost)
+      var hostIndex = -1
+      val indexed = staticInfo.systemHosts.zipWithIndex
+      for(host <- indexed){
+         var ipAddress = getIPAddress(host._1)
+         if(ipAddress == failedHostIpAddress){
+           hostIndex=host._2
+         }
       }
-      println("WARN: remove " + failedHost + " with index " + index)
-      ring.remove(index)
-      staticInfo.removeHost(index)
+      if(hostIndex != -1){
+        println("WARN: remove " + failedHost + " with index " + hostIndex)
+        if(ring != null){
+          ring.remove(hostIndex)
+        }
+        staticInfo.removeHost(hostIndex)
+      } 
     }
 
     def handleHostListMessage(msg: HostListMessage): Unit = {
@@ -93,7 +102,7 @@ class AdvancedMessageHandler(val staticInfo: AppStaticInfo, var ring: HashRing, 
       }
     }
 
-    val response = message match {
+     message match {
       case msg: NodeFailureMessage => handleFailedNodeMessage(msg)
       case msg: NodeJoinMessage => handleNodeJoinMessage(msg)
       case msg: HostListMessage => handleHostListMessage(msg)
@@ -119,6 +128,7 @@ class AdvancedMessageHandler(val staticInfo: AppStaticInfo, var ring: HashRing, 
       performer.asInstanceOf[ElasticWrapper].setLoadRedistStateTransferCompleted()
     }
   }
+
 
 }
 
