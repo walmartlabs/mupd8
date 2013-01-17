@@ -19,6 +19,7 @@ package com.walmartlabs.mupd8
 
 import scala.collection._
 import scala.collection.breakOut
+import scala.collection.immutable.StringOps
 import scala.collection.JavaConverters._
 import scala.util.Sorting
 import scala.util.parsing.json.JSON
@@ -119,7 +120,7 @@ object miscM {
     }
   }
 
-  def hash2Float(key: Any): Float = (key.hashCode.toLong + INTMAX).toFloat / HASH_BASE
+  def hash2Double(key: Any): Double = (key.hashCode.toLong + INTMAX).toDouble / HASH_BASE
 
 }
 
@@ -303,7 +304,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
   }
 
   def getDestinationHost(key: Any) =
-    ring(hash2Float(key))
+    ring(hash2Double(key))
 
   private def lock(i1: Int, i2: Int) {
     val (k1, k2) = if (i1 < i2) (i1, i2) else (i2, i1)
@@ -867,7 +868,7 @@ case class PerformerPacket(
       } getOrElse {
         log("Failed fetch for " + name + "," + new String(key))
         // Re-introduce self after issuing a read
-        cache.waitForSlate((name, key), _ => appRun.pool.put(this.getKey, this))
+        cache.waitForSlate((name, key), _ => appRun.pool.put(new StringOps(this.getKey), this))
       }
       s
     }
@@ -992,7 +993,7 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities {
         if (app.performers(pid).mtype == Mapper)
           appRun.pool.put(packet)
         else
-          appRun.pool.put(packet.getKey, packet)
+          appRun.pool.put(new StringOps(packet.getKey), packet)
       })).getOrElse(log("Bad Stream name" + stream))
   }
 
