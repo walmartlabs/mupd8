@@ -356,7 +356,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
       sa = pool(a).keyQueue.size + pool(a).queue.size()
       sa > 50
     }) {
-      java.lang.Thread.sleep((sa - 50) * (sa - 50) / 25 min 1000)
+      java.lang.Thread.sleep((sa - 50L) * (sa - 50L) / 25 min 1000)
     }
     pool(a).queue.put(innerCompare(x, null))
   }
