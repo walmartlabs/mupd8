@@ -388,9 +388,11 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
   val queueStatus = cluster.hosts.map(_ => 0).toArray
   var maxQueueBacklog = 0 // TODO: Make this volatile
   val queueStatusServer = new HttpServer(cluster.port + 1, cluster.hosts.length,
-    s => Option(s.split('/')(1) == "queuestatus") map { _ =>
-      pool.map(p => p.queue.size + p.getSerialQueueSize()).max.toString.getBytes
-    })
+    s => if(s.split('/')(1) == "queuestatus")
+           Some { pool.map(p => p.queue.size + p.getSerialQueueSize()).max.toString.getBytes }
+         else
+           None
+    )
   queueStatusServer.start
 
   val queueStatusUpdater = new Thread(run {
@@ -861,7 +863,7 @@ case class PerformerPacket(
     val name = performer.name
 
     val cache = appRun.getTLS(pid, key).slateCache
-    val optSlate = Option(performer.mtype == Updater) map { _ =>
+    val optSlate = if(performer.mtype == Updater) Some {
       val s = cache.getSlate((name, key))
       s map {
         p => log("Succeeded for " + name + "," + new String(key) + " " + p)
@@ -871,7 +873,8 @@ case class PerformerPacket(
         cache.waitForSlate((name, key), _ => appRun.pool.put(new StringOps(this.getKey), this))
       }
       s
-    }
+    } else
+      None
 
     if (optSlate != Some(None)) {
       val slate = optSlate.flatMap(p => p)
