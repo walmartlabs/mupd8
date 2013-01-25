@@ -1096,7 +1096,7 @@ class AppRuntime(appID: Int,
   private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
 
   def getSlate(key: (String, Key)) = {
-    assert(pool.getDestinationHost(PerformerPacket.getKey(app.performerName2ID(key._1), key._2)) == pool.cluster.self)
+    assert(pool.getDestinationHost(new StringOps(PerformerPacket.getKey(app.performerName2ID(key._1), key._2))) == pool.cluster.self)
     val future = new Later[Slate]
     getTLS(app.performerName2ID(key._1), key._2).slateCache.waitForSlate(key, future.set(_))
     Option(future.get())
@@ -1141,7 +1141,7 @@ class AppRuntime(appID: Int,
       } else {
         val key: (String, Key) = (tok(4), tok(5).map(_.toByte).toArray)
         val poolKey = PerformerPacket.getKey(app.performerName2ID(key._1), key._2)
-        val dest = pool.getDestinationHost(poolKey)
+        val dest = pool.getDestinationHost(new StringOps(poolKey))
         if (pool.cluster.self == dest)
           getSlate(key)
         else {
