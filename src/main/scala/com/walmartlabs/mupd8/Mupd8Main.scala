@@ -535,6 +535,7 @@ class DLList[T] {
 class SlateValue(val slate: Slate, val keyRef: Node[String], var dirty: Boolean = true)
 
 class SlateCache(val io: IoPool, val usageLimit: Long) {
+  println("Creating new SlateCache with IoPool " + io + " and usageLimit " + usageLimit);
   private val lock = new scala.concurrent.Lock
   private val table = new mutable.HashMap[String, SlateValue]()
   private val lru = new DLList[String]
@@ -578,7 +579,7 @@ class SlateCache(val io: IoPool, val usageLimit: Long) {
     }
   }
 
-  @inline private def bytesConsumed(skey : String, item : Slate) = 2*skey.length + item.getBytesSize + 2*objOverhead
+  @inline private def bytesConsumed(skey : String, item : Slate) = 1
 
   private def unLockedPut(skey: String, value: Slate, dirty: Boolean = true) = {
     val newVal = new SlateValue(value, new Node(skey), dirty)
@@ -756,6 +757,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
   val cassHosts = config.getScopedValue(Array("mupd8", "slate_store", "hosts")).asInstanceOf[ArrayList[String]].asScala.toArray
   val cassColumnFamily = config.getScopedValue(Array("mupd8", "application")).asInstanceOf[java.util.HashMap[String, java.lang.Object]].asScala.toMap.head._1
   val cassWriteInterval = Option(config.getScopedValue(Array("mupd8", "slate_store", "write_interval"))) map { _.asInstanceOf[Number].intValue() } getOrElse 15
+  val slateCacheCount = Option(config.getScopedValue(Array("mupd8", "slate_store", "slate_cache_count"))) map { _.asInstanceOf[Number].intValue() } getOrElse 1000
   val compressionCodec = Option(config.getScopedValue(Array("mupd8", "slate_store", "compression"))).getOrElse("gzip").asInstanceOf[String].toLowerCase
 
   var systemHosts = config.getScopedValue(Array("mupd8", "system_hosts")).asInstanceOf[ArrayList[String]].asScala.toArray
@@ -972,7 +974,8 @@ class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PR
 
 class TLS(appRun: AppRuntime) extends binary.PerformerUtilities {
   val objects = appRun.app.performerFactory.map(_.map(_.apply()))
-  val slateCache = new SlateCache(appRun.storeIo, appRun.slateRAM / appRun.pool.poolsize)
+  // val slateCache = new SlateCache(appRun.storeIo, appRun.slateRAM / appRun.pool.poolsize)
+  val slateCache = new SlateCache(appRun.storeIo, appRun.app.slateCacheCount) 
   val queue = new PriorityBlockingQueue[Runnable]
   var perfPacket: PerformerPacket = null
   var startTime: Long = 0
@@ -1081,7 +1084,7 @@ class AppRuntime(appID: Int,
   private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
 
   def getSlate(key: (String, Key)) = {
-    assert(pool.getDestinationHost(PerformerPacket.getKey(app.performerName2ID(key._1), key._2)) == pool.cluster.self)
+    assert(pool.getDestinationHost(new StringOps(PerformerPacket.getKey(app.performerName2ID(key._1), key._2))) == pool.cluster.self)
     val future = new Later[Slate]
     getTLS(app.performerName2ID(key._1), key._2).slateCache.waitForSlate(key, future.set(_), IdentityPerformers.IDENTITY_UPDATER_INSTANCE, false)
     Option((future.get()).toBytes())
@@ -1126,7 +1129,7 @@ class AppRuntime(appID: Int,
       } else {
         val key: (String, Key) = (tok(4), tok(5).map(_.toByte).toArray)
         val poolKey = PerformerPacket.getKey(app.performerName2ID(key._1), key._2)
-        val dest = pool.getDestinationHost(poolKey)
+        val dest = pool.getDestinationHost(new StringOps(poolKey))
         if (pool.cluster.self == dest)
           getSlate(key)
         else {
