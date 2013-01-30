@@ -30,10 +30,17 @@ class ElasticAppRuntime(appID: Int,
   override val app: AppStaticInfo,
   useNullPool: Boolean = false) extends AppRuntime(appID, poolsize, app, useNullPool) {
 
+  /*
+   COMMENT: Override the default message handler with an advanced implementation that supports exchange of messages for the 
+   two-phase load balancing protocol. 
+  */
   override def getMessageHandler(): MessageHandler = {
-    new AdvancedMessageHandler(app, ring, this)
+    new AdvancedMessageHandler(app, this)
   }
 
+  /*
+   COMMENT: Override the default MapUpdate pool,  with an advanced implementation. See ElasticMapUpdate pool for the overriden methods.
+  */
   override def initMapUpdatePool(poolsize: Int, ring: HashRing, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): ElasticMapUpdatePool[PerformerPacket] = {
     new ElasticMapUpdatePool[PerformerPacket](this, poolsize, ring, clusterFactory)
   }

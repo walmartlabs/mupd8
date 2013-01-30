@@ -22,6 +22,12 @@ import com.walmartlabs.mupd8.application.statistics.PerformerStatisticsCollector
 import com.walmartlabs.mupd8.application.statistics.PrePerformer
 import com.walmartlabs.mupd8.application.statistics.PerformerStatisticsCollector
 
+/*
+COMMENT: Each node has a NodeStatisticsMessenger that at a perdiod inteval of 5 seconds, sends a 
+node statistics report to the designated planner node. This report contains various parameters including 
+a list of hot keys. With the default implementation of the planner interface, a non-empty list of hot keys
+is considered by the Planner as candidate keys to be  moved to another node for load balancing. 
+*/
 class NodeStatisticsMessenger extends Runnable {
 
   val nodeStatisticsCollector = RuntimeProvider.getStatisticsCollector()

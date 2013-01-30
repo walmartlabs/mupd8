@@ -44,16 +44,17 @@ class MessageServerTest extends FunSuite {
     val client = new MessageServerClient(messageHandler, "localhost", 4568, 50L)
     val t = new Thread(client)
     t.start
+    Thread.sleep(2000)
     for ( i <- 0 until 5){
       val failedHost = "machine" + random.nextInt(10).toString + ".example.com"
       val mesg = new NodeFailureMessage(failedHost)
-      client.addMessage(mesg)
+      client.sendMessage(mesg)
     }
 
     for ( i <- 0 until 5){
       val joiningHost = "machine" + random.nextInt(10).toString + ".example.com"
       val mesg = new NodeJoinMessage(joiningHost)
-      client.addMessage(mesg)
+      client.sendMessage(mesg)
     }
 
     // give up cpu for client/server to process msgs
@@ -68,8 +69,12 @@ class MessageServerTest extends FunSuite {
 }
 
 class CustomMessageHandler(array: ArrayList[String]) extends MessageHandler {
+ 
+  var ring:HashRing=null
 
-  override def initialize() = {}
+  override def initialize(ring:HashRing) = {
+    this.ring=ring
+  }
 
 
   def actOnMessage(message: Message): Unit = {

@@ -32,25 +32,7 @@ class ElasticMapUpdatePool[T <: MapUpdateClass[T]](val appRuntime: AppRuntime, o
 
   var loadRedistributionActivityInProgress = false
   var hashRingTransformationDone = false;
-
-  var pendingTransformations: Map[Int, Map[Int, Int]] = Map()
-  var movingTargets: List[Int] = List()
-  val lock = new Lock
-  var statusCounter = new AtomicInteger()
   var oracle: ElasticOracle = null
-
-  override def put(key: Any, x: T) {
-    val dest =
-      if (loadRedistributionActivityInProgress) {
-        getDestinationLoadRecevingHost(key)
-      } else {
-        getDestinationHost(key)
-      }
-    if (dest == cluster.self)
-      putLocal(key, x)
-    else
-      cluster.send(dest, x)
-  }
 
   def getDestinationLoadRecevingHost(key: Any) = {
     oracle.getLoadReceiverHostIndex()
@@ -58,15 +40,8 @@ class ElasticMapUpdatePool[T <: MapUpdateClass[T]](val appRuntime: AppRuntime, o
 
   def notifyLoadRedistributionBegin(oracle: ElasticOracle) = synchronized {
     this.oracle = oracle
-    statusCounter.incrementAndGet()
     loadRedistributionActivityInProgress = true
     hashRingTransformationDone = false
-  }
-
-  def notifyLoadRedistributionCompletion(): Boolean = synchronized {
-    // iterate over the output buffer 
-    // and call processKey ove each each (key,x) pair
-    true
   }
 
   def getAppRuntime(): AppRuntime = {

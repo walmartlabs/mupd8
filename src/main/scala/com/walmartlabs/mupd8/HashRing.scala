@@ -74,6 +74,11 @@ class HashRing(numTargets : Int, randomSeed : Int = 0) {
     dropped = dropped :+ target
   }
   
+  /*
+   COMMENT: The hash ring is mutable. It is modified when a key-space changes ownership following 
+   a load redstribution as initiated by the Planner. This method is called during the second phase 
+   of the load redistribuion protocol when all nodes need to modify their version of thehash ring. 
+  */
   def modifyAssignment(offset: Int, dest : Int) = synchronized {
     assignment(offset) = dest
   }

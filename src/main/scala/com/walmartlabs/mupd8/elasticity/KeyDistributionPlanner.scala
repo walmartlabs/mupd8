@@ -25,12 +25,23 @@ import scala.collection.mutable.Queue
 import java.util.ArrayList
 import java.util.Random
 
+/*
+COMMENT: A default built-in implementation of the Planner interface. 
+Planner is responsible for coordinating the two-phase dyanmic load balancing
+protocol. 
+*/
 class KeyDistributionPlanner(val appRuntime: AppRuntime) extends LoadPlanner {
 
+  // COMMENT: refers to the size of the history for node statistics report maintained for each node. 
   val maxReports = 5
   val nodeReports = collection.mutable.Map.empty[String, collection.mutable.ListBuffer[NodeStatisticsReport]]
+  // COMMENT: A list of node that Planner believes to be overloaded and are candidates for shedding of load. 
   val overloadedHosts = new collection.mutable.ListBuffer[String]
   var redistributionInProgress: Boolean = false
+
+  //COMMENT: Nodes at a periodi interval send statistics report via which they can request for a load transfer. 
+  // Planner is the centralized authority that receives all reports and has the discretion in accepting/rejecting 
+  // a load transfer request. Currently only a sinlge load transfer activity can be initiated at once.  
   var redistRequests = new Queue[NodeStatisticsReport]
 
   def receiveNodeStatisticsReport(report: NodeStatisticsReport): Unit = synchronized {
@@ -48,9 +59,21 @@ class KeyDistributionPlanner(val appRuntime: AppRuntime) extends LoadPlanner {
     }
   }
 
+  /*
+   COMMENT: When to accept a load transfer request is critical considering the overhead. 
+   In the current implementation, the Planner trusts each node and relies on the set of hot keys reported
+   by each node. If a hot key is reported by a node, the corresponding key space is moved to another node. 
+   In future, we may opt for a more sophisticated decision tree for accepting/rejecting a load 
+   transfer request, or may have alternate implementations of a Planner.  
+  */
   def assessNeedToRedistributeLoad(report: NodeStatisticsReport): Array[String] = {
     val redistKeys = report.getRedistKeys()
     val numHosts = RuntimeProvider.appStaticInfo.getSystemHosts().length
+
+    /*
+    COMMENT: Only if there are more than 1 host, and hot keys are being reported, 
+    that a load redistribution is initiated. 
+    */
     if (numHosts > 1 && redistKeys != null && redistKeys.length > 0) {
       if (redistributionInProgress == false) {
         redistKeys
@@ -64,7 +87,6 @@ class KeyDistributionPlanner(val appRuntime: AppRuntime) extends LoadPlanner {
 
   def initiateLoadRedistribution(report: NodeStatisticsReport) {
     val redistKeys = report.getRedistKeys
-    println("Initiating redistribution of keys")
     val fl = Mupd8Utils.hash2Float(redistKeys(0).getBytes())
     val sourceHostIndex = appRuntime.getHashRing().apply(fl)
     var destHostIndex = getDestHostIndex(report)
@@ -84,17 +106,17 @@ class KeyDistributionPlanner(val appRuntime: AppRuntime) extends LoadPlanner {
         candidateHosts.add(host)
       }
     }
-    if (candidateHosts.isEmpty()) {
-      -1
-    } else {
-      val rand = new Random()
-      val index = rand.nextInt(candidateHosts.size())
-      val candidateHost = candidateHosts.get(index)
-      val destinationHostIndex = Mupd8Utils.getHostNameToIndex(RuntimeProvider.appStaticInfo, candidateHost)
-      destinationHostIndex
-    }
+    val rand = new Random()
+    val index = rand.nextInt(candidateHosts.size())
+    val candidateHost = candidateHosts.get(index)
+    val destinationHostIndex = Mupd8Utils.getHostNameToIndex(RuntimeProvider.appStaticInfo, candidateHost)
+    destinationHostIndex
+   
   }
 
+  /*
+   COMMENT: In either case of success of failure, we initiate any pending request, if any
+   */
   def notifyLoadRedistributionActivityStatus(status: ActivityStatus): Unit = synchronized {
     status match {
       case SUCCESS => initiatePendingReDistribution()

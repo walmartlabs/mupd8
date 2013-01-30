@@ -15,49 +15,57 @@
  *
  */
 package com.walmartlabs.mupd8.messaging
-import com.walmartlabs.mupd8.messaging.Message
-import com.walmartlabs.mupd8.messaging.MessageHandler
-import com.walmartlabs.mupd8.messaging.NodeFailureMessage
-import com.walmartlabs.mupd8.messaging.HostRequestMessage
+
 import com.walmartlabs.mupd8.AppStaticInfo
 import com.walmartlabs.mupd8.HashRing
 import com.walmartlabs.mupd8.Misc._
 
-class BasicMessageHandler(val staticInfo: AppStaticInfo, var ring: HashRing) extends MessageHandler {
+class BasicMessageHandler(val staticInfo: AppStaticInfo) extends MessageHandler {
 
-  override def initialize() = {}
-  
+  var ring:HashRing=null
+
+  override def initialize(ring:HashRing) = {
+    this.ring=ring
+  }
+
+
   def actOnMessage(msg: Message) {
 
     def handleFailedNodeMessage(msg: NodeFailureMessage): Unit = {
       val failedHost = msg.getFailedNodeName()
-      val index = {
-        staticInfo.systemHosts.zipWithIndex.find {
-          case (h, i) =>
-            getIPAddress(h) == failedHost
-        }.get._2
+      val failedHostIpAddress = getIPAddress(failedHost)
+      var hostIndex = -1
+      val indexed = staticInfo.systemHosts.zipWithIndex
+      for(host <- indexed){
+         var ipAddress = getIPAddress(host._1)
+         if(ipAddress == failedHostIpAddress){
+           hostIndex=host._2 
+         }
       }
-      println("WARN: remove " + failedHost + " with index " + index)
-      ring.remove(index)
+      if(hostIndex != -1){
+        if(ring != null){
+          ring.remove(hostIndex)
+        }
+        staticInfo.removeHost(hostIndex)
+      } 
+      
     }
 
     def handleNodeJoinMessage(msg: NodeJoinMessage): Unit = {
       System.out.println(" Welcome :" + msg.getJoiningNode())
     }
-    
+
     def handleHostListMessage(msg: HostListMessage): Unit = {
       System.out.println(" Received host list from message server");
       staticInfo.setSystemHosts(msg.getHostList())
     }
-    
-    val response = msg match {
+
+      msg match {
       case msg: NodeFailureMessage => handleFailedNodeMessage(msg)
       case msg: HostListMessage => handleHostListMessage(msg)
       case _ => throw new IllegalStateException(" Unknown message type :" + msg)
     }
 
     def getStaticInfo() = staticInfo
-    def getRing() = ring
-
   }
 }

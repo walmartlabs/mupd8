@@ -16,13 +16,11 @@
  */
 package com.walmartlabs.mupd8.elasticity
 
-import com.walmartlabs.mupd8.elasticity.ElasticOracle
-import com.walmartlabs.mupd8.elasticity.LoadTransporter
 import com.walmartlabs.mupd8.AppRuntime
 
 class InMemoryLoadTransporter extends LoadTransporter {
 
-  
+
   def transferSlates(oracle: ElasticOracle) = {
     val appRuntime=RuntimeProvider.appRuntime
     val tls = appRuntime.getTLS
