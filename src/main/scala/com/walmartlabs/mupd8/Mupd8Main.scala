@@ -880,7 +880,6 @@ case class PerformerPacket(
       } getOrElse {
         log("Failed fetch for " + name + "," + new String(key))
         // Re-introduce self after issuing a read
-        // cache.waitForSlate((name, key), _ => appRun.pool.put(new StringOps(this.getKey), this))
         cache.waitForSlate((name,key),_ => appRun.pool.put(new StringOps(this.getKey), this), appRun.getUpdater(pid))
       }
       s
