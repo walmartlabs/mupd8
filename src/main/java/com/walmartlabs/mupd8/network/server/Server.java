@@ -35,6 +35,8 @@ import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
 import com.walmartlabs.mupd8.network.common.*;
 import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
 import org.jboss.netty.handler.codec.replay.ReplayingDecoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
   * Server to direct messages from clients to workers 
@@ -49,6 +51,7 @@ public class Server {
     private ThreadPoolExecutor workerPool;
     private OneToOneEncoder encoder;
     private Callable<ReplayingDecoder<Decoder.DecodingState>> decoderFactory;
+    private static final Logger logger = LoggerFactory.getLogger(Server.class);
 
     public Server(int port, Listener listener, OneToOneEncoder pencoder, Callable<ReplayingDecoder<Decoder.DecodingState>> pdecoderFactory) {
         this.port = port;
@@ -86,12 +89,12 @@ public class Server {
         Channel channel = bootstrap.bind(new InetSocketAddress(port));
         
         if (channel.isBound()) {
-        	System.out.println("SERVER - bound to *:" + port);
+        	logger.info("SERVER is bound to *:" + port);
         	allChannels.add(channel);
         	return true;
         }
         else {
-        	System.err.println("SERVER - failed to bind to *:" + port);
+        	logger.error("SERVER failed to bind to *:" + port);
         	bootstrap.releaseExternalResources();
         	return false;
         }
@@ -99,10 +102,10 @@ public class Server {
 
     public void stop() {
         int largestPoolSize = workerPool.getLargestPoolSize();
-        System.out.println("largest pool size for server worker pool: " + largestPoolSize);
+        logger.info("largest pool size for server worker pool: " + largestPoolSize);
         allChannels.close().awaitUninterruptibly();
         bootstrap.releaseExternalResources();
-        System.out.println("SERVER stopped ...");
+        logger.info("SERVER stopped ...");
     }
 
     public static void main(String[] args) throws Exception {
@@ -122,7 +125,7 @@ public class Server {
             @Override
             public boolean messageReceived(Object packet) {
                 if (packet instanceof Packet) {
-                    System.out.println(packet.toString());
+                    logger.debug("Message received: " + packet.toString());
                     return true;
                 }
                 return false;
@@ -136,7 +139,7 @@ public class Server {
         boolean isStarted = server.start();
         
         if (!isStarted) {
-        	System.err.println("Failed to start, quit ...");
+        	logger.error("Failed to start, quit ...");
         	System.exit(1);
         }
 
