@@ -80,14 +80,10 @@ public class Client {
         });
     }
 
-    public boolean connect(String connId, String host, int port) {
-        return connect(connId, new InetSocketAddress(host, port));
-    }
-
-    public boolean connect(String connId, InetSocketAddress remoteAddr) {
+    public boolean connect(String host, int port) {
+        InetSocketAddress remoteAddr = new InetSocketAddress(host, port);
 
         ChannelFuture future = bootstrap.connect(remoteAddr);
-
         if (!future.awaitUninterruptibly().isSuccess()) {
             System.err.println("--- CLIENT - Failed to connect to server at " +
                     remoteAddr.getHostName() + ":" + remoteAddr.getPort());
@@ -95,7 +91,7 @@ public class Client {
         }
 
         Channel connector = future.getChannel();
-        connectors.put(connId, connector);
+        connectors.put(host, connector);
         return connector.isConnected();
     }
 

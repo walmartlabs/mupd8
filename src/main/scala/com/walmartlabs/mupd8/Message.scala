@@ -14,12 +14,12 @@
  * limitations under the License.
  *
  */
-package com.walmartlabs.mupd8.messaging
-import com.walmartlabs.mupd8.messaging.MessageKind._
-import com.walmartlabs.mupd8.messaging.MessageTransportKind._
+package com.walmartlabs.mupd8
 
-class Message(kind: MessageKind, transportKind: MessageTransportKind) {
-  def getKind(): MessageKind = kind
-  def getTransportKind(): MessageTransportKind = transportKind
-
-}
+abstract class Message extends Serializable
+case class NodeRemoveMessage(val node: String) extends Message
+case class NodeJoinMessage(val node: String) extends Message
+case class UpdateRingMessage(val cmdID: Int, val ring: HashRing2) extends Message
+case class AckOfNewRing(commandId: Int) extends Message
+case class AckOfNodeJoin(val node: String) extends Message
+case class AckOfNodeRemove(val node: String) extends Message

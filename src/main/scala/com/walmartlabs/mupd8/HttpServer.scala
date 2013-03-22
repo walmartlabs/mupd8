@@ -40,10 +40,10 @@ import org.jboss.netty.buffer.ChannelBuffers
 import org.jboss.netty.util.CharsetUtil
 
 class HttpServer(port : Int, maxWorkerCount : Int, mapper : String => Option[Array[Byte]]) {
-  
+
   var allChannels : DefaultChannelGroup = null
   var bootstrap : ServerBootstrap = null
-  
+
   def start : Boolean = {
     val bossPool   = Executors.newCachedThreadPool
     val workerPool = Executors.newCachedThreadPool

@@ -46,19 +46,14 @@ import com.walmartlabs.mupd8.application.statistics.StatisticsBootstrap
 import com.walmartlabs.mupd8.application.statistics.StatisticsConstants
 import com.walmartlabs.mupd8.application.statistics.MapWrapper
 import com.walmartlabs.mupd8.application.statistics.UpdateWrapper
-import com.walmartlabs.mupd8.messaging.MessageHandler
-import com.walmartlabs.mupd8.messaging.BasicMessageHandler
 import com.walmartlabs.mupd8.application.statistics.StatisticsBootstrap
 import com.walmartlabs.mupd8.application.statistics.StatisticsConstants
 import com.walmartlabs.mupd8.application.statistics.MapWrapper
 import com.walmartlabs.mupd8.application.statistics.UpdateWrapper
-import com.walmartlabs.mupd8.elasticity.ElasticWrapper
-import com.walmartlabs.mupd8.elasticity.ElasticWrapper
-import com.walmartlabs.mupd8.messaging.NodeFailureMessage
-import com.walmartlabs.mupd8.messaging.HostRequestMessage
-import com.walmartlabs.mupd8.elasticity.RuntimeProvider
-
 import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
+import com.walmartlabs.mupd8.network.client._
+import com.walmartlabs.mupd8.network.server._
+import com.walmartlabs.mupd8.network.common._
 import scala.collection.JavaConversions
 import grizzled.slf4j.Logging
 
@@ -120,7 +115,7 @@ object miscM {
     }
   }
 
-  def hash2Double(key: Any): Double = (key.hashCode.toLong + INTMAX).toDouble / HASH_BASE
+//  def hash2Double(key: Any): Double = (key.hashCode.toLong + INTMAX).toDouble / HASH_BASE
 
 }
 
@@ -130,28 +125,19 @@ trait MapUpdateClass[T] extends OneToOneEncoder with Runnable with Comparable[T]
   def getKey: Any
 }
 
-class MUCluster[T <: MapUpdateClass[T]](private var _hosts: Array[(String, Int)],
-  val port: Int,
-  encoder: OneToOneEncoder,
-  decoderFactory: () => ReplayingDecoder[network.common.Decoder.DecodingState],
-  onReceipt: T => Unit,
-  msClient: MessageServerClient = null) {
-
-  import com.walmartlabs.mupd8.network.client._
-  import com.walmartlabs.mupd8.network.server._
-  import com.walmartlabs.mupd8.network.common._
+class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
+                                        val port: Int,
+                                        encoder: OneToOneEncoder,
+                                        decoderFactory: () => ReplayingDecoder[network.common.Decoder.DecodingState],
+                                        onReceipt: T => Unit,
+                                        msClient: MessageServerClient = null) extends Logging {
 
   private val callableFactory = new Callable[ReplayingDecoder[network.common.Decoder.DecodingState]] {
     override def call() = decoderFactory()
   }
 
   // hosts can be updated at runtime
-  def hosts = _hosts
-  def hosts_=(hs: Array[(String, Int)]) = {
-    _hosts = hs
-  }
-  def hosts_=(hs: String) = {
-  }
+  def hosts = app.systemHosts
 
   val server = new Server(port, new Listener() {
     override def messageReceived(packet: AnyRef): Boolean = {
@@ -170,51 +156,42 @@ class MUCluster[T <: MapUpdateClass[T]](private var _hosts: Array[(String, Int)]
     }
   }, encoder, callableFactory)
 
-  val self = {
-    hosts.zipWithIndex.find {
-      case ((host, p), i) =>
-        port == p && isLocalHost(host)
-    }.get._2
-  }
+  def self = InetAddress.getLocalHost.getHostName
   println("Host id is " + self)
 
+  // TODO: make it work. not used for now.
   def updateHosts: Unit = {
-    val localhost = if (hosts.isEmpty) Some(InetAddress.getLocalHost()) else None
-    if (localhost != None && hosts.isEmpty) {
-      // if there is no hosts setup in config file,
-      // add this node to message server and get updated host list
-      println("Add node: " + localhost.get + " to cluster")
-    }
+    // if there is no hosts setup in config file,
+    // add this node to message server and get updated host list
+    println("Add node: " + self + " to cluster")
   }
 
   def init() {
     server.start()
     client.init()
-    val finaltime: Long = java.lang.System.currentTimeMillis + (10000 * java.lang.Math.sqrt(hosts.size)).toLong
-    hosts.zipWithIndex.foreach {
-      case ((host, p), i) =>
-        println("Host id " + i + " is " + (host, p))
-        if (i != self) {
-          while (!client.connect(i.toString, host, p) && java.lang.System.currentTimeMillis < finaltime) {
-            java.lang.Thread.sleep(100)
-          }
-          if (client.isConnected(i.toString))
-            println("Connected to " + i + " " + host + ":" + port)
-          else {
-            if (msClient != null)
-             msClient.sendMessage(new NodeFailureMessage(getIPAddress(hosts(i)._1)))
-            println("Failed to connect to" + i + " " + host + ":" + port)
-          }
+    val timeout: Long = java.lang.System.currentTimeMillis + (10000 * java.lang.Math.sqrt(hosts.size)).toLong
+    hosts.filter(_.compareTo(self) != 0).foreach {
+      host => {
+        info("Connecting to {} at port {}", host, port)
+        while (!client.connect(host, port) && java.lang.System.currentTimeMillis < timeout) {
+          java.lang.Thread.sleep(500)
         }
+        if (client.isConnected(host))
+          info("Connected to {} at port {}", host, port)
+        else {
+          if (msClient != null)
+            msClient.sendMessage(NodeRemoveMessage(host))
+          error("Failed to connect to {} at port ", host, port)
+        }
+      }
     }
   }
 
-  def send(dest: Int, obj: T) {
-    assert(dest < hosts.size)
-    if (!client.send(dest.toString, obj)) {
+  def send(dest: String, obj: T) {
+    if (!client.send(dest, obj)) {
       if (msClient != null)
-        msClient.sendMessage(new NodeFailureMessage(getIPAddress(hosts(dest)._1)))
-        log("Failed to send msg to dest " + dest)
+        error("Failed to send msg to " + dest)
+        msClient.sendMessage(NodeRemoveMessage(dest))
     }
   }
 }
@@ -303,8 +280,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
     mod(hash % pool.size)
   }
 
-  def getDestinationHost(key: Any) =
-    ring(hash2Double(key))
+  def getDestinationHost(key: Any): String = ring(key)
 
   private def lock(i1: Int, i2: Int) {
     val (k1, k2) = if (i1 < i2) (i1, i2) else (i2, i1)
@@ -384,6 +360,8 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
       cluster.send(dest, x)
   }
 
+  /*
+   Since hot conductor is not used, comment it out temporarily.
   // Hot Conductor Queue Status
   val queueStatus = cluster.hosts.map(_ => 0).toArray
   var maxQueueBacklog = 0 // TODO: Make this volatile
@@ -396,14 +374,12 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
   queueStatusServer.start
 
   val queueStatusUpdater = new Thread(run {
-    (0 until cluster.hosts.size).foreach { i =>
+    cluster.hosts.foreach { host =>
       excToOptionWithLog {
         java.lang.Thread.sleep(500)
-        if (i != cluster.self) {
-          (for (
-            _ <- Option(!ring.dropped.contains(i));
-            url <- fetchURL("http://" + cluster.hosts(i) + ":" + (cluster.port + 1) + "/queuestatus")
-          ) yield str(url).toInt).getOrElse(0)
+        if (host.compareTo(cluster.self) != 0) {
+          val quote = fetchURL("http://" + host + ":" + (cluster.port + 1) + "/queuestatus")
+          quote map(new String(_).toInt) getOrElse(0)
         } else
           pool.map(p => p.queue.size + p.getSerialQueueSize()).max
       } map { p =>
@@ -415,6 +391,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
   //TODO: Uncomment the following line
   //Do we need a thread pool here
   //queueStatusUpdater.start()
+  */
 
 }
 
@@ -723,11 +700,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
             if (isMapper) {
               new MapWrapper(userProvidedPerformer, prePerformer)
             } else {
-              if (!elastic) {
-                new UpdateWrapper(userProvidedPerformer, prePerformer)
-              } else {
-                new ElasticWrapper(userProvidedPerformer.asInstanceOf[binary.Updater], prePerformer)
-              }
+              new UpdateWrapper(userProvidedPerformer, prePerformer)
             }
           } else {
             userProvidedPerformer
@@ -774,8 +747,8 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
   def isElastic(): Boolean = elastic
 
   /*
-  COMMENT: A method to deterministically elect a planner. It is called during initialization as well as 
-  in the event when an elected Planner node fails. 
+  COMMENT: A method to deterministically elect a planner. It is called during initialization as well as
+  in the event when an elected Planner node fails.
   */
   def electPlanner(): Unit = synchronized {
     plannerHost = if (systemHosts.length > 0) {
@@ -802,7 +775,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 
   /*
    COMMENT: This method is called when a HostListMessage is received from the MessageServer, contianing
-   the list of system hosts. 
+   the list of system hosts.
   */
   def setSystemHosts(hosts: Array[String]) = {
     systemHosts = hosts
@@ -1022,31 +995,18 @@ class AppRuntime(appID: Int,
   val hostUpdateLock = new Object
 
   def getAppStaticInfo(): AppStaticInfo = app
-  def getMessageHandler(): MessageHandler = new BasicMessageHandler(app)
   def initMapUpdatePool(poolsize: Int, ring: HashRing, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
     new MapUpdatePool[PerformerPacket](poolsize, ring, clusterFactory)
   def getMapUpdatePool() = pool
 
-  /* COMMENT:
-   Mup8 runtme has a MessageHandler that handles all messages received from the MessageServer. 
-   If dynamic load balancing is not configured (elastic flag = false), then a BasicMessageHandler implementation 
-   is chosen, else an AdvancedMessageHandler implementation is chosen that supports handling of messages 
-   echanged as part of the two phase load balancing protocol.
-   Please note that if elastic flag is set true, ElasticAppRuntime (a derived class) is chosen with overriden 
-   methods. Please see ElasticAppRuntime for the overriden methods. 
-  */
-
-  val messageHandler = getMessageHandler
-  var msClient: MessageServerClient = null
-  if (app.messageServerHost != None && app.messageServerPort != None) {
-    msClient = new MessageServerClient(messageHandler,
-      app.messageServerHost.get.asInstanceOf[String],
-      app.messageServerPort.get.asInstanceOf[Number].intValue(),
-      1000L)
-    new Thread(msClient, "MessageServerClient").start
-  }
+  val msClient: MessageServerClient = if (app.messageServerHost != None && app.messageServerPort != None) {
+    new MessageServerClient(app.messageServerHost.get.asInstanceOf[String], app.messageServerPort.get.asInstanceOf[Number].intValue(), 1000L)
+  } else null
 
   def getMessageServerClient() = msClient
+
+  val localMessageServer = new Thread(new LocalMessageServer(8900), "Local Message Server")
+  localMessageServer.start
 
   Thread.sleep(2000)
   // talk to message server and update system host list
@@ -1055,7 +1015,7 @@ class AppRuntime(appID: Int,
   // a HostRequestMessage is sent to the MessageServer. The response contains a list of system hosts.
   if (app.systemHosts.isEmpty) {
     println(" watiing for host")
-    msClient.sendMessage(new HostRequestMessage(InetAddress.getLocalHost.getHostAddress))
+    msClient.sendMessage(NodeJoinMessage(InetAddress.getLocalHost.getHostAddress))
     app.synchronized {
       while (app.systemHosts.isEmpty) {
         app.wait
@@ -1063,23 +1023,21 @@ class AppRuntime(appID: Int,
     }
   }
   Thread.sleep(2000)
-  val ring: HashRing = new HashRing(app.systemHosts.length, 0)
+  // TODO: change hashring
+  val ring: HashRing = new HashRing(Vector("host1", "host2", "host3"))
   def getHashRing() : HashRing = ring
 
-  //COMMENT: if dynamic load balancing is configured as true, then 
+  //COMMENT: if dynamic load balancing is configured as true, then
   // each mupd8 node deterministically elects a particular planner node
   if (app.isElastic()) {
     app.electPlanner()
   }
 
   val pool = initMapUpdatePool(poolsize, ring,
-    action => new MUCluster[PerformerPacket](
-      app.systemHosts.map((_, app.internalPort)),
-      app.statusPort + 100,
-      PerformerPacket(0, 0, Array(), Array(), "", this),
-      () => { new Decoder(this) },
-      action,
-      msClient))
+    action => new MUCluster[PerformerPacket](app, app.statusPort + 100,
+                                             PerformerPacket(0, 0, Array(), Array(), "", this),
+                                             () => { new Decoder(this) },
+                                             action, msClient))
 
   val storeIo = if (useNullPool) new NullPool
   else new CassandraPool(
@@ -1145,7 +1103,7 @@ class AppRuntime(appID: Int,
         if (pool.cluster.self == dest)
           getSlate(key)
         else {
-          val slate = fetchURL("http://" + app.systemHosts(dest) + ":" + (app.statusPort + 300) + s)
+          val slate = fetchURL("http://" + dest + ":" + (app.statusPort + 300) + s)
           if (slate == None) {
             // TODO: send remove messageServer
             log("Can't reach dest " + dest)
@@ -1259,7 +1217,7 @@ class AppRuntime(appID: Int,
   pool.init()
 
 
-  //COMMMENT:  A utility method to write slate to cassandra. 
+  //COMMMENT:  A utility method to write slate to cassandra.
   def writeSlateToCassandra(item: (String, SlateValue)) = {
     val key = item._1
     val slateVal = item._2
@@ -1362,8 +1320,8 @@ object Mupd8Main extends Logging {
         threads <- excToOption(p.get("-threads").map(_.head.toInt).getOrElse(5))
         val launcher = p.get("-pidFile") == None
         /*
-        COMMENT: Obtain the 'statistics' and 'elastic' flag from the configuration. These flags determine if monitoring and 
-                dyanmic load balancing is enabled, respectively.  
+        COMMENT: Obtain the 'statistics' and 'elastic' flag from the configuration. These flags determine if monitoring and
+                dyanmic load balancing is enabled, respectively.
         */
         val collectStatistics = if (p.get("-statistics") != None) { p.get("-statistics").get(0).equalsIgnoreCase("true") } else { false }
         val elastic = if (p.get("-elastic") != None) { p.get("-elastic").get(0).equalsIgnoreCase("true") } else { false }
@@ -1374,7 +1332,7 @@ object Mupd8Main extends Logging {
           new MasterNode(args, app, shutdown)
         } else {
           p.get("-pidFile").map(x => writePID(x.head))
-          val api = RuntimeProvider.getMupd8Runtime(0, threads, app, collectStatistics, elastic)
+          val api = new AppRuntime(0, threads, app)
           if (app.sources.size > 0) {
             fetchFromSources(app, api)
           } else {
