@@ -57,7 +57,7 @@ import com.walmartlabs.mupd8.network.common._
 import scala.collection.JavaConversions
 import grizzled.slf4j.Logging
 
-object miscM {
+object miscM extends Logging {
 
   val SLATE_CAPACITY = 1048576 // 1M size
   val INTMAX: Long = Int.MaxValue.toLong
@@ -1008,7 +1008,7 @@ class AppRuntime(appID: Int,
 
   // start local server socket
   val localMessageServer = if (app.messageServerPort != None) {
-    new Thread(new LocalMessageServer(app.messageServerPort.get.asInstanceOf[Number].intValue() + 1), "LocalMessageServer")
+    new Thread(new LocalMessageServer(app.messageServerPort.get.asInstanceOf[Number].intValue() + 1, this), "LocalMessageServer")
   } else {
     error("AppRuntime error: local message server port is None")
     null
@@ -1061,7 +1061,8 @@ class AppRuntime(appID: Int,
   private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
 
   def getSlate(key: (String, Key)) = {
-    assert(pool.getDestinationHost(new StringOps(PerformerPacket.getKey(app.performerName2ID(key._1), key._2))) == pool.cluster.self)
+    val host = pool.getDestinationHost(new StringOps(PerformerPacket.getKey(app.performerName2ID(key._1), key._2)))
+    assert(host.compareTo(pool.cluster.self) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
     val future = new Later[Slate]
     getTLS(app.performerName2ID(key._1), key._2).slateCache.waitForSlate(key, future.set(_))
     Option(future.get())
@@ -1106,8 +1107,8 @@ class AppRuntime(appID: Int,
       } else {
         val key: (String, Key) = (tok(4), tok(5).map(_.toByte).toArray)
         val poolKey = PerformerPacket.getKey(app.performerName2ID(key._1), key._2)
-        val dest = pool.getDestinationHost(new StringOps(poolKey))
-        if (pool.cluster.self == dest)
+        val dest = InetAddress.getByName(pool.getDestinationHost(new StringOps(poolKey))).getHostName
+        if (pool.cluster.self.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
           getSlate(key)
         else {
           val slate = fetchURL("http://" + dest + ":" + (app.statusPort + 300) + s)

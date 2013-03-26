@@ -39,7 +39,8 @@ import java.net.ServerSocket
 object MessageServer extends Logging {
 
   /* socket server to communicate clients */
-  class MessageServerThread(val port : Int) extends Runnable {
+  // In unit test skip sending new ring to all nodes
+  class MessageServerThread(val port : Int, val isTest: Boolean = false) extends Runnable {
 
     var keepRunning = true
     var currentThread: Thread = null
@@ -68,8 +69,12 @@ object MessageServer extends Logging {
               // update hash ring
               val newHostList = ring2.hosts filter (host => host.compareTo(node) != 0)
               ring2 = ring2.remove(newHostList, node)
-              // Local message server's port is always port + 1
-              pool.execute(new SendNewRing(lastCmdID, port + 1, ring2))
+              if (!isTest) {
+                // if it is unit test, don't send new ring to all nodes
+
+                // Local message server's port is always port + 1
+                pool.execute(new SendNewRing(lastCmdID, port + 1, ring2))
+              }
               lastCmdID += 1
             }
             case NodeJoinMessage(node) => {
@@ -82,8 +87,12 @@ object MessageServer extends Logging {
                 val newHostList = ring2.hosts :+ node
                 ring2.add(newHostList, node)
               }
-              // Local message server's port is always port + 1
-              pool.execute(new SendNewRing(lastCmdID, port + 1, ring2))
+              if (!isTest) {
+                // if it is unit test, don't send new ring to all nodes
+
+                // Local message server's port is always port + 1
+                pool.execute(new SendNewRing(lastCmdID, port + 1, ring2))
+              }
               lastCmdID += 1
             }
             case _ => error("CmdResponse error: not a valid msg: " + msg)
@@ -169,7 +178,7 @@ object MessageServer extends Logging {
 }
 
 /* Message Server for every node, which receives ring update message for now */
-class LocalMessageServer(port: Int) extends Runnable with Logging {
+class LocalMessageServer(port: Int, app: AppRuntime) extends Runnable with Logging {
   override def run() {
     info("LocalMessageServerThread: Start listening to :" + port)
     val serverSocketChannel = ServerSocketChannel.open()
@@ -183,8 +192,9 @@ class LocalMessageServer(port: Int) extends Runnable with Logging {
         val msg = in.readObject
         info("LocalMessageServer: Received " + msg)
         msg match {
-          case UpdateRingMessage(cmdID, hash, host) => {
-            info("CMD " + cmdID + " - Update Ring of " + host)
+          case UpdateRingMessage(cmdID, hash, hosts) => {
+            app.ring = new HashRing(hash)
+            info("CMD " + cmdID + " - Update Ring with " + hosts)
             out.writeObject(AckOfNewRing(cmdID))
           }
           case _ => error("LocalMessageServer error: Not a valid msg, " + msg.toString)

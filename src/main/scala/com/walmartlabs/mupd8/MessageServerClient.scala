@@ -36,7 +36,7 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Long = 2
       val socket = new Socket(serverHost, serverPort)
       val out = new ObjectOutputStream(socket.getOutputStream)
       val in = new ObjectInputStream(socket.getInputStream)
-      info("MesssageServerClient: connected")
+      info("MessageServerClient: connected")
       out.writeObject(msg)
       val ack = in.readObject
       ack match {
@@ -66,7 +66,7 @@ class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Lon
       out.writeObject(msg)
       val ack = in.readObject
       ack match {
-        case AckOfNewRing(commandId: Int) => debug("LocalMessageServerClient: " + ack)
+        case AckOfNewRing(commandId: Int) => info("LocalMessageServerClient: " + ack)
         case _ => error("MessageServerClient error: received wrong message while expecting ACK, " + ack)
       }
       out.close

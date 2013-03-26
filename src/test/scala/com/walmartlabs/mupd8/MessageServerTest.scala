@@ -27,10 +27,10 @@ import scala.collection.JavaConverters._
 @RunWith(classOf[JUnitRunner])
 class MessageServerTest extends FunSuite {
 
-  test("MessageServer/Client update remove") {
+  test("MessageServer/Client add/remove") {
     val random = new Random(System.currentTimeMillis)
 
-    val server = new MessageServer.MessageServerThread(4568)
+    val server = new MessageServer.MessageServerThread(4568, true)
     val sThread = new Thread(server, "Message Server Thread")
     sThread.start
     val client = new MessageServerClient("localhost", 4568, 50L)
@@ -42,8 +42,13 @@ class MessageServerTest extends FunSuite {
     for (node <- nodes) client.sendMessage(NodeRemoveMessage(node))
     Thread.sleep(1000)
     assert(MessageServer.ring2 == null)
+    assert(MessageServer.lastCmdID == 10)
+    assert(MessageServer.lastCmdID != 11)
     server.shutdown
     println("MessageServer Test is done")
+  }
+
+  test("LocalMessageServer/Client") {
   }
 
 }
