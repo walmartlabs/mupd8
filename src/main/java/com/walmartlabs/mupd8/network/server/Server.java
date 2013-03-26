@@ -1,18 +1,18 @@
 /**
  * Copyright 2011-2012 @WalmartLabs, a division of Wal-Mart Stores, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * 
+ *
  */
 
 package com.walmartlabs.mupd8.network.server;
@@ -37,7 +37,7 @@ import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
 import org.jboss.netty.handler.codec.replay.ReplayingDecoder;
 
 /**
-  * Server to direct messages from clients to workers 
+  * Server to direct messages from clients to workers
   */
 public class Server {
 
@@ -62,14 +62,14 @@ public class Server {
         workerPool = (ThreadPoolExecutor)Executors.newCachedThreadPool();
         ChannelFactory factory = new NioServerSocketChannelFactory(bossPool, workerPool);
         allChannels = new DefaultChannelGroup("mupd8-server");
-        
+
         bootstrap = new ServerBootstrap(factory);
         bootstrap.setOption("reuseAddress", true);
         bootstrap.setOption("child.tcpNoDelay", true);
         bootstrap.setOption("child.keepAlive", true);
         bootstrap.setOption("child.sendBufferSize", 1048576);
         bootstrap.setOption("receiveBufferSize", 1048576);
-        
+
         // Set up the pipeline factory.
         bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
 
@@ -84,7 +84,7 @@ public class Server {
         });
         // Bind and start to accept incoming connections.
         Channel channel = bootstrap.bind(new InetSocketAddress(port));
-        
+
         if (channel.isBound()) {
         	System.out.println("SERVER - bound to *:" + port);
         	allChannels.add(channel);
@@ -112,7 +112,7 @@ public class Server {
 
         if (args.length > 0) {
             port = Integer.parseInt(args[0]);
-        } 
+        }
         else {
             port = 8443;
         }
@@ -134,7 +134,7 @@ public class Server {
             }
         });
         boolean isStarted = server.start();
-        
+
         if (!isStarted) {
         	System.err.println("Failed to start, quit ...");
         	System.exit(1);

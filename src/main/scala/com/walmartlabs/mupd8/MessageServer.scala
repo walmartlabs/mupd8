@@ -57,6 +57,7 @@ object MessageServer extends Logging {
         try {
           currentThread = Thread.currentThread
           val channel = serverSocketChannel.accept()
+          debug("Channel - " + channel + " is opened")
           val in = new ObjectInputStream(Channels.newInputStream(channel))
           val out = new ObjectOutputStream(Channels.newOutputStream(channel))
           val msg = in.readObject()
@@ -67,11 +68,12 @@ object MessageServer extends Logging {
               // update hash ring
               val newHostList = ring2.hosts filter (host => host.compareTo(node) != 0)
               ring2 = ring2.remove(newHostList, node)
-              pool.execute(new SendNewRing(lastCmdID, ring2))
+              // Local message server's port is always port + 1
+              pool.execute(new SendNewRing(lastCmdID, port + 1, ring2))
               lastCmdID += 1
             }
             case NodeJoinMessage(node) => {
-              debug("received node join message: " + msg)
+              debug("Received node join message: " + msg)
               out.writeObject(AckOfNodeJoin(node))
               // update hash ring
               ring2 = if (ring2 == null) {
@@ -80,7 +82,8 @@ object MessageServer extends Logging {
                 val newHostList = ring2.hosts :+ node
                 ring2.add(newHostList, node)
               }
-              pool.execute(new SendNewRing(lastCmdID, ring2))
+              // Local message server's port is always port + 1
+              pool.execute(new SendNewRing(lastCmdID, port + 1, ring2))
               lastCmdID += 1
             }
             case _ => error("CmdResponse error: not a valid msg: " + msg)
@@ -106,16 +109,18 @@ object MessageServer extends Logging {
 
     def daemonize() = {
       System.in.close()
-      Runtime.getRuntime().addShutdownHook( new Thread { override def run() = MessageServerThread.this.shutdown()})
+      Runtime.getRuntime().addShutdownHook( new Thread { override def run = shutdown()})
     }
 
   }
 
-  class SendNewRing(cmdID: Int, newRing: HashRing2) extends Runnable {
+  class SendNewRing(cmdID: Int, port: Int, ring2 : HashRing2) extends Runnable {
     override def run {
       try {
         // TODO: send out hashring
-
+        ring2.hosts foreach (host => {info("SendNewRing: " + ring2)
+                               val client = new LocalMessageServerClient(host, port)
+                               client.sendMessage(UpdateRingMessage(cmdID, ring2.hash, ring2.hosts))})
       } catch {
         case e => error("SendNewRing exception.", e)
       }
@@ -141,10 +146,10 @@ object MessageServer extends Logging {
       info(sysOpt + " and " + appOpt + " are provided")
       config = new application.Config(options.valueOf(sysOpt), options.valueOf(appOpt))
     } else {
-      System.err.println("Missing arguments: Please provide either " +
-                         folderOpt + " (" + folderOpt.description + ") or " +
-                         sysOpt + " (" + sysOpt.description + ") and " +
-                         appOpt + " (" + appOpt.description + ")")
+      error("Missing arguments: Please provide either " +
+            folderOpt + " (" + folderOpt.description + ") or " +
+            sysOpt + " (" + sysOpt.description + ") and " +
+            appOpt + " (" + appOpt.description + ")")
       System.exit(1)
     }
     val host = Option(config.getScopedValue(Array("mupd8", "messageserver", "host")))
@@ -157,7 +162,7 @@ object MessageServer extends Logging {
       server.daemonize
       server.run
     } else {
-      System.out.println(host.get + " is not a message server host, quit...")
+      info(host.get + " is not a message server host, quit...")
       System.exit(0);
     }
   }
@@ -167,19 +172,28 @@ object MessageServer extends Logging {
 class LocalMessageServer(port: Int) extends Runnable with Logging {
   override def run() {
     info("LocalMessageServerThread: Start listening to :" + port)
-    val ssocket = new ServerSocket(port, 10000) // put 10000 as incoming request queue size
-    debug("local message server started, listening " + port)
+    val serverSocketChannel = ServerSocketChannel.open()
+    serverSocketChannel.socket().bind(new InetSocketAddress(port))
+    info("local message server started, listening " + port)
     while (true) {
       try {
-        val socket = ssocket.accept
-        val in = new ObjectInputStream(socket.getInputStream)
+        val channel = serverSocketChannel.accept()
+        val in = new ObjectInputStream(Channels.newInputStream(channel))
+        val out = new ObjectOutputStream(Channels.newOutputStream(channel))
         val msg = in.readObject
+        info("LocalMessageServer: Received " + msg)
         msg match {
-          case UpdateRingMessage(cmdID, ring) => info("CMD {}: Update Ring of host: {}", cmdID, ring);
+          case UpdateRingMessage(cmdID, hash, host) => {
+            info("CMD " + cmdID + " - Update Ring of " + host)
+            out.writeObject(AckOfNewRing(cmdID))
+          }
           case _ => error("LocalMessageServer error: Not a valid msg, " + msg.toString)
         }
+        in.close
+        out.close
+        channel.close
       } catch {
-        case e : Exception => error("MessageServerThread exception", e)
+        case e : Exception => error("LocalMessageServer exception", e)
       }
     }
   }

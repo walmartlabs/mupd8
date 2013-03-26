@@ -172,16 +172,16 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
     val timeout: Long = java.lang.System.currentTimeMillis + (10000 * java.lang.Math.sqrt(hosts.size)).toLong
     hosts.filter(_.compareTo(self) != 0).foreach {
       host => {
-        info("Connecting to {} at port {}", host, port)
+        info("Connecting to " + host + " at port " + port)
         while (!client.connect(host, port) && java.lang.System.currentTimeMillis < timeout) {
           java.lang.Thread.sleep(500)
         }
         if (client.isConnected(host))
-          info("Connected to {} at port {}", host, port)
+          info("Connected to " + host + " at port " + port)
         else {
           if (msClient != null)
             msClient.sendMessage(NodeRemoveMessage(host))
-          error("Failed to connect to {} at port ", host, port)
+          error("Failed to connect to " + host + " at port " + port)
         }
       }
     }
@@ -784,9 +784,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
     }
   }
 
-  def getSystemHosts(): Array[String] = {
-    systemHosts
-  }
+  def getSystemHosts(): Array[String] = systemHosts
 
 }
 
@@ -990,7 +988,7 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities {
 class AppRuntime(appID: Int,
   poolsize: Int,
   val app: AppStaticInfo,
-  useNullPool: Boolean = false) {
+  useNullPool: Boolean = false) extends Logging {
   private val sourceThreads: mutable.ListBuffer[(String, List[java.lang.Thread])] = new mutable.ListBuffer
   val hostUpdateLock = new Object
 
@@ -1001,37 +999,46 @@ class AppRuntime(appID: Int,
 
   val msClient: MessageServerClient = if (app.messageServerHost != None && app.messageServerPort != None) {
     new MessageServerClient(app.messageServerHost.get.asInstanceOf[String], app.messageServerPort.get.asInstanceOf[Number].intValue(), 1000L)
-  } else null
+  } else {
+    error("AppRuntime error: message server host name or port is empty")
+    null
+  }
 
   def getMessageServerClient() = msClient
 
-  val localMessageServer = new Thread(new LocalMessageServer(8900), "Local Message Server")
-  localMessageServer.start
+  // start local server socket
+  val localMessageServer = if (app.messageServerPort != None) {
+    new Thread(new LocalMessageServer(app.messageServerPort.get.asInstanceOf[Number].intValue() + 1), "LocalMessageServer")
+  } else {
+    error("AppRuntime error: local message server port is None")
+    null
+  }
+  if (localMessageServer != null) localMessageServer.start
 
-  Thread.sleep(2000)
-  // talk to message server and update system host list
-  // COMMNENT: if Mud8 runtime is configured without a system host list,
-  // (this may happen when a new node needs to join an exisiting Mup8 cluster)
-  // a HostRequestMessage is sent to the MessageServer. The response contains a list of system hosts.
-  if (app.systemHosts.isEmpty) {
-    println(" watiing for host")
-    msClient.sendMessage(NodeJoinMessage(InetAddress.getLocalHost.getHostAddress))
-    app.synchronized {
-      while (app.systemHosts.isEmpty) {
-        app.wait
-      }
+  // generate Hash Ring
+  var ring: HashRing = null
+
+  Thread.sleep(500)
+  // if system hosts is not empty, generate hash ring from system hosts
+  if (!app.systemHosts.isEmpty) {
+    info("Generate hash ring from config file")
+    ring = new HashRing(app.systemHosts)
+    info(ring)
+  }
+
+  // Try to Register host to message server and get updated hash ring from message server
+  // even if hash ring is generated from system hosts already
+  msClient.sendMessage(NodeJoinMessage(InetAddress.getLocalHost.getHostName))
+  app.synchronized {
+    while (ring == null) {
+      info("Waiting for hash ring")
+      app.wait
     }
   }
-  Thread.sleep(2000)
-  // TODO: change hashring
-  val ring: HashRing = new HashRing(Vector("host1", "host2", "host3"))
-  def getHashRing() : HashRing = ring
 
-  //COMMENT: if dynamic load balancing is configured as true, then
-  // each mupd8 node deterministically elects a particular planner node
-  if (app.isElastic()) {
-    app.electPlanner()
-  }
+  // TODO: change hashring
+  def getHashRing: HashRing = ring
+  def setHashRing(hash: IndexedSeq[String], hosts: IndexedSeq[String]): Unit = ring = new HashRing(hash)
 
   val pool = initMapUpdatePool(poolsize, ring,
     action => new MUCluster[PerformerPacket](app, app.statusPort + 100,
@@ -1350,7 +1357,7 @@ object Mupd8Main extends Logging {
 
   def fetchFromSources(app: AppStaticInfo, api: AppRuntime): Unit = {
     val ssources = app.sources.asScala
-    println("start source from sys cfg")
+    info("start source from sys cfg")
     object O {
       def unapply(a: Any): Option[org.json.simple.JSONObject] =
         if (a.isInstanceOf[org.json.simple.JSONObject])

@@ -31,6 +31,8 @@ class HashRing(val hash: IndexedSeq[String]) {
   // pick up hosts
   def apply(key : Any) : String = hash(key.hashCode % N)
 
+  override def toString: String = hash.toString
+
 }
 
 object HashRing2 {

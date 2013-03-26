@@ -32,9 +32,11 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Long = 2
 
   def sendMessage(msg: Message) = synchronized {
     try {
+      info("MessageServerClient: send " + msg + " to localmessageserver: " + serverHost + ", " + serverPort)
       val socket = new Socket(serverHost, serverPort)
       val out = new ObjectOutputStream(socket.getOutputStream)
       val in = new ObjectInputStream(socket.getInputStream)
+      info("MesssageServerClient: connected")
       out.writeObject(msg)
       val ack = in.readObject
       ack match {
@@ -47,6 +49,31 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Long = 2
       socket.close
     } catch {
       case e: IOException => error("MessageServerClient sendMessage exception. MSG = " + msg.toString, e)
+    }
+  }
+
+}
+
+class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Long = 2000L) extends Logging {
+
+  def sendMessage(msg: Message) = synchronized {
+    try {
+      info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
+      val socket = new Socket(serverHost, serverPort)
+      val out = new ObjectOutputStream(socket.getOutputStream)
+      val in = new ObjectInputStream(socket.getInputStream)
+      info("LocalMessageServerClient: connected")
+      out.writeObject(msg)
+      val ack = in.readObject
+      ack match {
+        case AckOfNewRing(commandId: Int) => debug("LocalMessageServerClient: " + ack)
+        case _ => error("MessageServerClient error: received wrong message while expecting ACK, " + ack)
+      }
+      out.close
+      in.close
+      socket.close
+    } catch {
+      case e: IOException => error("LocalMessageServerClient sendMessage exception. MSG = " + msg.toString, e)
     }
   }
 
