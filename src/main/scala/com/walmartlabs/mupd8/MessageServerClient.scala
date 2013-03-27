@@ -30,7 +30,7 @@ import grizzled.slf4j.Logging
 
 class MessageServerClient(serverHost: String, serverPort: Int, timeout: Long = 2000L) extends Logging {
 
-  def sendMessage(msg: Message) = synchronized {
+  def sendMessage(msg: Message): Boolean = synchronized {
     try {
       info("MessageServerClient: send " + msg + " to localmessageserver: " + serverHost + ", " + serverPort)
       val socket = new Socket(serverHost, serverPort)
@@ -48,15 +48,16 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Long = 2
       in.close
       socket.close
     } catch {
-      case e: IOException => error("MessageServerClient sendMessage exception. MSG = " + msg.toString, e)
+      case e: Exception => error("MessageServerClient sendMessage exception. MSG = " + msg.toString, e); false
     }
+    true
   }
 
 }
 
 class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Long = 2000L) extends Logging {
 
-  def sendMessage(msg: Message) = synchronized {
+  def sendMessage(msg: Message): Boolean = synchronized {
     try {
       info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
       val socket = new Socket(serverHost, serverPort)
@@ -73,8 +74,9 @@ class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Lon
       in.close
       socket.close
     } catch {
-      case e: IOException => error("LocalMessageServerClient sendMessage exception. MSG = " + msg.toString, e)
+      case e: Exception => error("LocalMessageServerClient sendMessage exception. MSG = " + msg.toString, e); false
     }
+    true
   }
 
 }

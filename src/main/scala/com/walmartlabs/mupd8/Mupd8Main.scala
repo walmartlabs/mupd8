@@ -1023,7 +1023,7 @@ class AppRuntime(appID: Int,
   if (!app.systemHosts.isEmpty) {
     info("Generate hash ring from config file")
     ring = new HashRing(app.systemHosts)
-    info(ring)
+    info("Update ring from config file - "  + ring)
   }
 
   // Try to Register host to message server and get updated hash ring from message server
@@ -1035,6 +1035,7 @@ class AppRuntime(appID: Int,
       app.wait
     }
   }
+  info("Update ring from Message server - " + ring)
 
   // TODO: change hashring
   def getHashRing: HashRing = ring
