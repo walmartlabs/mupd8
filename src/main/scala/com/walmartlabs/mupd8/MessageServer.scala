@@ -38,33 +38,6 @@ import java.net.ServerSocket
 /* Message Server for whole cluster */
 object MessageServer extends Logging {
 
-  /* actor sending new ring to nodes in cluster */
-  object SendNewRing extends Actor {
-    def act() {
-      react {
-        // msport: port of message server
-        case (cmdID: Int, host: String, port: Int, ring2: HashRing2, msport: Int) =>
-          if (cmdID == lastCmdID) {
-            // it is still latest command and hash ring
-            info("SendNewRing: send ring to " + host)
-            val client = new LocalMessageServerClient(host, port)
-            if (!client.sendMessage(UpdateRingMessage(cmdID, ring2.hash, ring2.hosts))) {
-              // report host fails if any exception happens
-              val msClient = new MessageServerClient("localhost", msport)
-              msClient.sendMessage(NodeRemoveMessage(host))
-            }
-          } else
-            info("SendNewRing: skip non-currernt command - " + lastCmdID + ", " + ring2)
-          act()
-        case "EXIT" =>
-          info("SendNewRing receive EXIT")
-        case msg =>
-          error("MSG - " + msg + "is not supported now")
-      }
-    }
-  }
-  SendNewRing.start
-
   /* socket server to communicate clients */
   // In unit test skip sending new ring to all nodes
   class MessageServerThread(val port : Int, val isTest: Boolean = false) extends Runnable {
@@ -92,6 +65,7 @@ object MessageServer extends Logging {
             case NodeRemoveMessage(node) =>
               debug("received node remove message: " + msg)
               lastCmdID += 1
+              lastRingUpdateCmdID  = lastCmdID
               // send ACK to reported
               out.writeObject(AckOfNodeRemove(node))
               // update hash ring
@@ -100,12 +74,12 @@ object MessageServer extends Logging {
               if (!isTest) {
                 // if it is unit test, don't send new ring to all nodes
                 // Local message server's port is always port + 1
-                ring2.hosts foreach (host =>
-                  SendNewRing ! (lastCmdID, host, (port + 1), ring2, port))
+                ring2.hosts foreach (host => SendNewRing ! (lastCmdID, host, (port + 1), ring2, port))
               }
             case NodeJoinMessage(node) =>
               debug("Received node join message: " + msg)
               lastCmdID += 1
+              lastRingUpdateCmdID = lastCmdID
               // send ACK to reported
               out.writeObject(AckOfNodeJoin(node))
               // update hash ring
@@ -134,6 +108,7 @@ object MessageServer extends Logging {
 
     def shutdown() = {
       info("Initiate shutdown")
+      SendNewRing ! "EXIT"
       try {
         keepRunning = false
         currentThread.interrupt
@@ -148,7 +123,37 @@ object MessageServer extends Logging {
 
   }
 
-  var lastCmdID = 0
+  /* actor sending new ring to nodes in cluster */
+  object SendNewRing extends Actor {
+    def act() {
+      react {
+        // msport: port of message server
+        case (cmdID: Int, host: String, port: Int, ring2: HashRing2, msport: Int) =>
+          if (cmdID == lastRingUpdateCmdID) {
+            // it is still latest command and hash ring
+            info("SendNewRing: send ring to " + host)
+            val client = new LocalMessageServerClient(host, port)
+            if (!client.sendMessage(UpdateRingMessage(cmdID, ring2.hash, ring2.hosts))) {
+              // report host fails if any exception happens
+              val msClient = new MessageServerClient("localhost", msport)
+              msClient.sendMessage(NodeRemoveMessage(host))
+            }
+          } else
+            info("SendNewRing: skip non-currernt command - " + lastRingUpdateCmdID + ", " + ring2)
+          act()
+        case "EXIT" =>
+          info("SendNewRing receive EXIT")
+        case msg =>
+          error("MSG - " + msg + "is not supported now")
+      }
+    }
+  }
+  SendNewRing.start
+
+  // separate lastCmdID and lastRingUpdateCmdID in case in future
+  // there may message not requiring no new ring update
+  var lastCmdID = -1
+  var lastRingUpdateCmdID = -1
   var ring2: HashRing2 = null // TODO: find a way to init hash ring2
 
   def main(args: Array[String]) {
@@ -191,6 +196,8 @@ object MessageServer extends Logging {
 
 /* Message Server for every node, which receives ring update message for now */
 class LocalMessageServer(port: Int, app: AppRuntime) extends Runnable with Logging {
+  private var lastCmdID = -1;
+
   override def run() {
     info("LocalMessageServerThread: Start listening to :" + port)
     val serverSocketChannel = ServerSocketChannel.open()
@@ -205,9 +212,13 @@ class LocalMessageServer(port: Int, app: AppRuntime) extends Runnable with Loggi
         info("LocalMessageServer: Received " + msg)
         msg match {
           case UpdateRingMessage(cmdID, hash, hosts) => {
-            app.ring = new HashRing(hash)
-            info("CMD " + cmdID + " - Update Ring with " + hosts)
-            out.writeObject(AckOfNewRing(cmdID))
+            if (cmdID > lastCmdID) {
+              app.ring = new HashRing(hash)
+              info("CMD " + cmdID + " - Update Ring with " + hosts)
+              out.writeObject(AckOfNewRing(cmdID))
+              lastCmdID = cmdID
+            } else
+              error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
           }
           case _ => error("LocalMessageServer error: Not a valid msg, " + msg.toString)
         }
