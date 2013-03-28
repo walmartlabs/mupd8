@@ -791,13 +791,12 @@ object PerformerPacket {
   @inline def getKey(pid: Int, key: Key) = pid.toString + "?/%%%>*" + str(key)
 }
 
-case class PerformerPacket(
-  pri: Priority,
-  pid: Int,
-  key: Key,
-  event: Event,
-  stream: String, // This field can be replaced by source performer ID
-  appRun: AppRuntime) extends MapUpdateClass[PerformerPacket] {
+case class PerformerPacket(pri: Priority,
+                           pid: Int,
+                           key: Key,
+                           event: Event,
+                           stream: String, // This field can be replaced by source performer ID
+                           appRun: AppRuntime) extends MapUpdateClass[PerformerPacket] {
   override def getKey = PerformerPacket.getKey(pid, key)
 
   override def compareTo(other: PerformerPacket) = pri.compareTo(other.pri)
@@ -985,9 +984,9 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities {
 }
 
 class AppRuntime(appID: Int,
-  poolsize: Int,
-  val app: AppStaticInfo,
-  useNullPool: Boolean = false) extends Logging {
+                 poolsize: Int,
+                 val app: AppStaticInfo,
+                 useNullPool: Boolean = false) extends Logging {
   private val sourceThreads: mutable.ListBuffer[(String, List[java.lang.Thread])] = new mutable.ListBuffer
   val hostUpdateLock = new Object
 
@@ -1027,18 +1026,21 @@ class AppRuntime(appID: Int,
 
   // Try to Register host to message server and get updated hash ring from message server
   // even if hash ring is generated from system hosts already
-  msClient.sendMessage(NodeJoinMessage(InetAddress.getLocalHost.getHostName))
-  app.synchronized {
-    while (ring == null) {
-      info("Waiting for hash ring")
-      app.wait
+  if (msClient.sendMessage(NodeJoinMessage(InetAddress.getLocalHost.getHostName))) {
+    app.synchronized {
+      while (ring == null) {
+        info("Waiting for hash ring")
+        app.wait
+      }
     }
+    info("Update ring from Message server - " + ring)
   }
-  info("Update ring from Message server - " + ring)
 
-  // TODO: change hashring
-  def getHashRing: HashRing = ring
-  def setHashRing(hash: IndexedSeq[String], hosts: IndexedSeq[String]): Unit = ring = new HashRing(hash)
+  if (ring == null) error("AppRuntime: No hash ring either from config file or message server")
+
+  // // TODO: change hashring
+  // def getHashRing: HashRing = ring
+  // def setHashRing(hash: IndexedSeq[String], hosts: IndexedSeq[String]): Unit = ring = new HashRing(hash)
 
   val pool = initMapUpdatePool(poolsize, ring,
     action => new MUCluster[PerformerPacket](app, app.statusPort + 100,
@@ -1340,12 +1342,16 @@ object Mupd8Main extends Logging {
           new MasterNode(args, app, shutdown)
         } else {
           p.get("-pidFile").map(x => writePID(x.head))
-          val api = new AppRuntime(0, threads, app)
-          if (app.sources.size > 0) {
-            fetchFromSources(app, api)
+          val runtime = new AppRuntime(0, threads, app)
+          if (runtime.ring != null) {
+            if (app.sources.size > 0) {
+              fetchFromSources(app, runtime)
+            } else {
+              info("start source from cmdLine")
+              runtime.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
+            }
           } else {
-            info("start source from cmdLine")
-            api.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
+            error("Mupd8Main: no hash ring found, exiting...")
           }
           info("Goodbye")
         }

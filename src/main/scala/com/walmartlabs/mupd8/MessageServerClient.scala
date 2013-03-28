@@ -32,7 +32,7 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Long = 2
 
   def sendMessage(msg: Message): Boolean = synchronized {
     try {
-      info("MessageServerClient: send " + msg + " to localmessageserver: " + serverHost + ", " + serverPort)
+      info("MessageServerClient: send " + msg + " to Message Server: " + serverHost + ", " + serverPort)
       val socket = new Socket(serverHost, serverPort)
       val out = new ObjectOutputStream(socket.getOutputStream)
       val in = new ObjectInputStream(socket.getInputStream)
