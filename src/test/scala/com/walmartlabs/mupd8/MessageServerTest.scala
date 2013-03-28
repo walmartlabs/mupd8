@@ -42,14 +42,14 @@ class MessageServerTest extends FunSuite {
     for (node <- nodes) client.sendMessage(NodeRemoveMessage(node))
     Thread.sleep(1000)
     assert(MessageServer.ring2 == null)
-    assert(MessageServer.lastCmdID == 10)
+    assert(MessageServer.lastCmdID == 9)
     assert(MessageServer.lastCmdID != 11)
     server.shutdown
     println("MessageServer Test is done")
   }
 
-  test("LocalMessageServer/Client") {
-  }
+  // test("LocalMessageServer/Client") {
+  // }
 
 }
 

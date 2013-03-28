@@ -179,8 +179,7 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
         if (client.isConnected(host))
           info("Connected to " + host + " at port " + port)
         else {
-          if (msClient != null)
-            msClient.sendMessage(NodeRemoveMessage(host))
+          if (msClient != null) msClient.sendMessage(NodeRemoveMessage(host))
           error("Failed to connect to " + host + " at port " + port)
         }
       }
