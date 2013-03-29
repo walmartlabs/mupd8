@@ -990,10 +990,8 @@ class AppRuntime(appID: Int,
   private val sourceThreads: mutable.ListBuffer[(String, List[java.lang.Thread])] = new mutable.ListBuffer
   val hostUpdateLock = new Object
 
-  def getAppStaticInfo(): AppStaticInfo = app
   def initMapUpdatePool(poolsize: Int, ring: HashRing, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
     new MapUpdatePool[PerformerPacket](poolsize, ring, clusterFactory)
-  def getMapUpdatePool() = pool
 
   val msClient: MessageServerClient = if (app.messageServerHost != None && app.messageServerPort != None) {
     new MessageServerClient(app.messageServerHost.get.asInstanceOf[String], app.messageServerPort.get.asInstanceOf[Number].intValue(), 1000L)
@@ -1001,8 +999,6 @@ class AppRuntime(appID: Int,
     error("AppRuntime error: message server host name or port is empty")
     null
   }
-
-  def getMessageServerClient() = msClient
 
   // start local server socket
   val localMessageServer = if (app.messageServerPort != None) {
@@ -1013,8 +1009,10 @@ class AppRuntime(appID: Int,
   }
   if (localMessageServer != null) localMessageServer.start
 
-  // generate Hash Ring
-  var ring: HashRing = null
+  /* generate Hash Ring */
+  private var _ring: HashRing = null
+  def ring = _ring // getter
+  def ring_= (r: HashRing):Unit = _ring = r // setter
 
   Thread.sleep(500)
   // if system hosts is not empty, generate hash ring from system hosts
@@ -1038,10 +1036,6 @@ class AppRuntime(appID: Int,
 
   if (ring == null) error("AppRuntime: No hash ring either from config file or message server")
 
-  // // TODO: change hashring
-  // def getHashRing: HashRing = ring
-  // def setHashRing(hash: IndexedSeq[String], hosts: IndexedSeq[String]): Unit = ring = new HashRing(hash)
-
   val pool = initMapUpdatePool(poolsize, ring,
     action => new MUCluster[PerformerPacket](app, app.statusPort + 100,
                                              PerformerPacket(0, 0, Array(), Array(), "", this),
@@ -1049,16 +1043,15 @@ class AppRuntime(appID: Int,
                                              action, msClient))
 
   val storeIo = if (useNullPool) new NullPool
-  else new CassandraPool(
-    app.cassHosts,
-    app.cassPort,
-    app.cassKeySpace,
-    p => (app.performers(app.performerName2ID(p)).cf).getOrElse(app.cassColumnFamily),
-    p => app.performers(app.performerName2ID(p)).ttl,
-    app.compressionCodec)
+                else new CassandraPool(app.cassHosts,
+                                       app.cassPort,
+                                       app.cassKeySpace,
+                                       p => (app.performers(app.performerName2ID(p)).cf).getOrElse(app.cassColumnFamily),
+                                       p => app.performers(app.performerName2ID(p)).ttl,
+                                       app.compressionCodec)
 
   val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
-  println("Memory available for use by Slate Cache is " + slateRAM + " bytes")
+  info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
   private val threadMap: Map[Long, TLS] = pool.pool.map(_.thread.getId -> new TLS(this))(breakOut)
   private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
 
@@ -1149,7 +1142,7 @@ class AppRuntime(appID: Int,
       //   Thread.sleep(sleepTime)
       // }
       if (data._key.size <= 0) {
-        println("No key/Invalid key in Source Event " + excToOption(str(data._value)))
+        error("No key/Invalid key in Source Event " + excToOption(str(data._value)))
       } else {
         pool.putSource(PerformerPacket(
           source,
@@ -1162,9 +1155,8 @@ class AppRuntime(appID: Int,
     }
 
     class SourceThread(sourceClassName: String,
-      sourceParams: java.util.List[String],
-      continuation: Mupd8DataPair => Unit)
-      extends Runnable {
+                       sourceParams: java.util.List[String],
+                       continuation: Mupd8DataPair => Unit) extends Runnable {
       override def run() = {
         val cls = Class.forName(sourceClassName)
         val ins = cls.getConstructor(Class.forName("java.util.List")).newInstance(sourceParams).asInstanceOf[com.walmartlabs.mupd8.application.Mupd8Source]
