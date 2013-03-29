@@ -57,7 +57,8 @@ class HashRing(numTargets : Int, randomSeed : Int = 0) {
 
   /** Map from key [0.0, 1.0] to an unremoved target [0, numTargets). */
   def apply(key : Double) : Int = {
-    assert(key > 0, "key must be between [0.0, 1.0]")
+    assert(key >= 0, "key must be between [0.0, 1.0] but is less than 0")
+    assert(key <= 1.0, "key must be between [0.0, 1.0] but exceeds 1.0")
     val offset = floor(key * pieces).toInt
     getTarget(offset % pieces)
   }
