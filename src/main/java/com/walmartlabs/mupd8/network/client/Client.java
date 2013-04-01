@@ -131,7 +131,7 @@ public class Client {
 
         connectors.clear();
         this.bootstrap.releaseExternalResources();
-        logger.error("--- CLIENT - Stopped.");
+        logger.info("CLIENT stopped...");
     }
 
     public boolean send(String connId, Object packet) {
