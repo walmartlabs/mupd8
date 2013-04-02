@@ -92,7 +92,7 @@ public class Client {
         ChannelFuture future = bootstrap.connect(remoteAddr);
 
         if (!future.awaitUninterruptibly().isSuccess()) {
-            logger.error("--- CLIENT - Failed to connect to server at " +
+            logger.error("CLIENT - Failed to connect to server at " +
                     remoteAddr.getHostName() + ":" + remoteAddr.getPort());
             return false;
         }
@@ -123,7 +123,7 @@ public class Client {
     // close all the connections and shut down the client
     public void stop() {
         int largestPoolSize = workerPool.getLargestPoolSize();
-        logger.info("largest pool size for client worker pool: " + largestPoolSize);
+        logger.info("Largest pool size for client worker pool: " + largestPoolSize);
         for (Channel connector : connectors.values()) {
             if (connector != null)
                 connector.close().awaitUninterruptibly();
@@ -136,7 +136,7 @@ public class Client {
 
     public boolean send(String connId, Object packet) {
         if (!connectors.containsKey(connId)) {
-            logger.error("--- CLIENT - connection for " + connId + " doesn't exist!");
+            logger.error("CLIENT - connection for " + connId + " doesn't exist!");
             return false;
         }
 
@@ -147,7 +147,7 @@ public class Client {
             return true;
         }
         else {
-            logger.error("--- CLIENT - " + connId + " is not connected!");
+            logger.error("CLIENT - " + connId + " is not connected!");
             return false;
         }
     }

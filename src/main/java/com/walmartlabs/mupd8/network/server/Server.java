@@ -102,7 +102,7 @@ public class Server {
 
     public void stop() {
         int largestPoolSize = workerPool.getLargestPoolSize();
-        logger.info("largest pool size for server worker pool: " + largestPoolSize);
+        logger.info("Largest pool size for server worker pool: " + largestPoolSize);
         allChannels.close().awaitUninterruptibly();
         bootstrap.releaseExternalResources();
         logger.info("SERVER stopped ...");
@@ -139,7 +139,7 @@ public class Server {
         boolean isStarted = server.start();
         
         if (!isStarted) {
-        	logger.error("Failed to start, quit ...");
+        	logger.error("Failed to start. Quiting ...");
         	System.exit(1);
         }
 

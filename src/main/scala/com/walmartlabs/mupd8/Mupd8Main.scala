@@ -156,7 +156,7 @@ class MUCluster[T <: MapUpdateClass[T]](private var _hosts: Array[(String, Int)]
   val server = new Server(port, new Listener() {
     override def messageReceived(packet: AnyRef): Boolean = {
       val destObj = packet.asInstanceOf[T]
-      //log("Server recv "+destObj)
+      debug("Server receives: " + destObj)
       onReceipt(destObj)
       true
     }
@@ -164,7 +164,7 @@ class MUCluster[T <: MapUpdateClass[T]](private var _hosts: Array[(String, Int)]
 
   val client = new Client(new Listener() {
     override def messageReceived(packet: AnyRef): Boolean = {
-      log("Client recv should not happen")
+      error("Client should not receive messages")
       assert(false)
       true
     }
@@ -203,7 +203,7 @@ class MUCluster[T <: MapUpdateClass[T]](private var _hosts: Array[(String, Int)]
           else {
             if (msClient != null)
              msClient.sendMessage(new NodeFailureMessage(getIPAddress(hosts(i)._1)))
-            error("Failed to connect to" + i + " " + host + ":" + port)
+            warn("Failed to connect to" + i + " " + host + ":" + port)
           }
         }
     }
@@ -214,7 +214,7 @@ class MUCluster[T <: MapUpdateClass[T]](private var _hosts: Array[(String, Int)]
     if (!client.send(dest.toString, obj)) {
       if (msClient != null)
         msClient.sendMessage(new NodeFailureMessage(getIPAddress(hosts(dest)._1)))
-        log("Failed to send msg to dest " + dest)
+        warn("Failed to send message to destination " + dest)
     }
   }
 }
@@ -459,14 +459,13 @@ class CassandraPool(
     {
       for (
         keySpaceManager <- Option(Pelops.createKeyspaceManager(cluster));
-        _ <- { info("Getting keyspaces from Cassandra Cluster " + hosts.reduceLeft(_ + "," + _) + ":" + port); Some(true) }; //print("Getting keyspaces from Cassandra Cluster " + hosts.reduceLeft(_ + "," + _) + ":" + port); Some(true) };
+        _ <- { info("Getting keyspaces from Cassandra Cluster " + hosts.reduceLeft(_ + "," + _) + ":" + port); Some(true) }; 
         keySpaces <- excToOption(keySpaceManager.getKeyspaceNames.toArray.map(_.asInstanceOf[org.apache.cassandra.thrift.KsDef]));
-        _ <- { info("Checking for keyspace: " + keyspace); Some(true) }; 
         ks <- keySpaces find (_.getName == keyspace)
       //_ <- {print("[OK]\nChecking for column family " + columnFamily) ; Some(true)} ;
       //cfs             <- ks.getCf_defs.toArray find {_.asInstanceOf[org.apache.cassandra.thrift.CfDef].getName == columnFamily}
-      ) yield { info("[OK]"); true } 
-    } getOrElse { error("[Failed] Terminating Mupd8"); false } 
+      ) yield { info("Keyspace " + keyspace + " is found"); true } 
+    } getOrElse { error("Keyspace " + keyspace + " is not found. Terminating Mupd8..."); false } 
 
   if (!dbIsConnected) java.lang.System.exit(1)
 
@@ -1054,7 +1053,7 @@ class AppRuntime(appID: Int,
   // (this may happen when a new node needs to join an exisiting Mup8 cluster)
   // a HostRequestMessage is sent to the MessageServer. The response contains a list of system hosts.
   if (app.systemHosts.isEmpty) {
-    info(" watiing for host...")
+    info("Waiting for hosts ...")
     msClient.sendMessage(new HostRequestMessage(InetAddress.getLocalHost.getHostAddress))
     app.synchronized {
       while (app.systemHosts.isEmpty) {
@@ -1091,7 +1090,6 @@ class AppRuntime(appID: Int,
     app.compressionCodec)
 
   val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
-  //println("Memory available for use by Slate Cache is " + slateRAM + " bytes")
   info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
   private val threadMap: Map[Long, TLS] = pool.pool.map(_.thread.getId -> new TLS(this))(breakOut)
   private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
@@ -1149,7 +1147,7 @@ class AppRuntime(appID: Int,
           val slate = fetchURL("http://" + app.systemHosts(dest) + ":" + (app.statusPort + 300) + s)
           if (slate == None) {
             // TODO: send remove messageServer
-            log("Can't reach dest " + dest)
+            warn("Can't reach destination: " + dest)
           }
           slate
         }
@@ -1182,7 +1180,7 @@ class AppRuntime(appID: Int,
       //   Thread.sleep(sleepTime)
       // }
       if (data._key.size <= 0) {
-        info("No key/Invalid key in Source Event " + excToOption(str(data._value)))
+        warn("No key/Invalid key in Source Event: " + excToOption(str(data._value)))
       } else {
         pool.putSource(PerformerPacket(
           source,
@@ -1227,7 +1225,7 @@ class AppRuntime(appID: Int,
     if (!threads.isEmpty)
       sourceThreads += ((sourcePerformer, threads))
     else
-      log("Unable to set up source for " + sourcePerformer + " server class " + sourceClassName + " with params: " + sourceClassParams)
+      error("Unable to set up source for " + sourcePerformer + " server class " + sourceClassName + " with params: " + sourceClassParams)
 
     threads foreach { _.start() }
     !threads.isEmpty
@@ -1379,21 +1377,20 @@ object Mupd8Main extends Logging {
           if (app.sources.size > 0) {
             fetchFromSources(app, api)
           } else {
-            info("start source from cmdLine")
+            info("Starting source from command line")
             api.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
           }
           info("Goodbye")
         }
       }
     } getOrElse {
-      error("Command Syntax error")
-      error("Syntax is\n" + syntax.map(p => p._1 + " " + p._2._2 + "\n").reduceLeft(_ + _))
+      error("Command Syntax error. Syntax is\n" + syntax.map(p => p._1 + " " + p._2._2 + "\n").reduceLeft(_ + _))
     }
   }
 
   def fetchFromSources(app: AppStaticInfo, api: AppRuntime): Unit = {
     val ssources = app.sources.asScala
-    info("Starting source from sys cfg")
+    info("Starting source from config file(s)")
     object O {
       def unapply(a: Any): Option[org.json.simple.JSONObject] =
         if (a.isInstanceOf[org.json.simple.JSONObject])
