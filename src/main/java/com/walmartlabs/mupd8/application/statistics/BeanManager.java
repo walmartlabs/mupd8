@@ -21,7 +21,12 @@ import java.lang.management.ManagementFactory;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class BeanManager {
+
+  private static final Logger logger = LoggerFactory.getLogger(BeanManager.class);
 
 	public static final BeanManager INSTANCE = new BeanManager();
 	MBeanServer mbs;
@@ -31,7 +36,7 @@ public class BeanManager {
 	}
 
 	public void registerBean(StatisticsMXBean bean) throws Exception {
-		System.out.println(" Registered Bean " + bean.getName());
+		logger.info(" Registered Bean " + bean.getName());
 		ObjectName mbeanName = new ObjectName(bean.getName());
 		mbs.registerMBean((Object) bean, mbeanName);
 	}
