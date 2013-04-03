@@ -41,6 +41,7 @@ class MessageServerTest extends FunSuite {
     val server = new MessageServerThread(4568)
     val sThread = new Thread(Misc.run(server.run))
     sThread.start
+    Thread.sleep(500)
     val client = new MessageServerClient(messageHandler, "localhost", 4568, 50L)
     val t = new Thread(client)
     t.start
