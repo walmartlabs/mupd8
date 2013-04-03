@@ -34,6 +34,8 @@ import com.walmartlabs.mupd8.messaging.LoadDistInstructMessage
 import com.walmartlabs.mupd8.messaging.UpdateRingMessage
 import com.walmartlabs.mupd8.messaging.MessageKind
 
+import grizzled.slf4j.Logging
+
 object config {
   val threshold = 100000 // Must be >= 1
   assert(threshold >= 1)
@@ -123,26 +125,26 @@ class HostTracker {
 }
 
 /* socket server to communicate clients */
-class MessageServerThread(val port : Int) {
+class MessageServerThread(val port : Int) extends Logging {
 
   val hostTracker = new HostTracker
   val msgTracker = new MessageTracker
   val pool : ExecutorService = Executors.newCachedThreadPool()
   var ssocket : ServerSocket = null
   def run() = {
-    println(" attemp to listen TO :" + port)
+    info("Server attempts to listen to port: " + port)
     ssocket = new ServerSocket(port)
-    println("server started, listening " + port)
+    info("Server started, listening at port: " + port)
     try {
       while (true) {
         val csocket = ssocket.accept()
         pool.execute(new RequestHandler(csocket, hostTracker, msgTracker))
       }
-    } catch { case e : Exception => println(e.getMessage) }
+    } catch { case e : Exception => error(e.getMessage) }
   }
 
   def shutdown() = {
-    println("Initiate shutdown")
+    info("Shutting down...")
     try {
       ssocket.close
       pool.shutdown
@@ -159,7 +161,7 @@ class MessageServerThread(val port : Int) {
 class RequestHandler(
   val socket : Socket,
   val hostTracker : HostTracker,
-  val msgTracker : MessageTracker) extends Runnable {
+  val msgTracker : MessageTracker) extends Runnable with Logging {
 
   override def run() = {
     val in = new BufferedReader(new InputStreamReader(socket.getInputStream))
@@ -167,7 +169,7 @@ class RequestHandler(
     val hostAddr : String = socket.getInetAddress.getHostAddress()
     val port : Int = socket.getPort()
     hostTracker.registerHost(hostAddr, out)
-    println("register " + hostAddr)
+    info("Registered host: " + hostAddr)
     try {
       var line : Option[String] = None
       while ({
@@ -178,7 +180,7 @@ class RequestHandler(
       }
     } catch {
       case e : Exception => {
-        println("broken pipe " + hostAddr)
+        error("Broken pipe: " + hostAddr)
 
         // Remove hostAddr from hostTracker
         hostTracker.removeHost(hostAddr)
@@ -221,18 +223,18 @@ class RequestHandler(
         var mesg = constructMessage(MessageKind.HOST_LIST, hostlist)
         hostTracker.unicast((msg.asInstanceOf[HostRequestMessage]).getSender(), mesg)
       case msg: NodeStatusReportMessage =>
-        println(" received message :" + msg)
+        info("Received message: " + msg)
         var mesg = constructMessage(MessageKind.NODE_STATUS_REPORT, msg.toString())
         hostTracker.unicast((msg.asInstanceOf[NodeStatusReportMessage]).getRecipient, mesg)
       case msg: LoadDistInstructMessage =>
-        println(" reeived request for redistribution" + msg)
+        info("Received request for redistribution: " + msg)
         var mesg = constructMessage(MessageKind.LOAD_DIST_INSTRUCT, msg.toString())
         hostTracker.unicast((msg.asInstanceOf[LoadDistInstructMessage]).getDestHost, mesg)
         hostTracker.unicast((msg.asInstanceOf[LoadDistInstructMessage]).getSourceHost, mesg)
       case msg: UpdateRingMessage =>
-        println("changing ring" + msg)
+        info("Changing ring: " + msg)
         hostTracker.broadcast(constructMessage(MessageKind.UPDATE_RING, msg.toString()))
-      case _ => "Syntax Error"
+      case others => error("Syntax error for message: " + others)
     }
     null
 
@@ -243,7 +245,7 @@ class RequestHandler(
   
 }
 
-object MessageServer {
+object MessageServer extends Logging {
 
   def main(args: Array[String]) {
     val parser = new OptionParser
@@ -259,15 +261,15 @@ object MessageServer {
     
     var config : application.Config = null
     if (options.has(folderOpt)) {
-      System.out.println(folderOpt + " is provided")
+      info("Config file folder " + folderOpt + " is provided")
       config = new application.Config(new File(options.valueOf(folderOpt)))
     }
     else if (options.has(sysOpt) && options.has(appOpt)) {
-      System.out.println(sysOpt + " and " + appOpt + " are provided")
+      info("Sys config file " + sysOpt + " and app config file " + appOpt + " are provided")
       config = new application.Config(options.valueOf(sysOpt), options.valueOf(appOpt))
     }
     else {
-      System.err.println("Missing arguments: Please provide either " + 
+      error("Missing arguments: Please provide either " + 
                          folderOpt + " (" + folderOpt.description + ") or " + 
                          sysOpt + " (" + sysOpt.description + ") and " + 
                          appOpt + " (" + appOpt.description + ")")
@@ -284,7 +286,7 @@ object MessageServer {
       server.run
     }
     else {
-      System.out.println(host.get + " is not a message server host, quit...")
+      info(host.get + " is not a message server host. Quiting...")
       System.exit(0);
     }
   }
