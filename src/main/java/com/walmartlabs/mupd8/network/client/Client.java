@@ -32,6 +32,8 @@ import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 import com.walmartlabs.mupd8.network.common.*;
 import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
 import org.jboss.netty.handler.codec.replay.ReplayingDecoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Client {
 
@@ -43,6 +45,7 @@ public class Client {
     private ThreadPoolExecutor workerPool;
     private OneToOneEncoder encoder;
     private Callable<ReplayingDecoder<Decoder.DecodingState>> decoderFactory;
+    private static final Logger logger = LoggerFactory.getLogger(Client.class);
 
     public Client(Listener listener, OneToOneEncoder pencoder, Callable<ReplayingDecoder<Decoder.DecodingState>> pdecoderFactory) {
         this.listener = listener;
@@ -89,7 +92,7 @@ public class Client {
         ChannelFuture future = bootstrap.connect(remoteAddr);
 
         if (!future.awaitUninterruptibly().isSuccess()) {
-            System.err.println("--- CLIENT - Failed to connect to server at " +
+            logger.error("CLIENT - Failed to connect to server at " +
                     remoteAddr.getHostName() + ":" + remoteAddr.getPort());
             return false;
         }
@@ -120,7 +123,7 @@ public class Client {
     // close all the connections and shut down the client
     public void stop() {
         int largestPoolSize = workerPool.getLargestPoolSize();
-        System.out.println("largest pool size for client worker pool: " + largestPoolSize);
+        logger.info("Largest pool size for client worker pool: " + largestPoolSize);
         for (Channel connector : connectors.values()) {
             if (connector != null)
                 connector.close().awaitUninterruptibly();
@@ -128,12 +131,12 @@ public class Client {
 
         connectors.clear();
         this.bootstrap.releaseExternalResources();
-        System.err.println("--- CLIENT - Stopped.");
+        logger.info("CLIENT stopped...");
     }
 
     public boolean send(String connId, Object packet) {
         if (!connectors.containsKey(connId)) {
-            System.err.println("--- CLIENT - connection for " + connId + " doesn't exist!");
+            logger.error("CLIENT - connection for " + connId + " doesn't exist!");
             return false;
         }
 
@@ -144,7 +147,7 @@ public class Client {
             return true;
         }
         else {
-            System.err.println("--- CLIENT - " + connId + " is not connected!");
+            logger.error("CLIENT - " + connId + " is not connected!");
             return false;
         }
     }
