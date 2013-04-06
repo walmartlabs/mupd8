@@ -33,3 +33,11 @@ target
 .project
 .settings
 mupd8.log
+*.log.*
+
+# Development environment
+*.iml
+*.eml
+*.swp
+.idea
+tags
