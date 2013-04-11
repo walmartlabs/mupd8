@@ -36,27 +36,24 @@ class MiscMTest extends FunSuite {
 
   test("localIPAddresses") {
     val localhostIp = InetAddress.getByName("localhost").getHostAddress
-    assertTrue(localIPAddresses.exists(_ == localhostIp))
+    assertTrue("localhost address should exist", localIPAddresses.exists(_ == localhostIp))
   }
 
   test("CompressionAndUncompression") {
     val testStr = "abcd" * 1000
-    println("test snappy")
     val snappy = CompressionFactory.getService("snappy")
     val snappied = snappy.compress(testStr.getBytes)
     val unsnappied = snappy.uncompress(snappied)
-    assertTrue(testStr == new String(unsnappied))
+    assertTrue("Snappy should not mutate content", testStr == new String(unsnappied))
     
-    println("test gzip")
     val gzip = CompressionFactory.getService("gzip")
     val gzipd = gzip.compress(testStr.getBytes)
     val ungziped = gzip.uncompress(gzipd)
-    assertTrue(testStr == new String(ungziped))
+    assertTrue("gzip should not mutate content", testStr == new String(ungziped))
     
-    println("test non compression")
     val nocomp = CompressionFactory.getService("nocompression")
     val nocomped = nocomp.compress(testStr.getBytes)
-    assertTrue(testStr == new String(nocomped))
+    assertTrue("non should not mutate content", testStr == new String(nocomped))
   }
 
 }

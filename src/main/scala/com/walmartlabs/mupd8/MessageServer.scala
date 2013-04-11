@@ -132,9 +132,9 @@ class MessageServerThread(val port : Int) extends Logging {
   val pool : ExecutorService = Executors.newCachedThreadPool()
   var ssocket : ServerSocket = null
   def run() = {
-    info("Server attempts to listen to port: " + port)
+    info("Message server attempts to listen to port: " + port)
     ssocket = new ServerSocket(port)
-    info("Server started, listening at port: " + port)
+    info("Message server started, listening at port: " + port)
     try {
       while (true) {
         val csocket = ssocket.accept()
@@ -144,7 +144,7 @@ class MessageServerThread(val port : Int) extends Logging {
   }
 
   def shutdown() = {
-    info("Shutting down...")
+    info("Message server shutting down...")
     try {
       ssocket.close
       pool.shutdown
