@@ -195,7 +195,7 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   }
 }
 
-class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRing, clusterFactory: (T => Unit) => MUCluster[T]) {
+class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRuntime, clusterFactory: (T => Unit) => MUCluster[T]) {
   case class innerCompare(job: T, key: Any) extends Comparable[innerCompare] {
     override def compareTo(other: innerCompare) = job.compareTo(other.job)
   }
@@ -279,8 +279,6 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
     mod(hash % pool.size)
   }
 
-  def getDestinationHost(key: Any): String = ring(key)
-
   private def lock(i1: Int, i2: Int) {
     val (k1, k2) = if (i1 < i2) (i1, i2) else (i2, i1)
     pool(k1).keyLock.acquire()
@@ -351,7 +349,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
   }
 
   def put(key: Any, x: T) {
-    val dest = getDestinationHost(key)
+    val dest = runtime.ring(key)
     //log("Dest is " + dest + " for " + key)
     if (dest == cluster.self)
       putLocal(key, x)
@@ -990,8 +988,8 @@ class AppRuntime(appID: Int,
   private val sourceThreads: mutable.ListBuffer[(String, List[java.lang.Thread])] = new mutable.ListBuffer
   val hostUpdateLock = new Object
 
-  def initMapUpdatePool(poolsize: Int, ring: HashRing, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
-    new MapUpdatePool[PerformerPacket](poolsize, ring, clusterFactory)
+  def initMapUpdatePool(poolsize: Int, runtime: AppRuntime, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
+    new MapUpdatePool[PerformerPacket](poolsize, runtime, clusterFactory)
 
   val msClient: MessageServerClient = if (app.messageServerHost != None && app.messageServerPort != None) {
     new MessageServerClient(app.messageServerHost.get.asInstanceOf[String], app.messageServerPort.get.asInstanceOf[Number].intValue(), 1000L)
@@ -1036,7 +1034,7 @@ class AppRuntime(appID: Int,
 
   if (ring == null) error("AppRuntime: No hash ring either from config file or message server")
 
-  val pool = initMapUpdatePool(poolsize, ring,
+  val pool = initMapUpdatePool(poolsize, this,
     action => new MUCluster[PerformerPacket](app, app.statusPort + 100,
                                              PerformerPacket(0, 0, Array(), Array(), "", this),
                                              () => { new Decoder(this) },
@@ -1056,7 +1054,7 @@ class AppRuntime(appID: Int,
   private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
 
   def getSlate(key: (String, Key)) = {
-    val host = pool.getDestinationHost(new StringOps(PerformerPacket.getKey(app.performerName2ID(key._1), key._2)))
+    val host = ring(new StringOps(PerformerPacket.getKey(app.performerName2ID(key._1), key._2)))
     assert(host.compareTo(pool.cluster.self) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
     val future = new Later[Slate]
     getTLS(app.performerName2ID(key._1), key._2).slateCache.waitForSlate(key, future.set(_))
@@ -1102,7 +1100,7 @@ class AppRuntime(appID: Int,
       } else {
         val key: (String, Key) = (tok(4), tok(5).map(_.toByte).toArray)
         val poolKey = PerformerPacket.getKey(app.performerName2ID(key._1), key._2)
-        val dest = InetAddress.getByName(pool.getDestinationHost(new StringOps(poolKey))).getHostName
+        val dest = InetAddress.getByName(ring(new StringOps(poolKey))).getHostName
         if (pool.cluster.self.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
           getSlate(key)
         else {
