@@ -36,6 +36,7 @@ import grizzled.slf4j.Logging
  * @constructor create a JSON Source Reader with source and key path in json
  * @param source source either a socket or a file
  * @param key path of key in json line
+ * @warning This implementation is not thread-safe in the sense that only one consumer thread can interact with this object 
  *
  */
 class JSONSource (args : java.util.List[String]) extends Mupd8Source with Logging {
@@ -89,8 +90,10 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
   }
 
   override def hasNext() : Boolean = {
-    currentLine = readLine(reconnectOnEof, 0)
-    currentLine != null
+    if (currentLine == null) {
+      currentLine = readLine(reconnectOnEof, 0)
+    }
+    return currentLine != null
   }
 
   @tailrec
@@ -125,17 +128,18 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
     }
   }
 
+  @throws(classOf[NoSuchElementException])
   override def getNextDataPair: Mupd8DataPair = {
-    try {
-      assert(currentLine != null, "Input line couldn't be null in getNextDataPair: " + currentLine)
+    if (hasNext) {
       val rtn = new Mupd8DataPair
       val key = getValue(keyStr, objMapper.readTree(currentLine))
       assert(key != None, "key from source is wrong: " + currentLine)
       rtn._key = key.get.asText
       rtn._value = new String(currentLine).getBytes()
+      currentLine = null
       rtn
-    } catch {
-       case e: Exception => {error("JSONSource: getNextDataPair error", e); null}
+    } else {
+      throw new NoSuchElementException("JSONSource doesn't have next data pair")
     }
   }
 }

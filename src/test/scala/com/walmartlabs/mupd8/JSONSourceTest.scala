@@ -41,7 +41,7 @@ class JSONSourceTest extends FunSuite with BeforeAndAfter {
   }
 
   /*
-   * The following tests are generic to Mupd8Source interface
+   * The following tests are somewhat generic to Mupd8Source interface
    */
 
   test("hasNext() should return true when there's next item") {

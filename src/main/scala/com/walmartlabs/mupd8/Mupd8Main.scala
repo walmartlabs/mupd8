@@ -322,8 +322,8 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
   private def attemptQueue(job: Runnable with Comparable[T], key: Any, i1: Int, i2: Int): Boolean = {
     val (p1, p2) = (pool(i1), pool(i2))
 
-    val b1 = if (p1.keyInUse != null) p1.keyInUse.equals(key) else false
-    val b2 = if (p2.keyInUse != null) p2.keyInUse.equals(key) else false
+    val b1 = if (p1.keyInUse != null) p1.keyInUse.toString == key.toString else false
+    val b2 = if (p2.keyInUse != null) p2.keyInUse.toString == key.toString else false
     assert(!b1 || !b2 || b1 == b2)
     if (b1 || b2) {
       val dest = if (b1) p1 else p2

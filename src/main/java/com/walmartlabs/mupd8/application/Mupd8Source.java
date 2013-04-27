@@ -17,7 +17,9 @@
 
 package com.walmartlabs.mupd8.application;
 
+import java.util.NoSuchElementException;
+
 public interface Mupd8Source {
 	boolean         hasNext();
-	Mupd8DataPair   getNextDataPair();
+	Mupd8DataPair   getNextDataPair() throws NoSuchElementException;
 }
