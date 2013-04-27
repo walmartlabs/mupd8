@@ -195,7 +195,7 @@ object MessageServer extends Logging {
 }
 
 /* Message Server for every node, which receives ring update message for now */
-class LocalMessageServer(port: Int, app: AppRuntime) extends Runnable with Logging {
+class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with Logging {
   private var lastCmdID = -1;
 
   override def run() {
@@ -213,10 +213,10 @@ class LocalMessageServer(port: Int, app: AppRuntime) extends Runnable with Loggi
         msg match {
           case UpdateRingMessage(cmdID, hash, hosts) => {
             if (cmdID > lastCmdID) {
-              app.ring = new HashRing(hash)
-              info("CMD " + cmdID + " - Update Ring with " + hosts)
+              runtime.ring = hash
               out.writeObject(AckOfNewRing(cmdID))
               lastCmdID = cmdID
+              info("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)
             } else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
           }

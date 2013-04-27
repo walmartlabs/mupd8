@@ -67,7 +67,7 @@ class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Lon
       out.writeObject(msg)
       val ack = in.readObject
       ack match {
-        case AckOfNewRing(commandId: Int) => info("LocalMessageServerClient: " + ack)
+        case AckOfNewRing(commandId: Int) => info("LocalMessageServerClient: received " + ack)
         case _ => error("MessageServerClient error: received wrong message while expecting ACK, " + ack)
       }
       out.close

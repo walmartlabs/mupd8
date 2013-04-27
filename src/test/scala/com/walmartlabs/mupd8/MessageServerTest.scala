@@ -33,6 +33,7 @@ class MessageServerTest extends FunSuite {
     val server = new MessageServer.MessageServerThread(4568, true)
     val sThread = new Thread(server, "Message Server Thread")
     sThread.start
+    Thread.sleep(500)
     val client = new MessageServerClient("localhost", 4568, 50L)
     Thread.sleep(2000)
     val nodes = Vector.range(0, 5) map (i => "machine" + (random.nextInt(10) + i * 10) + ".example.com")

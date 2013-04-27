@@ -21,18 +21,20 @@ import scala.util.Random
 import scala.math.floor
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.immutable.Map
+import grizzled.slf4j.Logging
 
 /**
  *  A map from Int < N to hostname.
  */
-class HashRing(val hash: IndexedSeq[String]) {
+class HashRing(val hash: IndexedSeq[String]) extends Logging {
   private val N = hash.size
 
   // pick up hosts
-  def apply(key : Any) : String = hash(key.hashCode % N)
+  def apply(key : Any) : String = {
+    hash(((key.hashCode + Int.MaxValue.toLong) % N).toInt)
+  }
 
   override def toString: String = hash.toString
-
 }
 
 object HashRing2 {
@@ -72,7 +74,7 @@ object HashRing2 {
 // hostList: host list
 // hash: real hash table, inited with hostlist(0)
 // map: stat map for add and remove's convenience
-class HashRing2 private (val hosts: IndexedSeq[String], val hash: IndexedSeq[String], map: Map[String, Int]) extends Serializable {
+class HashRing2 private (val hosts: IndexedSeq[String], val hash: IndexedSeq[String], map: Map[String, Int]) extends Serializable with Logging {
 
   def getCopyOfHash: IndexedSeq[String] = hash.toIndexedSeq
 

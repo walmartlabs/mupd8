@@ -14,13 +14,13 @@ start() {
 
     echo "starting messageserver..."
     nohup java com.walmartlabs.mupd8.MessageServer -pidFile $messageserver_pidfile -d `pwd`/src/main/config/testapp >> nohup.messageserver.out 2>&1 &
-    
+
      echo "starting the mupd8 app..."
 #    nohup java com.walmartlabs.mupd8.Mupd8Main -pidFile $pidfile -key k1 -from file:$HOME/data/T10.data -to T10Source -threads 6 -s `pwd`/src/main/config/testapp/sys_old -a `pwd`/src/main/config/testapp/app_old &
 #nohup java com.walmartlabs.mupd8.Mupd8Main -pidFile $pidfile -key k1 -from "file:`pwd`/src/test/resources/testapp/T10.data" -to T10Source -threads 6 -d `pwd`/src/main/config/testapp &
 #nohup java com.walmartlabs.mupd8.Mupd8Main -pidFile $pidfile -key k1 -from "file:`pwd`/src/test/resources/testapp/T10.data" -to T10Source -threads 6 -d `pwd`/src/main/config/testapp >> nohup.mupd8.out 2>&1 &
 #nohup java com.walmartlabs.mupd8.Mupd8Main -pidFile $pidfile -threads 6 -sc "com.walmartlabs.mupd8.JSONSource" -sp "file:`pwd`/src/test/resources/testapp/T10.data,K1" -to T10Source -d `pwd`/src/main/config/testapp >> nohup.mupd8.out 2>&1 &
-     nohup java com.walmartlabs.mupd8.Mupd8Main -pidFile $pidfile -threads 6 -d `pwd`/src/main/config/testapp -statistics true>> nohup.mupd8.out 2>&1 &
+     nohup java com.walmartlabs.mupd8.Mupd8Main -pidFile $pidfile -threads 6 -d `pwd`/src/main/config/testapp >> nohup.mupd8.out 2>&1 &
 }
 
 stop() {

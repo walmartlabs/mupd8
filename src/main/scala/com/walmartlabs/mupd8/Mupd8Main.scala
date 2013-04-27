@@ -142,7 +142,7 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   val server = new Server(port, new Listener() {
     override def messageReceived(packet: AnyRef): Boolean = {
       val destObj = packet.asInstanceOf[T]
-      //log("Server recv "+destObj)
+      debug("Server recv "+destObj)
       onReceipt(destObj)
       true
     }
@@ -150,20 +150,20 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
 
   val client = new Client(new Listener() {
     override def messageReceived(packet: AnyRef): Boolean = {
-      log("Client recv should not happen")
+      error("Client should not receive messages")
       assert(false)
       true
     }
   }, encoder, callableFactory)
 
   def self = InetAddress.getLocalHost.getHostName
-  println("Host id is " + self)
+  info("Host id is " + self)
 
   // TODO: make it work. not used for now.
   def updateHosts: Unit = {
     // if there is no hosts setup in config file,
     // add this node to message server and get updated host list
-    println("Add node: " + self + " to cluster")
+    info("Add node: " + self + " to cluster")
   }
 
   def init() {
@@ -189,16 +189,17 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   def send(dest: String, obj: T) {
     if (!client.send(dest, obj)) {
       if (msClient != null)
-        error("Failed to send msg to " + dest)
+        error("Failed to send message to destination " + dest)
         msClient.sendMessage(NodeRemoveMessage(dest))
     }
   }
 }
 
-class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRuntime, clusterFactory: (T => Unit) => MUCluster[T]) {
+class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRuntime, clusterFactory: (T => Unit) => MUCluster[T]) extends Logging {
   case class innerCompare(job: T, key: Any) extends Comparable[innerCompare] {
     override def compareTo(other: innerCompare) = job.compareTo(other.job)
   }
+  val ring = runtime.ring
 
   class ThreadData(val me: Int) {
     val queue = new PriorityBlockingQueue[innerCompare]
@@ -207,13 +208,14 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
     private[MapUpdatePool] val keyLock = new scala.concurrent.Lock
 
     val thread = new Thread(run {
-      log("MapUpdateThread " + me)
+      info("MapUpdateThread " + me)
       while (true) {
         val item = queue.take()
         if (item.key == null) {
           item.job.run() // This is a mapper job
         } else {
           val (i1, i2) = getPoolIndices(item.key)
+          debug("ThreadData: item = " + item + "; item.key = " + item.key + ", index = " + (i1, i2))
           assert(me == i1 || me == i2)
           lock(i1, i2)
           if (attemptQueue(item.job, item.key, i1, i2)) {
@@ -235,7 +237,8 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
                 Thread.currentThread.setPriority(Thread.MAX_PRIORITY)
               }
               val otherItem = if (jobCount % 5 == 4) Option(queue.poll()) else None
-              otherItem.map { it => if (it.key == null) put(it.job) else putLocal(it.key, it.job) }
+              otherItem.map { it =>
+                if (it.key == null) {info("call put");put(it.job) } else {info("call putlocal");putLocal(it.key, it.job)} }
               work map { _.run() }
               jobCount += 1
               work != None
@@ -295,8 +298,10 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
   private def attemptQueue(job: Runnable with Comparable[T], key: Any, i1: Int, i2: Int): Boolean = {
     val (p1, p2) = (pool(i1), pool(i2))
 
-    val b1 = if (p1.keyInUse != null) p1.keyInUse.equals(key) else false
-    val b2 = if (p2.keyInUse != null) p2.keyInUse.equals(key) else false
+    // somehow scala convert keyInUse or key into StringOps, so need to convert to string to call equals
+    // o.w. it always returns false
+    val b1 = if (p1.keyInUse != null) p1.keyInUse.toString.equals(key.toString) else false
+    val b2 = if (p2.keyInUse != null) p2.keyInUse.toString.equals(key.toString) else false
     assert(!b1 || !b2 || b1 == b2)
     if (b1 || b2) {
       val dest = if (b1) p1 else p2
@@ -321,6 +326,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
     pool(destination).queue.put(innerCompare(x, null))
   }
 
+  // Put source into queue
   def putSource(x: T) {
     var a = 0
     var sa = 0
@@ -331,6 +337,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
     }) {
       java.lang.Thread.sleep((sa - 50L) * (sa - 50L) / 25 min 1000)
     }
+
     pool(a).queue.put(innerCompare(x, null))
   }
 
@@ -350,11 +357,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
 
   def put(key: Any, x: T) {
     val dest = runtime.ring(key)
-    //log("Dest is " + dest + " for " + key)
-    if (dest == cluster.self)
-      putLocal(key, x)
-    else
-      cluster.send(dest, x)
+    if (dest == cluster.self) putLocal(key, x) else cluster.send(dest, x)
   }
 
   /*
@@ -406,7 +409,7 @@ object GT {
 
 import GT._
 
-trait IoPool {
+trait IoPool extends Logging {
   def fetch(name: String, key: Key, next: Option[Slate] => Unit)
   def write(columnName: String, key: Key, slate: Slate): Boolean
   def pendingCount = 0
@@ -428,19 +431,19 @@ class CassandraPool(
   val poolName = keyspace //TODO: Change this
   val cluster = new Cluster(hosts.reduceLeft(_ + "," + _), port)
   val cService = CompressionFactory.getService(compressionCodec)
-  println("use compression codec " + compressionCodec)
+  info("use compression codec " + compressionCodec)
   val dbIsConnected =
     {
       for (
         keySpaceManager <- Option(Pelops.createKeyspaceManager(cluster));
-        _ <- { print("Getting keyspaces from Cassandra Cluster " + hosts.reduceLeft(_ + "," + _) + ":" + port); Some(true) };
+        _ <- { info("Getting keyspaces from Cassandra Cluster " + hosts.reduceLeft(_ + "," + _) + ":" + port); Some(true) };
         keySpaces <- excToOption(keySpaceManager.getKeyspaceNames.toArray.map(_.asInstanceOf[org.apache.cassandra.thrift.KsDef]));
-        _ <- { print("[OK]\nChecking for keyspace " + keyspace); Some(true) };
+        _ <- { info("[OK] - Checking for keyspace " + keyspace); Some(true) };
         ks <- keySpaces find (_.getName == keyspace)
-      //_ <- {print("[OK]\nChecking for column family " + columnFamily) ; Some(true)} ;
+      //_ <- {info("[OK] - Checking for column family " + columnFamily) ; Some(true)} ;
       //cfs             <- ks.getCf_defs.toArray find {_.asInstanceOf[org.apache.cassandra.thrift.CfDef].getName == columnFamily}
-      ) yield { println("[OK]"); true }
-    } getOrElse { println("[Failed]\nTerminating Mupd8"); false }
+      ) yield { info("[OK]"); true }
+    } getOrElse { error("[Failed] - Terminating Mupd8"); false }
 
   if (!dbIsConnected) java.lang.System.exit(1)
 
@@ -661,7 +664,7 @@ object loadConfig {
 
 }
 
-class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String], val sysConfig: Option[String], val loadClasses: Boolean, statistics: Boolean, elastic: Boolean) {
+class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String], val sysConfig: Option[String], val loadClasses: Boolean, statistics: Boolean, elastic: Boolean) extends Logging {
   assert(appConfig.size == sysConfig.size && appConfig.size != configDir.size)
   val config = configDir map { p => new application.Config(new File(p)) } getOrElse new application.Config(sysConfig.get, appConfig.get)
   val performers = loadConfig.convertPerformers(config.workerJSONs)
@@ -676,7 +679,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
       var isMapper = false
       // the wrapper class that wraps a performer instance
       var wrapperClass: Option[String] = null
-      log("\nMupd8App loading ... " + p.name + " " + p.mtype)
+      info("Mupd8App loading ... " + p.name + " " + p.mtype)
       val classObject = p.mtype match {
         case Mapper => isMapper = true; wrapperClass = p.wrapperClass; p.jclass.map(Class.forName(_).asInstanceOf[Class[binary.Mapper]])
         case Updater => isMapper = false; wrapperClass = p.wrapperClass; p.jclass.map(Class.forName(_).asInstanceOf[Class[binary.Updater]])
@@ -737,38 +740,11 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 
   def internalPort = statusPort + 100;
 
-  def isPlannerHost(): Boolean = {
-    isLocalHost(plannerHost)
-  }
-
-  def isElastic(): Boolean = elastic
-
-  /*
-  COMMENT: A method to deterministically elect a planner. It is called during initialization as well as
-  in the event when an elected Planner node fails.
-  */
-  def electPlanner(): Unit = synchronized {
-    plannerHost = if (systemHosts.length > 0) {
-      Sorting.quickSort(systemHosts)
-      systemHosts(0)
-    } else {
-      null
-    }
-    println(" Elected planner: " + plannerHost)
-  }
-
-  def getPerformers(): Array[binary.Performer] = {
-    performerArray
-  }
+  def getPerformers(): Array[binary.Performer] = performerArray
 
   def removeHost(index: Int): Unit = {
     systemHosts = systemHosts.zipWithIndex.filter(_._2 != index) map { case (host, index) => host }
-    if(isElastic()){
-      electPlanner()
-    }
   }
-
-  def getPlannerHost() = synchronized { plannerHost }
 
   /*
    COMMENT: This method is called when a HostListMessage is received from the MessageServer, contianing
@@ -786,7 +762,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 }
 
 object PerformerPacket {
-  @inline def getKey(pid: Int, key: Key) = pid.toString + "?/%%%>*" + str(key)
+  @inline def getKey(pid: Int, key: Key): String = pid.toString + "?/%%%>*" + str(key)
 }
 
 case class PerformerPacket(pri: Priority,
@@ -794,7 +770,7 @@ case class PerformerPacket(pri: Priority,
                            key: Key,
                            event: Event,
                            stream: String, // This field can be replaced by source performer ID
-                           appRun: AppRuntime) extends MapUpdateClass[PerformerPacket] {
+                           appRun: AppRuntime) extends MapUpdateClass[PerformerPacket] with Logging {
   override def getKey = PerformerPacket.getKey(pid, key)
 
   override def compareTo(other: PerformerPacket) = pri.compareTo(other.pri)
@@ -830,12 +806,12 @@ case class PerformerPacket(pri: Priority,
     val name = performer.name
 
     val cache = appRun.getTLS(pid, key).slateCache
-    val optSlate = if(performer.mtype == Updater) Some {
+    val optSlate = if (performer.mtype == Updater) Some {
       val s = cache.getSlate((name, key))
       s map {
-        p => log("Succeeded for " + name + "," + new String(key) + " " + p)
+        p => debug("Succeeded for " + name + "," + new String(key) + " " + p)
       } getOrElse {
-        log("Failed fetch for " + name + "," + new String(key))
+        debug("Failed fetch for " + name + "," + new String(key))
         // Re-introduce self after issuing a read
         cache.waitForSlate((name, key), _ => appRun.pool.put(new StringOps(this.getKey), this))
       }
@@ -847,19 +823,19 @@ case class PerformerPacket(pri: Priority,
       val slate = optSlate.flatMap(p => p)
 
       slate.map(s =>
-        log("Update now " + "DBG for performer " + name + " Key " + str(key) + " \nEvent " + str(event) + "\nSlate " + str(s)))
+        debug("Update now " + "DBG for performer " + name + " Key " + str(key) + " \nEvent " + str(event) + "\nSlate " + str(s)))
 
       val tls = appRun.getTLS
       tls.perfPacket = this
       tls.startTime = java.lang.System.nanoTime()
       (performer.mtype, tls.unifiedUpdaters(pid)) match {
-        case (Updater, true) => execute(appRun.getUnifiedUpdater(pid).update(tls, stream, key, Array(event), Array(slate.get)))
-        case (Updater, false) => execute(appRun.getUpdater(pid).update(tls, stream, key, event, slate.get))
-        case (Mapper, false) => execute(appRun.getMapper(pid).map(tls, stream, key, event))
+        case (Updater, true) => {info("uniupdater exe");execute(appRun.getUnifiedUpdater(pid).update(tls, stream, key, Array(event), Array(slate.get)))}
+        case (Updater, false) => {info("Updater exe"); execute(appRun.getUpdater(pid).update(tls, stream, key, event, slate.get))}
+        case (Mapper, false) => {info("Mapper exe");execute(appRun.getMapper(pid).map(tls, stream, key, event))}
       }
       tls.perfPacket = null
       tls.startTime = 0
-      log("Executed " + performer.mtype.toString + " " + name)
+      debug("Executed " + performer.mtype.toString + " " + name)
     }
   }
 }
@@ -938,14 +914,13 @@ class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PR
   }
 }
 
-class TLS(appRun: AppRuntime) extends binary.PerformerUtilities {
+class TLS(appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
   val objects = appRun.app.performerFactory.map(_.map(_.apply()))
   val slateCache = new SlateCache(appRun.storeIo, appRun.slateRAM / appRun.pool.poolsize)
   val queue = new PriorityBlockingQueue[Runnable]
   var perfPacket: PerformerPacket = null
   var startTime: Long = 0
 
-  def getSlateCache = slateCache
   val unifiedUpdaters: Set[Int] =
     (for (
       (oo, i) <- objects zipWithIndex;
@@ -955,10 +930,10 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities {
 
   override def publish(stream: String, key: Array[Byte], event: Array[Byte]) {
     val app = appRun.app
-    log("Publishing to " + stream + " Key " + str(key) + " event " + str(event))
+    info("TLS::Publish: Publishing to " + stream + " Key " + str(key) + " event " + str(event))
     app.edgeName2IDs.get(stream).map(_.foreach(
       pid => {
-        log("Publishing to " + app.performers(pid).name)
+        info("TLS::publish: Publishing to " + app.performers(pid).name)
         val packet = PerformerPacket(normal, pid, key, event, stream, appRun)
         if (app.performers(pid).mtype == Mapper)
           appRun.pool.put(packet)
@@ -976,7 +951,7 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities {
     val name = appRun.app.performers(perfPacket.pid).name
     assert(appRun.app.performers(perfPacket.pid).mtype == Updater)
     val cache = appRun.getTLS(perfPacket.pid, perfPacket.key).slateCache
-    // log("replaceSlate " + appRun.app.performers(perfPacket.pid).name + "/" + str(perfPacket.key) + " Oldslate " + (cache.getSlate((name,perfPacket.key)).get).length + " Newslate " + slate.length)
+    info("replaceSlate " + appRun.app.performers(perfPacket.pid).name + "/" + str(perfPacket.key) + " Oldslate " + (cache.getSlate((name,perfPacket.key)).get).length + " Newslate " + slate.length)
     cache.put((name, perfPacket.key), slate)
   }
 }
@@ -990,6 +965,7 @@ class AppRuntime(appID: Int,
 
   def initMapUpdatePool(poolsize: Int, runtime: AppRuntime, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
     new MapUpdatePool[PerformerPacket](poolsize, runtime, clusterFactory)
+
 
   val msClient: MessageServerClient = if (app.messageServerHost != None && app.messageServerPort != None) {
     new MessageServerClient(app.messageServerHost.get.asInstanceOf[String], app.messageServerPort.get.asInstanceOf[Number].intValue(), 1000L)
@@ -1010,26 +986,27 @@ class AppRuntime(appID: Int,
   /* generate Hash Ring */
   private var _ring: HashRing = null
   def ring = _ring // getter
-  def ring_= (r: HashRing):Unit = _ring = r // setter
+  def ring_= (r: HashRing2): Unit = _ring = new HashRing(r.hash) // setter
+  def ring_= (hash: IndexedSeq[String]): Unit = _ring = new HashRing(hash)
 
   Thread.sleep(500)
   // if system hosts is not empty, generate hash ring from system hosts
   if (!app.systemHosts.isEmpty) {
     info("Generate hash ring from config file")
-    ring = new HashRing(app.systemHosts)
-    info("Update ring from config file - "  + ring)
+    ring = HashRing2.initFromHosts(app.systemHosts)
+    info("Update ring from config file")
   }
 
   // Try to Register host to message server and get updated hash ring from message server
   // even if hash ring is generated from system hosts already
   if (msClient.sendMessage(NodeJoinMessage(InetAddress.getLocalHost.getHostName))) {
-    app.synchronized {
-      while (ring == null) {
-        info("Waiting for hash ring")
-        app.wait
-      }
+    _ring = null
+    while (ring == null) {
+      info("Waiting for hash ring")
+      // TODO: change to a graceful way to wait
+      Thread.sleep(100)
     }
-    info("Update ring from Message server - " + ring)
+    info("Update ring from Message server")
   }
 
   if (ring == null) error("AppRuntime: No hash ring either from config file or message server")
@@ -1107,7 +1084,7 @@ class AppRuntime(appID: Int,
           val slate = fetchURL("http://" + dest + ":" + (app.statusPort + 300) + s)
           if (slate == None) {
             // TODO: send remove messageServer
-            log("Can't reach dest " + dest)
+            warn("Can't reach dest " + dest)
           }
           slate
         }
@@ -1128,9 +1105,7 @@ class AppRuntime(appID: Int,
   slateServer.start
 
   def startSource(sourcePerformer: String, sourceClassName: String, sourceClassParams: java.util.List[String]) = {
-
     def initiateWork(performerID: Int, stream: String, data: Mupd8DataPair) = {
-      log("Posting")
       // TODO: Sleep if the pending IO count is in excess of ????
       // Throttle the Source if we have a hot conductor
       // var exponent = 20;
@@ -1154,7 +1129,7 @@ class AppRuntime(appID: Int,
 
     class SourceThread(sourceClassName: String,
                        sourceParams: java.util.List[String],
-                       continuation: Mupd8DataPair => Unit) extends Runnable {
+                       continuation: Mupd8DataPair => Unit) extends Runnable with Logging {
       override def run() = {
         val cls = Class.forName(sourceClassName)
         val ins = cls.getConstructor(Class.forName("java.util.List")).newInstance(sourceParams).asInstanceOf[com.walmartlabs.mupd8.application.Mupd8Source]
@@ -1166,7 +1141,8 @@ class AppRuntime(appID: Int,
                 continuation(data)
               } else break() // end source thread at first no next returns
             } catch {
-              case e: Exception => println("SourceThread: hit exception"); e.printStackTrace } // catch everything to keep source running
+              case e: Exception => error("SourceThread: hit exception", e)
+            } // catch everything to keep source running
           }
         }
       }
@@ -1184,7 +1160,7 @@ class AppRuntime(appID: Int,
     if (!threads.isEmpty)
       sourceThreads += ((sourcePerformer, threads))
     else
-      log("Unable to set up source for " + sourcePerformer + " server class " + sourceClassName + " with params: " + sourceClassParams)
+      error("Unable to set up source for " + sourcePerformer + " server class " + sourceClassName + " with params: " + sourceClassParams)
 
     threads foreach { _.start() }
     !threads.isEmpty
@@ -1352,7 +1328,7 @@ object Mupd8Main extends Logging {
     }
   }
 
-  def fetchFromSources(app: AppStaticInfo, api: AppRuntime): Unit = {
+  def fetchFromSources(app: AppStaticInfo, runtime: AppRuntime): Unit = {
     val ssources = app.sources.asScala
     info("start source from sys cfg")
     object O {
@@ -1365,10 +1341,10 @@ object Mupd8Main extends Logging {
       case O(obj) => {
         if (isLocalHost(obj.get("host").asInstanceOf[String])) {
           val params = obj.get("parameters").asInstanceOf[java.util.List[String]]
-          api.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
+          runtime.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
         }
       }
-      case _ => { println("Wrong source format") }
+      case _ => { error("Wrong source format") }
     }
   }
 

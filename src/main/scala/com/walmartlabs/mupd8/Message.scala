@@ -20,7 +20,7 @@ abstract class Message extends Serializable
 case class NodeRemoveMessage(val node: String) extends Message
 case class NodeJoinMessage(val node: String) extends Message
 case class UpdateRingMessage(val cmdID: Int, val hashInNewRing: IndexedSeq[String], val hostsInNewRing: IndexedSeq[String]) extends Message {
-  override def toString() = "UpdateRingMessage(" + cmdID + ", " + hostsInNewRing + ")" 
+  override def toString() = "UpdateRingMessage(" + cmdID + ", " + hostsInNewRing + ")"
 }
 case class AckOfNewRing(val commandId: Int) extends Message
 case class AckOfNodeJoin(val node: String) extends Message

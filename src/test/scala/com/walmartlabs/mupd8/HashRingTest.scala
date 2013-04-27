@@ -95,6 +95,7 @@ class HashRingTest extends FunSuite with ShouldMatchers {
     }
   }
 */
+
   test("test hashring2") {
     val hostList1 = Vector.range(0, 10) map ("host" + _.toString)
     val hostList2 = hostList1 :+ "host100"
@@ -133,6 +134,12 @@ class HashRingTest extends FunSuite with ShouldMatchers {
     val ring4 = new ObjectInputStream(new FileInputStream("hashring3.ser")).readObject
     assert(ring4 != ring)
     new File("hashring3.ser").delete
+  }
+
+  test("hashring") {
+    val hostList = Vector.range(0, 10) map ("host" + _.toString + ".example.com")
+    val r2 = HashRing2.initFromHosts(hostList)
+    val ring = new HashRing(r2.hash)
   }
 
 }

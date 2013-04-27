@@ -1,18 +1,18 @@
 /**
  * Copyright 2011-2012 @WalmartLabs, a division of Wal-Mart Stores, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * 
+ *
  */
 
 package com.walmartlabs.mupd8.network.client;
@@ -32,6 +32,8 @@ import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 import com.walmartlabs.mupd8.network.common.*;
 import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
 import org.jboss.netty.handler.codec.replay.ReplayingDecoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Client {
 
@@ -43,6 +45,7 @@ public class Client {
     private ThreadPoolExecutor workerPool;
     private OneToOneEncoder encoder;
     private Callable<ReplayingDecoder<Decoder.DecodingState>> decoderFactory;
+    private static final Logger logger = LoggerFactory.getLogger(Client.class);
 
     public Client(Listener listener, OneToOneEncoder pencoder, Callable<ReplayingDecoder<Decoder.DecodingState>> pdecoderFactory) {
         this.listener = listener;
@@ -85,7 +88,7 @@ public class Client {
 
         ChannelFuture future = bootstrap.connect(remoteAddr);
         if (!future.awaitUninterruptibly().isSuccess()) {
-            System.err.println("--- CLIENT - Failed to connect to server at " +
+            logger.error("CLIENT - Failed to connect to server at " +
                     remoteAddr.getHostName() + ":" + remoteAddr.getPort());
             return false;
         }
@@ -116,7 +119,7 @@ public class Client {
     // close all the connections and shut down the client
     public void stop() {
         int largestPoolSize = workerPool.getLargestPoolSize();
-        System.out.println("largest pool size for client worker pool: " + largestPoolSize);
+        logger.info("Largest pool size for client worker pool: " + largestPoolSize);
         for (Channel connector : connectors.values()) {
             if (connector != null)
                 connector.close().awaitUninterruptibly();
@@ -124,12 +127,12 @@ public class Client {
 
         connectors.clear();
         this.bootstrap.releaseExternalResources();
-        System.err.println("--- CLIENT - Stopped.");
+        logger.info("CLIENT stopped...");
     }
 
     public boolean send(String connId, Object packet) {
         if (!connectors.containsKey(connId)) {
-            System.err.println("--- CLIENT - connection for " + connId + " doesn't exist!");
+            logger.error("CLIENT - connection for " + connId + " doesn't exist!");
             return false;
         }
 
@@ -140,7 +143,7 @@ public class Client {
             return true;
         }
         else {
-            System.err.println("--- CLIENT - " + connId + " is not connected!");
+            logger.error("CLIENT - " + connId + " is not connected!");
             return false;
         }
     }
