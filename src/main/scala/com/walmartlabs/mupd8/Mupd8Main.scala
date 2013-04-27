@@ -829,9 +829,9 @@ case class PerformerPacket(pri: Priority,
       tls.perfPacket = this
       tls.startTime = java.lang.System.nanoTime()
       (performer.mtype, tls.unifiedUpdaters(pid)) match {
-        case (Updater, true) => {info("uniupdater exe");execute(appRun.getUnifiedUpdater(pid).update(tls, stream, key, Array(event), Array(slate.get)))}
-        case (Updater, false) => {info("Updater exe"); execute(appRun.getUpdater(pid).update(tls, stream, key, event, slate.get))}
-        case (Mapper, false) => {info("Mapper exe");execute(appRun.getMapper(pid).map(tls, stream, key, event))}
+        case (Updater, true) => execute(appRun.getUnifiedUpdater(pid).update(tls, stream, key, Array(event), Array(slate.get)))
+        case (Updater, false) => execute(appRun.getUpdater(pid).update(tls, stream, key, event, slate.get))
+        case (Mapper, false) => execute(appRun.getMapper(pid).map(tls, stream, key, event))
       }
       tls.perfPacket = null
       tls.startTime = 0
