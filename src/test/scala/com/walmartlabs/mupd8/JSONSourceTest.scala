@@ -18,14 +18,17 @@ class JSONSourceTest extends FunSuite with BeforeAndAfterEach {
   var oneLineFileSource : JSONSource = _
   var emptyFileSource : JSONSource = _
 
-  val oneLineFile = new File("oneLineFileSource.data")
-  val emptyFile = new File("emptyFile.data")
+  var oneLineFile : File = _
+  var emptyFile : File = _
 
   val keyAttr = "k1"
   val key = "9"
   val value = "{ \"" + keyAttr + "\" : \"" + key + "\" }"
 
   override def beforeEach() {
+    oneLineFile = new File("oneLineFileSource.data")
+    emptyFile = new File("emptyFile.data")
+
     var writer = new PrintWriter(oneLineFile)
     writer.write(value + "\n")
     writer.flush
