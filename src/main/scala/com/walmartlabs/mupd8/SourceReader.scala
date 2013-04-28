@@ -127,7 +127,6 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
     _reader = _reader.flatMap(r => {r.close; None})
   }
 
-  @throws(classOf[NoSuchElementException])
   override def getNextDataPair: Mupd8DataPair = {
     if (hasNext) {
       val rtn = new Mupd8DataPair

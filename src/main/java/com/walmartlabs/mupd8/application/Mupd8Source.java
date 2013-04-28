@@ -17,8 +17,6 @@
 
 package com.walmartlabs.mupd8.application;
 
-import java.util.NoSuchElementException;
-
 public interface Mupd8Source {
   /**
    * Returns true if there is a next item ready to be read by getNextDataPair().
@@ -31,5 +29,5 @@ public interface Mupd8Source {
    * @return a Mupd8DataPair parsed from the next item
    * @throws NoSuchElementException if there is no next item to read from
    */
-	Mupd8DataPair   getNextDataPair() throws NoSuchElementException;
+	Mupd8DataPair   getNextDataPair();
 }

@@ -50,9 +50,11 @@ class JSONSourceTest extends FunSuite with BeforeAndAfterEach {
     assert(oneLineFileSource.hasNext == true)
   }  
 
-  test("hasNext() should return false when there's no more item") {
+  test("hasNext() should return always false when there's no more item") {
+    assert(emptyFileSource.hasNext == false)
     assert(emptyFileSource.hasNext == false)
   }
+
 
   test("getNextDataPair() should consume the next item and return valid data pair") {
     val dataPair = oneLineFileSource.getNextDataPair
