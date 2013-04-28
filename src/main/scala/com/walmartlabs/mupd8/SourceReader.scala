@@ -36,47 +36,47 @@ import grizzled.slf4j.Logging
  * @constructor create a JSON Source Reader with source and key path in json
  * @param source source either a socket or a file
  * @param key path of key in json line
- * @warning This implementation is not thread-safe in the sense that only one consumer thread can interact with this object 
+ * @note This implementation is not thread-safe in the sense that only one consumer thread can interact with this object 
  *
  */
 class JSONSource (args : java.util.List[String]) extends Mupd8Source with Logging {
   val sourceStr = args.get(0)
   val keyStr = args.get(1)
   val sourceArr = sourceStr.split(":")
-  private var reader = constructReader
-  private val random = new Random(System.currentTimeMillis());
-  val reconnectOnEof = sourceArr(0) match {
+  private var _reader = constructReader
+  private val _random = new Random(System.currentTimeMillis());
+  private val _reconnectOnEof = sourceArr(0) match {
     case "file" => false
     case _      => true
   }
 
-  private var currentLine : String = null
+  private var _currentLine : Option[String] = None
   private val objMapper = new ObjectMapper
 
-  def constructReader : BufferedReader = {
+  def constructReader : Option[BufferedReader] = {
     sourceArr(0) match {
       case "file" => fileReader
       case _      => socketReader
     }
   }
 
-  def fileReader : BufferedReader = {
+  def fileReader : Option[BufferedReader] = {
     try {
-      new BufferedReader(new FileReader(sourceArr(1)))
+      Some(new BufferedReader(new FileReader(sourceArr(1))))
     } catch {
       case e: Exception => {error("JSONSource: fileReader hit exception", e)
-                            null}
+                            None}
     }
   }
 
-  def socketReader : BufferedReader = {
+  def socketReader : Option[BufferedReader] = {
     try {
       info("JSONSource: connecting to "+sourceArr(0)+" port "+sourceArr(1))
       val socket = new Socket(sourceArr(0), sourceArr(1).toInt)
-      new BufferedReader(new InputStreamReader(socket.getInputStream()))
+      Some(new BufferedReader(new InputStreamReader(socket.getInputStream())))
     } catch {
       case e: Exception => {error("JSONSource: socketReader hit exception", e)
-                            null}
+                            None}
     }
   }
 
@@ -90,53 +90,56 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
   }
 
   override def hasNext() : Boolean = {
-    if (currentLine == null) {
-      currentLine = readLine(reconnectOnEof, 0)
-    }
-    return currentLine != null
+    _currentLine = _currentLine.orElse({
+        try {
+          readLine
+        } catch {
+          case e : Exception => {error("JSONSource: reader readLine failed", e)
+                                 destroyReader
+                                 None}
+        }
+      })
+
+    _currentLine isDefined
+  }
+
+  private final def readLine() : Option[String] = {
+    return readLine(0)
   }
 
   @tailrec
-  private final def readLine(repeat : Boolean, repeatTimes: Int) : String = {
-    val rlt: String = if (reader == null) {
-      if (repeat) {
-        val sleepTime = if (repeatTimes > 6) 6 else repeatTimes;
-        // sleep exponential time
-        Thread.sleep(random.nextInt(1 << (10 + sleepTime)))
-        reader = constructReader
-        // need to call readLine again to double check if reader is well constructed
-        null
-      } else null
-    } else {
-      try {
-        val line = reader readLine;
-        if (line == null) {reader close; reader = null}
-        line
-      } catch {
-        case e: Exception => error("JSONSource: reader readLine failed", e)
-        if (reader != null) {reader close; reader = null}
-        null
+  private final def readLine(retryCount : Int) : Option[String] = {
+    Option(_reader.get.readLine) match {
+      case Some(x) => Some(x)
+      case None => {
+        if (! _reconnectOnEof) {
+          destroyReader
+          None
+        } else {
+          // Sleep exponential time, upper bounded 
+          val maxSleepTime = 1 << (10 + (if (retryCount > 6) 6 else retryCount))
+          Thread.sleep(_random.nextInt(maxSleepTime))
+          // Reconstruct reader and read
+          _reader = constructReader
+          readLine(retryCount + 1)
+        }
       }
     }
+  }
 
-    if (rlt != null) rlt
-    else if (!repeat) {
-      if (reader != null) {reader close; reader = null}
-      null
-    } else {
-      readLine(repeat, repeatTimes + 1)
-    }
+  private def destroyReader : Unit = {
+    _reader = _reader.flatMap(r => {r.close; None})
   }
 
   @throws(classOf[NoSuchElementException])
   override def getNextDataPair: Mupd8DataPair = {
     if (hasNext) {
       val rtn = new Mupd8DataPair
-      val key = getValue(keyStr, objMapper.readTree(currentLine))
-      assert(key != None, "key from source is wrong: " + currentLine)
+      val key = getValue(keyStr, objMapper.readTree(_currentLine.get))
+      assert(key != None, "key from source is wrong: " + _currentLine)
       rtn._key = key.get.asText
-      rtn._value = new String(currentLine).getBytes()
-      currentLine = null
+      rtn._value = new String(_currentLine.get).getBytes()
+      _currentLine = None
       rtn
     } else {
       throw new NoSuchElementException("JSONSource doesn't have next data pair")
