@@ -3,7 +3,7 @@ package com.walmartlabs.mupd8
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.FunSuite
-import org.scalatest.BeforeAndAfter
+import org.scalatest.BeforeAndAfterEach
 
 import java.io.PrintWriter
 import java.io.IOException
@@ -13,7 +13,7 @@ import java.util.NoSuchElementException
 import scala.collection.JavaConverters._
 
 @RunWith(classOf[JUnitRunner])
-class JSONSourceTest extends FunSuite with BeforeAndAfter {
+class JSONSourceTest extends FunSuite with BeforeAndAfterEach {
 
   var oneLineFileSource : JSONSource = _
   var emptyFileSource : JSONSource = _
@@ -25,24 +25,18 @@ class JSONSourceTest extends FunSuite with BeforeAndAfter {
   val key = "9"
   val value = "{ \"" + keyAttr + "\" : \"" + key + "\" }"
 
-  before {
-    try {
-      var writer = new PrintWriter(oneLineFile)
-      writer.write(value + "\n")
-      writer.flush
-      writer.close
+  override def beforeEach() {
+    var writer = new PrintWriter(oneLineFile)
+    writer.write(value + "\n")
+    writer.flush
+    writer.close
 
-      writer = new PrintWriter(emptyFile)
-    } catch {
-      case e: IOException => { println("Failed to create test input file"); fail }
-    }
+    writer = new PrintWriter(emptyFile)
+    writer.close
+
     oneLineFileSource = new JSONSource(List("file:" + oneLineFile.getCanonicalFile, "k1").asJava)
     emptyFileSource = new JSONSource(List("file:" + emptyFile.getCanonicalFile, "k1").asJava)
   }
-
-  /*
-   * The following tests are somewhat generic to Mupd8Source interface
-   */
 
   test("hasNext() should return true when there's next item") {
     assert(oneLineFileSource.hasNext == true)
@@ -59,10 +53,10 @@ class JSONSourceTest extends FunSuite with BeforeAndAfter {
 
   test("getNextDataPair() should consume the next item and return valid data pair") {
     val dataPair = oneLineFileSource.getNextDataPair
-    assert(dataPair != null, "dataPair is null reference")
-    assert(dataPair._key === key, "dataPair key is inconsistent")
-    assert(dataPair._value === value.getBytes, "dataPair value is inconsistent")
-    assert(oneLineFileSource.hasNext == false, "Doesn't consume next item")
+    assert(dataPair != null, "dataPair should not be null reference")
+    assert(dataPair._key === key, "dataPair key should be consistent")
+    assert(dataPair._value === value.getBytes, "dataPair value should be consistent")
+    assert(oneLineFileSource.hasNext == false, "Should consume next item")
   }
 
   test("getNextDataPair() should throw NoSuchElementException if no more items") {
@@ -71,11 +65,7 @@ class JSONSourceTest extends FunSuite with BeforeAndAfter {
     }
   }
 
-  /*
-   * The following tests are specific to JSONSource
-   */
-
-  after {
+  override def afterEach() {
     oneLineFile.delete
     emptyFile.delete
   }
