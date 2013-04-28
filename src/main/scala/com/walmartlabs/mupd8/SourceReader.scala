@@ -112,8 +112,8 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
     Option(_reader.get.readLine) match {
       case Some(x) => Some(x)
       case None => {
+        destroyReader
         if (! _reconnectOnEof) {
-          destroyReader
           None
         } else {
           // Sleep exponential time, upper bounded 
