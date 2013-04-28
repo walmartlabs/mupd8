@@ -201,9 +201,9 @@ class MUCluster[T <: MapUpdateClass[T]](private var _hosts: Array[(String, Int)]
           if (client.isConnected(i.toString))
             info("Connected to " + i + " " + host + ":" + port)
           else {
-            if (msClient != null)
-             msClient.sendMessage(new NodeFailureMessage(getIPAddress(hosts(i)._1)))
             warn("Failed to connect to" + i + " " + host + ":" + port)
+            if (msClient != null)
+              msClient.sendMessage(new NodeFailureMessage(getIPAddress(hosts(i)._1)))
           }
         }
     }
@@ -212,9 +212,9 @@ class MUCluster[T <: MapUpdateClass[T]](private var _hosts: Array[(String, Int)]
   def send(dest: Int, obj: T) {
     assert(dest < hosts.size)
     if (!client.send(dest.toString, obj)) {
+      warn("Failed to send message to destination " + dest)
       if (msClient != null)
         msClient.sendMessage(new NodeFailureMessage(getIPAddress(hosts(dest)._1)))
-        warn("Failed to send message to destination " + dest)
     }
   }
 }

@@ -321,6 +321,7 @@
             <exclude>**/TestAppTest.class</exclude>
             <exclude>**/RunCassServerTest.class</exclude>
           </excludes>
+          <redirectTestOutputToFile>true</redirectTestOutputToFile>
         </configuration>
       </plugin>
       <plugin>
