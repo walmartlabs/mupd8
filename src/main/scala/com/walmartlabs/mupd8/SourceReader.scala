@@ -92,7 +92,7 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
   override def hasNext() : Boolean = {
     _currentLine = _currentLine.orElse({
         try {
-          readLine
+          readLine()
         } catch {
           case e : Exception => {error("JSONSource: reader readLine failed", e)
                                  destroyReader
@@ -103,12 +103,8 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
     _currentLine isDefined
   }
 
-  private final def readLine() : Option[String] = {
-    return readLine(0)
-  }
-
   @tailrec
-  private final def readLine(retryCount : Int) : Option[String] = {
+  private final def readLine(retryCount : Int = 0) : Option[String] = {
     Option(_reader.get.readLine) match {
       case Some(x) => Some(x)
       case None => {
