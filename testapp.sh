@@ -7,6 +7,7 @@ target=`dirname $0 | pwd`/target
 cpfile=$target/classpath.txt
 mupd8jar=$target/mupd8-1.0-SNAPSHOT.jar
 CLASSPATH=`head -1 $cpfile | tr -d '\n'`:$mupd8jar
+exitCode=0
 
 start() {
     export CLASSPATH=$CLASSPATH
@@ -30,6 +31,7 @@ stop() {
       kill $mupd8_pid
     else
       echo "Can't find mupd8 process"
+      exitCode=1 
     fi
     if [ -f $messageserver_pidfile ]; then
       messageserver_pid=`perl -nw -e '/^(\d+)$/ and print $1;' $messageserver_pidfile`
@@ -37,7 +39,9 @@ stop() {
       kill $messageserver_pid
     else
       echo "Can't find messageserver process"
+      exitCode=1
     fi
+    exit $exitCode
 }
 
 status() {
