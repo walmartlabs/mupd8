@@ -105,14 +105,13 @@ public class Client {
             return false;
     }
 
-    public void disconnect(String connId) {
-
-        if (connectors.containsKey(connId)) {
-            Channel connector = connectors.get(connId);
+    public void disconnect(String host) {
+        if (connectors.containsKey(host)) {
+            Channel connector = connectors.get(host);
             if (connector != null) {
                 connector.close().awaitUninterruptibly();
             }
-            connectors.remove(connId);
+            connectors.remove(host);
         }
     }
 

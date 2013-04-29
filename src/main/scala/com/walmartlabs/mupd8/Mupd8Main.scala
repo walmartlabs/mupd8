@@ -54,7 +54,7 @@ import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
 import com.walmartlabs.mupd8.network.client._
 import com.walmartlabs.mupd8.network.server._
 import com.walmartlabs.mupd8.network.common._
-import scala.collection.JavaConversions
+import scala.collection.JavaConversions._
 import grizzled.slf4j.Logging
 
 object miscM extends Logging {
@@ -115,8 +115,6 @@ object miscM extends Logging {
     }
   }
 
-//  def hash2Double(key: Any): Double = (key.hashCode.toLong + INTMAX).toDouble / HASH_BASE
-
 }
 
 import miscM._
@@ -159,32 +157,30 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   def self = InetAddress.getLocalHost.getHostName
   info("Host id is " + self)
 
-  // TODO: make it work. not used for now.
-  def updateHosts: Unit = {
-    // if there is no hosts setup in config file,
-    // add this node to message server and get updated host list
-    info("Add node: " + self + " to cluster")
-  }
-
   def init() {
     server.start()
     client.init()
+    hosts.filter(_.compareTo(self) != 0).foreach (host => connectToHost(host))
+  }
+
+  private def connectToHost(host: String): Unit = {
     val timeout: Long = java.lang.System.currentTimeMillis + (10000 * java.lang.Math.sqrt(hosts.size)).toLong
-    hosts.filter(_.compareTo(self) != 0).foreach {
-      host => {
-        info("Connecting to " + host + " at port " + port)
-        while (!client.connect(host, port) && java.lang.System.currentTimeMillis < timeout) {
-          java.lang.Thread.sleep(500)
-        }
-        if (client.isConnected(host))
-          info("Connected to " + host + " at port " + port)
-        else {
-          if (msClient != null) msClient.sendMessage(NodeRemoveMessage(host))
-          error("Failed to connect to " + host + " at port " + port)
-        }
-      }
+    info("Connecting to " + host + " at port " + port)
+    while (!client.connect(host, port) && java.lang.System.currentTimeMillis < timeout) {
+      java.lang.Thread.sleep(500)
+    }
+    if (client.isConnected(host))
+      info("Connected to " + host + " at port " + port)
+    else {
+      if (msClient != null) msClient.sendMessage(NodeRemoveMessage(host))
+      error("Failed to connect to " + host + " at port " + port)
     }
   }
+
+  // Add host to connection map
+  def addHost(host: String): Unit = connectToHost(host)
+  // Remove host from connection map
+  def removeHost(host: String): Unit = client.disconnect(host)
 
   def send(dest: String, obj: T) {
     if (!client.send(dest, obj)) {
@@ -208,7 +204,6 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
     private[MapUpdatePool] val keyLock = new scala.concurrent.Lock
 
     val thread = new Thread(run {
-      info("MapUpdateThread " + me)
       while (true) {
         val item = queue.take()
         if (item.key == null) {
@@ -237,8 +232,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
                 Thread.currentThread.setPriority(Thread.MAX_PRIORITY)
               }
               val otherItem = if (jobCount % 5 == 4) Option(queue.poll()) else None
-              otherItem.map { it =>
-                if (it.key == null) {info("call put");put(it.job) } else {info("call putlocal");putLocal(it.key, it.job)} }
+              otherItem.map { it => if (it.key == null) put(it.job) else putLocal(it.key, it.job) }
               work map { _.run() }
               jobCount += 1
               work != None
@@ -267,9 +261,11 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
 
   def mod(i: Int) = if (i < 0) -i else i
 
+  private val HASH_CONSTANT = 17
+  // Get queues in queue for key
   private def getPoolIndices(key: Any) = {
     val fullhash = key.hashCode()
-    val hash = fullhash / cluster.hosts.size
+    val hash = fullhash / HASH_CONSTANT //cluster.hosts.size
     val i1 = hash % pool.size
     val i2 = (hash / pool.size) % (pool.size - 1)
     val (m1, m2) = (mod(i1), mod(i2))
@@ -278,7 +274,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
 
   def getPreferredPoolIndex(key: Any) = {
     val fullhash = key.hashCode()
-    val hash = fullhash / cluster.hosts.size
+    val hash = fullhash / HASH_CONSTANT //cluster.hosts.size
     mod(hash % pool.size)
   }
 
@@ -726,8 +722,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
   val cassWriteInterval = Option(config.getScopedValue(Array("mupd8", "slate_store", "write_interval"))) map { _.asInstanceOf[Number].intValue() } getOrElse 15
   val compressionCodec = Option(config.getScopedValue(Array("mupd8", "slate_store", "compression"))).getOrElse("gzip").asInstanceOf[String].toLowerCase
 
-  var systemHosts = config.getScopedValue(Array("mupd8", "system_hosts")).asInstanceOf[ArrayList[String]].asScala.toArray
-  var plannerHost: String = null
+  var systemHosts: IndexedSeq[String] = asScalaBuffer(config.getScopedValue(Array("mupd8", "system_hosts")).asInstanceOf[ArrayList[String]]).toIndexedSeq
   val javaClassPath = Option(config.getScopedValue(Array("mupd8", "java_class_path"))).getOrElse("share/java/*").asInstanceOf[String]
   val javaSetting = Option(config.getScopedValue(Array("mupd8", "java_setting"))).getOrElse("-Xmx200M -Xms200M").asInstanceOf[String]
 
@@ -739,26 +734,6 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
   val messageServerPort = Option(config.getScopedValue(Array("mupd8", "messageserver", "port")))
 
   def internalPort = statusPort + 100;
-
-  def getPerformers(): Array[binary.Performer] = performerArray
-
-  def removeHost(index: Int): Unit = {
-    systemHosts = systemHosts.zipWithIndex.filter(_._2 != index) map { case (host, index) => host }
-  }
-
-  /*
-   COMMENT: This method is called when a HostListMessage is received from the MessageServer, contianing
-   the list of system hosts.
-  */
-  def setSystemHosts(hosts: Array[String]) = {
-    systemHosts = hosts
-    this.synchronized {
-      this.notify
-    }
-  }
-
-  def getSystemHosts(): Array[String] = systemHosts
-
 }
 
 object PerformerPacket {
@@ -930,10 +905,10 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
 
   override def publish(stream: String, key: Array[Byte], event: Array[Byte]) {
     val app = appRun.app
-    info("TLS::Publish: Publishing to " + stream + " Key " + str(key) + " event " + str(event))
+    debug("TLS::Publish: Publishing to " + stream + " Key " + str(key) + " event " + str(event))
     app.edgeName2IDs.get(stream).map(_.foreach(
       pid => {
-        info("TLS::publish: Publishing to " + app.performers(pid).name)
+        debug("TLS::publish: Publishing to " + app.performers(pid).name)
         val packet = PerformerPacket(normal, pid, key, event, stream, appRun)
         if (app.performers(pid).mtype == Mapper)
           appRun.pool.put(packet)
@@ -951,7 +926,7 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
     val name = appRun.app.performers(perfPacket.pid).name
     assert(appRun.app.performers(perfPacket.pid).mtype == Updater)
     val cache = appRun.getTLS(perfPacket.pid, perfPacket.key).slateCache
-    info("replaceSlate " + appRun.app.performers(perfPacket.pid).name + "/" + str(perfPacket.key) + " Oldslate " + (cache.getSlate((name,perfPacket.key)).get).length + " Newslate " + slate.length)
+    debug("replaceSlate " + appRun.app.performers(perfPacket.pid).name + "/" + str(perfPacket.key) + " Oldslate " + (cache.getSlate((name,perfPacket.key)).get).length + " Newslate " + slate.length)
     cache.put((name, perfPacket.key), slate)
   }
 }
@@ -982,6 +957,7 @@ class AppRuntime(appID: Int,
     null
   }
   if (localMessageServer != null) localMessageServer.start
+  Thread.sleep(200) // Give local Message Server sometime to start
 
   /* generate Hash Ring */
   private var _ring: HashRing = null
@@ -999,15 +975,18 @@ class AppRuntime(appID: Int,
 
   // Try to Register host to message server and get updated hash ring from message server
   // even if hash ring is generated from system hosts already
-  if (msClient.sendMessage(NodeJoinMessage(InetAddress.getLocalHost.getHostName))) {
-    _ring = null
-    while (ring == null) {
-      info("Waiting for hash ring")
-      // TODO: change to a graceful way to wait
-      Thread.sleep(100)
-    }
-    info("Update ring from Message server")
+  while (!msClient.sendMessage(NodeJoinMessage(InetAddress.getLocalHost.getHostName))) {
+    info("Connecting to message server failed")
+    Thread.sleep(500)
   }
+
+  _ring = null
+  while (ring == null) {
+    info("Waiting for hash ring")
+    // TODO: change to a graceful way to wait
+    Thread.sleep(500)
+  }
+  info("Update ring from Message server")
 
   if (ring == null) error("AppRuntime: No hash ring either from config file or message server")
 

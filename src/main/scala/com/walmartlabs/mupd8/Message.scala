@@ -17,11 +17,18 @@
 package com.walmartlabs.mupd8
 
 abstract class Message extends Serializable
+// To message server
 case class NodeRemoveMessage(val node: String) extends Message
 case class NodeJoinMessage(val node: String) extends Message
-case class UpdateRingMessage(val cmdID: Int, val hashInNewRing: IndexedSeq[String], val hostsInNewRing: IndexedSeq[String]) extends Message {
-  override def toString() = "UpdateRingMessage(" + cmdID + ", " + hostsInNewRing + ")"
+
+// To local message server
+case class AddHostMessage(val cmdID: Int, val addedHost: String, val hashInNewRing: IndexedSeq[String], val hostsInNewRing: IndexedSeq[String]) extends Message {
+  override def toString() = "AddHostMessage(" + cmdID + ", " + addedHost + ", " + hostsInNewRing + ")"
 }
+case class RemoveHostMessage(val cmdID: Int, val removedHost: String, val hashInNewRing: IndexedSeq[String], val hostsInNewRing: IndexedSeq[String]) extends Message {
+  override def toString() = "RemoveHostMessage(" + cmdID + ", " + removedHost + ", " + hostsInNewRing + ")"
+}
+
 case class AckOfNewRing(val commandId: Int) extends Message
 case class AckOfNodeJoin(val node: String) extends Message
 case class AckOfNodeRemove(val node: String) extends Message

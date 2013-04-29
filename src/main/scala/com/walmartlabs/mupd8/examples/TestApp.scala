@@ -29,7 +29,6 @@ class T10Mapper(config : Config, val name : String) extends Mapper with Logging 
   val streams = Map( "k1" -> "K1Stream", "k2" -> "K2Stream", "k3" -> "K3Stream", "k4" -> "K4Stream" )
 
   override def map(perfUtil : PerformerUtilities, stream : String, key : Array[Byte], event : Array[Byte]) {
-info("in cmapper")
     val json = new JSONObject(new String(event, "UTF-8"))
     streams foreach { case(key,stream) =>
       perfUtil.publish(stream, json.getString(key).getBytes("UTF-8"), event)
@@ -49,8 +48,6 @@ class KnUpdater (config : Config, val name : String) extends Updater with Loggin
       slatej.put("string_test", eventj.getString("string_test"))
     if (!slatej.has("key"))
       slatej.put("key", new String(key, "UTF-8"))
-info("updater name = " + name + ", slatej = " + slatej + ", key = " + new String(key, "UTF-8"))
     perfUtil.replaceSlate(slatej.toString.getBytes("UTF-8"))
-info("KnUpdater is done")
   }
 }

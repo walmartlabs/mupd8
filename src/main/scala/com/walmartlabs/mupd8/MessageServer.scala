@@ -63,7 +63,7 @@ object MessageServer extends Logging {
           val msg = in.readObject()
           msg match {
             case NodeRemoveMessage(node) =>
-              debug("received node remove message: " + msg)
+              info("MessageServer: received node remove message: " + msg)
               lastCmdID += 1
               lastRingUpdateCmdID  = lastCmdID
               // send ACK to reported
@@ -74,10 +74,10 @@ object MessageServer extends Logging {
               if (!isTest) {
                 // if it is unit test, don't send new ring to all nodes
                 // Local message server's port is always port + 1
-                ring2.hosts foreach (host => SendNewRing ! (lastCmdID, host, (port + 1), ring2, port))
+                ring2.hosts foreach (host => SendNewRing ! (lastCmdID, host, (port + 1), RemoveHostMessage(lastCmdID, node, ring2.hash, ring2.hosts), port))
               }
             case NodeJoinMessage(node) =>
-              debug("Received node join message: " + msg)
+              info("MessageServer: Received node join message: " + msg)
               lastCmdID += 1
               lastRingUpdateCmdID = lastCmdID
               // send ACK to reported
@@ -92,7 +92,9 @@ object MessageServer extends Logging {
               if (!isTest) {
                 // if it is unit test, don't send new ring to all nodes
                 // Local message server's port is always port + 1
-                ring2.hosts foreach (host => SendNewRing ! (lastCmdID, host, port + 1, ring2, port))
+                ring2.hosts foreach {host =>
+                  info("Sending " + ring2 + " to " + host)
+                  SendNewRing ! (lastCmdID, host, port + 1, AddHostMessage(lastCmdID, node, ring2.hash, ring2.hosts), port)}
               }
             case _ => error("CmdResponse error: not a valid msg: " + msg)
           }
@@ -128,15 +130,16 @@ object MessageServer extends Logging {
     def act() {
       react {
         // msport: port of message server
-        case (cmdID: Int, host: String, port: Int, ring2: HashRing2, msport: Int) =>
+        case (cmdID: Int, endpointHost: String, endpointPort: Int, msg: Message, msport: Int) =>
           if (cmdID == lastRingUpdateCmdID) {
             // it is still latest command and hash ring
-            info("SendNewRing: send ring to " + host)
-            val client = new LocalMessageServerClient(host, port)
-            if (!client.sendMessage(UpdateRingMessage(cmdID, ring2.hash, ring2.hosts))) {
+            info("SendNewRing: Sending cmdID " + cmdID + ", msg = " + msg + " to endpoint " + (endpointHost, endpointPort))
+            val client = new LocalMessageServerClient(endpointHost, endpointPort)
+            if (!client.sendMessage(msg)) {
               // report host fails if any exception happens
+              info("SendNewRing: report " + endpointHost + " fails")
               val msClient = new MessageServerClient("localhost", msport)
-              msClient.sendMessage(NodeRemoveMessage(host))
+              msClient.sendMessage(NodeRemoveMessage(endpointHost))
             }
           } else
             info("SendNewRing: skip non-currernt command - " + lastRingUpdateCmdID + ", " + ring2)
@@ -188,7 +191,7 @@ object MessageServer extends Logging {
       server.daemonize
       server.run
     } else {
-      info(host.get + " is not a message server host, quit...")
+      info("It is not a message server host, quit...")
       System.exit(0);
     }
   }
@@ -211,9 +214,22 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
         val msg = in.readObject
         info("LocalMessageServer: Received " + msg)
         msg match {
-          case UpdateRingMessage(cmdID, hash, hosts) => {
+          case AddHostMessage(cmdID, hostToAdd, hash, hosts) => {
             if (cmdID > lastCmdID) {
               runtime.ring = hash
+              runtime.app.systemHosts = hosts
+              if (runtime.pool != null) runtime.pool.cluster.addHost(hostToAdd)
+              out.writeObject(AckOfNewRing(cmdID))
+              lastCmdID = cmdID
+              info("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)
+            } else
+              error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
+          }
+          case RemoveHostMessage(cmdID, hostToRemove, hash, hosts) => {
+            if (cmdID > lastCmdID) {
+              runtime.ring = hash
+              runtime.app.systemHosts = hosts
+              if (runtime.pool != null) runtime.pool.cluster.removeHost(hostToRemove)
               out.writeObject(AckOfNewRing(cmdID))
               lastCmdID = cmdID
               info("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)

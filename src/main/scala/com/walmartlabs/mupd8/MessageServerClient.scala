@@ -47,10 +47,11 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Long = 2
       out.close
       in.close
       socket.close
+      true
     } catch {
-      case e: Exception => error("MessageServerClient sendMessage exception. MSG = " + msg.toString, e); false
+      case e: Exception => error("MessageServerClient sendMessage exception. MSG = " + msg.toString, e)
+      false
     }
-    true
   }
 
 }
@@ -73,10 +74,11 @@ class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Lon
       out.close
       in.close
       socket.close
+      true
     } catch {
-      case e: Exception => error("LocalMessageServerClient sendMessage exception. MSG = " + msg.toString, e); false
+      case e: Exception => error("LocalMessageServerClient sendMessage exception. MSG = " + msg.toString + ", dest = " + (serverHost , serverPort), e)
+      false
     }
-    true
   }
 
 }
