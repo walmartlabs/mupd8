@@ -41,5 +41,5 @@ public interface PerformerUtilities {
 	 *
 	 * @param slate - new slate to replace existing slate (if updater; if mapper, ignored)
 	 */
-	public void replaceSlate(Slate slate) throws SlateSizeException;
+	public void replaceSlate(Object slate) throws SlateSizeException;
 }

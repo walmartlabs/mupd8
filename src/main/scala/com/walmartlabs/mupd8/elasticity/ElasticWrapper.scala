@@ -20,12 +20,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.collection.mutable.HashMap
 import java.util.ArrayList
 import com.walmartlabs.mupd8.Mupd8Utils
+import com.walmartlabs.mupd8.miscM.SlateObject
 import com.walmartlabs.mupd8.application.binary.Slate
-import com.walmartlabs.mupd8.application.binary.Updater;
+import com.walmartlabs.mupd8.application.binary.SlateUpdater;
 import com.walmartlabs.mupd8.application.statistics.PrePerformer
 import com.walmartlabs.mupd8.application.binary.PerformerUtilities
 
-class ElasticWrapper(val updater: Updater, prePerformer: PrePerformer) extends Updater {
+class ElasticWrapper(val updater: SlateUpdater, prePerformer: PrePerformer) extends SlateUpdater {
 
   val WRAPPER_SUFFIX = "_elastic_wrapper"
   var loadRedistributionInProgress = false
@@ -49,7 +50,7 @@ class ElasticWrapper(val updater: Updater, prePerformer: PrePerformer) extends U
 
   /*
    COMMENT: When the in-memory state (set of cached slates belonging to the key space being shifted) 
-   has been transferred to another node, this method is invoked. The wrapped instance of Updater now acts
+   has been transferred to another node, this method is invoked. The wrapped instance of SlateUpdater now acts
    as a Mapper and re-publishes the key,event pairs received at this node but now owned by another node
    as the ownership of a key space has been changed. 
   */
@@ -69,12 +70,12 @@ class ElasticWrapper(val updater: Updater, prePerformer: PrePerformer) extends U
   /*
    prePerform using the configured PrePerformer followed by a regular update call.
   */
-  def actualUpdate(submitter: PerformerUtilities, stream: String, key: Array[Byte], event: Array[Byte], slate: Slate) = {
+  def actualUpdate(submitter: PerformerUtilities, stream: String, key: Array[Byte], event: Array[Byte], slate: SlateObject) = {
     prePerformer.prePerform(key, event)
     updater.update(submitter, stream, key, event, slate)
   }
 
-  override def update(submitter: PerformerUtilities, stream: String, key: Array[Byte], event: Array[Byte], slate: Slate) = {
+  override def update(submitter: PerformerUtilities, stream: String, key: Array[Byte], event: Array[Byte], slate: SlateObject) = {
     /*
      COMMENT: if load distribution is in progress and this key belongs to a kep space that is being moved, 
      then the key,event pair is parked aside and not processed until any in-memory state has been transferred to 
@@ -98,9 +99,9 @@ class ElasticWrapper(val updater: Updater, prePerformer: PrePerformer) extends U
     }
   }
   
-  override def toSlate(bytes : Array[Byte]) = {
-    updater.toSlate(bytes)
-  }
+  // override def toSlate(bytes : Array[Byte]) = {
+  //   updater.toSlate(bytes)
+  // }
   
   override def getDefaultSlate() = {
     updater.getDefaultSlate()

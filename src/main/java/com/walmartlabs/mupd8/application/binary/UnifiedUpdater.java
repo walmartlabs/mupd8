@@ -43,5 +43,5 @@ public interface UnifiedUpdater extends Performer {
      *                    (not a Set<byte[]> because slates to be merged
      *                     need not be unique)
      */
-	void update(PerformerUtilities submitter, String stream, byte[] key, byte[][] events, Slate[] slates);
+	void update(PerformerUtilities submitter, String stream, byte[] key, byte[][] events, Object[] slates);
 }
