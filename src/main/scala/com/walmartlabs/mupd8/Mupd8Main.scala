@@ -140,7 +140,7 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   val server = new Server(port, new Listener() {
     override def messageReceived(packet: AnyRef): Boolean = {
       val destObj = packet.asInstanceOf[T]
-      debug("Server recv "+destObj)
+      debug("Server receives: " + destObj)
       onReceipt(destObj)
       true
     }
@@ -427,19 +427,19 @@ class CassandraPool(
   val poolName = keyspace //TODO: Change this
   val cluster = new Cluster(hosts.reduceLeft(_ + "," + _), port)
   val cService = CompressionFactory.getService(compressionCodec)
-  info("use compression codec " + compressionCodec)
+  info("Use compression codec " + compressionCodec)
   val dbIsConnected =
     {
       for (
         keySpaceManager <- Option(Pelops.createKeyspaceManager(cluster));
-        _ <- { info("Getting keyspaces from Cassandra Cluster " + hosts.reduceLeft(_ + "," + _) + ":" + port); Some(true) };
+        _ <- { info("Getting keyspaces from Cassandra Cluster " + hosts.reduceLeft(_ + "," + _) + ":" + port); Some(true) }; 
         keySpaces <- excToOption(keySpaceManager.getKeyspaceNames.toArray.map(_.asInstanceOf[org.apache.cassandra.thrift.KsDef]));
         _ <- { info("[OK] - Checking for keyspace " + keyspace); Some(true) };
         ks <- keySpaces find (_.getName == keyspace)
       //_ <- {info("[OK] - Checking for column family " + columnFamily) ; Some(true)} ;
       //cfs             <- ks.getCf_defs.toArray find {_.asInstanceOf[org.apache.cassandra.thrift.CfDef].getName == columnFamily}
-      ) yield { info("[OK]"); true }
-    } getOrElse { error("[Failed] - Terminating Mupd8"); false }
+      ) yield { info("Keyspace " + keyspace + " is found"); true } 
+    } getOrElse { error("Keyspace " + keyspace + " is not found. Terminating Mupd8..."); false } 
 
   if (!dbIsConnected) java.lang.System.exit(1)
 
@@ -675,7 +675,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
       var isMapper = false
       // the wrapper class that wraps a performer instance
       var wrapperClass: Option[String] = null
-      info("Mupd8App loading ... " + p.name + " " + p.mtype)
+      info("Loading ... " + p.name + " " + p.mtype)
       val classObject = p.mtype match {
         case Mapper => isMapper = true; wrapperClass = p.wrapperClass; p.jclass.map(Class.forName(_).asInstanceOf[Class[binary.Mapper]])
         case Updater => isMapper = false; wrapperClass = p.wrapperClass; p.jclass.map(Class.forName(_).asInstanceOf[Class[binary.Updater]])
