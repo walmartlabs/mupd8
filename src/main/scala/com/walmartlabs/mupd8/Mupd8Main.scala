@@ -722,7 +722,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
   val cassWriteInterval = Option(config.getScopedValue(Array("mupd8", "slate_store", "write_interval"))) map { _.asInstanceOf[Number].intValue() } getOrElse 15
   val compressionCodec = Option(config.getScopedValue(Array("mupd8", "slate_store", "compression"))).getOrElse("gzip").asInstanceOf[String].toLowerCase
 
-  var systemHosts: IndexedSeq[String] = asScalaBuffer(config.getScopedValue(Array("mupd8", "system_hosts")).asInstanceOf[ArrayList[String]]).toIndexedSeq
+  var systemHosts: IndexedSeq[String] = null
   val javaClassPath = Option(config.getScopedValue(Array("mupd8", "java_class_path"))).getOrElse("share/java/*").asInstanceOf[String]
   val javaSetting = Option(config.getScopedValue(Array("mupd8", "java_setting"))).getOrElse("-Xmx200M -Xms200M").asInstanceOf[String]
 
@@ -964,14 +964,6 @@ class AppRuntime(appID: Int,
   def ring = _ring // getter
   def ring_= (r: HashRing2): Unit = _ring = new HashRing(r.hash) // setter
   def ring_= (hash: IndexedSeq[String]): Unit = _ring = new HashRing(hash)
-
-  Thread.sleep(500)
-  // if system hosts is not empty, generate hash ring from system hosts
-  if (!app.systemHosts.isEmpty) {
-    info("Generate hash ring from config file")
-    ring = HashRing2.initFromHosts(app.systemHosts)
-    info("Update ring from config file")
-  }
 
   // Try to Register host to message server and get updated hash ring from message server
   // even if hash ring is generated from system hosts already
