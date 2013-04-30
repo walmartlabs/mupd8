@@ -1,18 +1,18 @@
 /**
  * Copyright 2011-2012 @WalmartLabs, a division of Wal-Mart Stores, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * 
+ *
  */
 
 package com.walmartlabs.mupd8.network.client;
@@ -83,14 +83,10 @@ public class Client {
         });
     }
 
-    public boolean connect(String connId, String host, int port) {
-        return connect(connId, new InetSocketAddress(host, port));
-    }
-
-    public boolean connect(String connId, InetSocketAddress remoteAddr) {
+    public boolean connect(String host, int port) {
+        InetSocketAddress remoteAddr = new InetSocketAddress(host, port);
 
         ChannelFuture future = bootstrap.connect(remoteAddr);
-
         if (!future.awaitUninterruptibly().isSuccess()) {
             logger.error("CLIENT - Failed to connect to server at " +
                     remoteAddr.getHostName() + ":" + remoteAddr.getPort());
@@ -98,7 +94,7 @@ public class Client {
         }
 
         Channel connector = future.getChannel();
-        connectors.put(connId, connector);
+        connectors.put(host, connector);
         return connector.isConnected();
     }
 
@@ -109,14 +105,13 @@ public class Client {
             return false;
     }
 
-    public void disconnect(String connId) {
-
-        if (connectors.containsKey(connId)) {
-            Channel connector = connectors.get(connId);
+    public void disconnect(String host) {
+        if (connectors.containsKey(host)) {
+            Channel connector = connectors.get(host);
             if (connector != null) {
                 connector.close().awaitUninterruptibly();
             }
-            connectors.remove(connId);
+            connectors.remove(host);
         }
     }
 

@@ -1,18 +1,18 @@
 /**
  * Copyright 2011-2012 @WalmartLabs, a division of Wal-Mart Stores, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * 
+ *
  */
 
 package com.walmartlabs.mupd8.application;
@@ -43,9 +43,9 @@ public class Config {
 	JSONObject configuration = new JSONObject();
 
 	// dummy constructor
-	public Config () {		
+	public Config () {
 	}
-	
+
 	public Config(String sys_config, String app_config) throws Exception {
 		loadSysConfig(sys_config);
 		loadAppConfig(app_config);
@@ -126,9 +126,9 @@ public class Config {
 		return getScopedValue((JSONObject) object.get(key), Arrays.copyOfRange(path, 1, path.length));
 	}
 
-        public Object getScopedValue(String[] path) {
-                return getScopedValue(this.configuration, path);
-        }
+  public Object getScopedValue(String[] path) {
+    return getScopedValue(this.configuration, path);
+  }
 
 	private static HashMap<String, JSONObject> extractWorkerJSONs(JSONObject configuration) {
 		HashMap<String, JSONObject> performers = new HashMap<String, JSONObject>();
@@ -169,7 +169,7 @@ public class Config {
 			// ...
 		}
 		*/
-		
+
 		configuration.put("mupd8", sysJson);
 	}
 
@@ -189,7 +189,7 @@ public class Config {
 			JSONArray performers = (JSONArray)appJson.get("performers");
 			for (int i = 0; i < performers.size(); i++) {
 				JSONObject json = (JSONObject)performers.get(i);
-				
+
 				String performer = (String)json.get("performer");
 				workerJSONs.put(performer, json);
 			 }
@@ -198,12 +198,12 @@ public class Config {
 	}
 
 	/** Read lines, interpreting #include and ignoring ^# (comments).
-	 * 
+	 *
 	 *  cf. sub Mupd8::Mupd8Config::cpp($filename, $lines)
-	 *  
+	 *
 	 *  java.nio.file.Files, which implements glob, requires Java 7.
 	 *  Without it, this Java implementation fails to #include globs.
-	 *  
+	 *
 	 * @param input
 	 * @return preprocessed file
 	 */
@@ -233,7 +233,7 @@ public class Config {
 				if (filePattern.contains("*") || filePattern.contains("[")) {
 					// FIXME Handle the error.
 					System.err.println("#include parameter has wildcards, not supported in the JDK until Java 7: "+line);
-					continue;					
+					continue;
 				}
 
 				FileReader file = new FileReader(filePattern);

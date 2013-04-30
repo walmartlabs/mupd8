@@ -1,18 +1,18 @@
 /**
  * Copyright 2011-2012 @WalmartLabs, a division of Wal-Mart Stores, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * 
+ *
  */
 
 package com.walmartlabs.mupd8.examples
@@ -24,16 +24,18 @@ import com.walmartlabs.mupd8.application.Config
 import com.walmartlabs.mupd8.application.binary._
 import java.io.OutputStream
 import org.apache.commons.io.output.ByteArrayOutputStream
+import grizzled.slf4j.Logging
 
-class T10Mapper(config : Config, val name : String) extends Mapper {    
+
+class T10Mapper(config : Config, val name : String) extends Mapper with Logging {
   override def getName = name
-    
+
   val streams = Map( "k1" -> "K1Stream", "k2" -> "K2Stream", "k3" -> "K3Stream", "k4" -> "K4Stream" )
-  
+
   override def map(perfUtil : PerformerUtilities, stream : String, key : Array[Byte], event : Array[Byte]) {
     val json = new JSONObject(new String(event, "UTF-8"))
     streams foreach { case(key,stream) =>
-      perfUtil.publish(stream, json.getString(key).getBytes("UTF-8"), event) 
+      perfUtil.publish(stream, json.getString(key).getBytes("UTF-8"), event)
     }
   }
 }
@@ -42,9 +44,8 @@ class TestSlate(jsonParam: Option[JSONObject]) {
     val json:JSONObject = jsonParam.map {p => p}.getOrElse(new JSONObject)
 }
 
-class JSONObjectBuilder(config : Config, val name : String) extends SlateBuilder {
+class JSONObjectBuilder(config : Config, val name : String) extends SlateBuilder with Logging {
   override def toSlate(bytes : Array[Byte]) = {
-    // val json = (JSONValue.parseWithException(new String(bytes, "UTF-8"))).asInstanceOf[JSONObject]
     val json = new JSONObject(new String(bytes, "UTF-8")).asInstanceOf[JSONObject]
     new TestSlate(Option(json))
   }
@@ -59,7 +60,7 @@ class JSONObjectBuilder(config : Config, val name : String) extends SlateBuilder
   }
 }
 
-class KnUpdaterJson (config : Config, val name : String) extends SlateUpdater {
+class KnUpdaterJson (config : Config, val name : String) extends SlateUpdater with Logging {
   override def getName = name
 
   override def update(perfUtil : PerformerUtilities, stream : String, key : Array[Byte], event : Array[Byte], slate : Object) {
@@ -80,7 +81,7 @@ class KnUpdaterJson (config : Config, val name : String) extends SlateUpdater {
   }
 }
 
-class KnUpdaterBytes (config : Config, val name : String) extends Updater {
+class KnUpdaterBytes (config : Config, val name : String) extends Updater with Logging {
   val serializer = new JSONObjectBuilder(config, name)
 
   override def getName = name

@@ -1,18 +1,18 @@
 /**
  * Copyright 2011-2012 @WalmartLabs, a division of Wal-Mart Stores, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * 
+ *
  */
 
 package com.walmartlabs.mupd8
@@ -51,38 +51,36 @@ object Mupd8Runner {
       System.out.println(sysOpt + " and " + appOpt + " are provided")
     }
     else {
-      System.err.println("Missing arguments: Please provide either " + 
-                         folderOpt + " (" + folderOpt.description + ") or " + 
-                         sysOpt + " (" + sysOpt.description + ") and " + 
+      System.err.println("Missing arguments: Please provide either " +
+                         folderOpt + " (" + folderOpt.description + ") or " +
+                         sysOpt + " (" + sysOpt.description + ") and " +
                          appOpt + " (" + appOpt.description + ")")
       System.exit(1)
     }
     /* XXX: loadClasses is always true in Mupd8Runner; TODO: get rid of the parameter */
-    var collectStatistics = false
-    var elastic = false
     val appInfo = new AppStaticInfo(if (options.has(folderOpt)) Option(options.valueOf(folderOpt)) else None,
                                     if (options.has(appOpt)) Option(options.valueOf(appOpt)) else None,
                                     if (options.has(sysOpt)) Option(options.valueOf(sysOpt)) else None,
-                                    true, collectStatistics, elastic)
+                                    true, false, false)
     // source(s) are required
     if (appInfo.sources.size == 0 &&
         !(options.has(scOpt) && options.has(toOpt) && options.has(spOpt))) {
-      System.err.println("\"sources\" is not specified in sys config. " + 
-                         "Please either provide sources in sys.cfg or provide arguments " + 
-                         scOpt + " (" + scOpt.description + ") " + 
-                         toOpt + " (" + toOpt.description + ") and " + 
+      System.err.println("\"sources\" is not specified in sys config. " +
+                         "Please either provide sources in sys.cfg or provide arguments " +
+                         scOpt + " (" + scOpt.description + ") " +
+                         toOpt + " (" + toOpt.description + ") and " +
                          spOpt + " (" + spOpt.description + ")")
       System.exit(1)
     }
-    
+
     if (options.has(pidOpt)) writePID(options.valueOf(pidOpt))
-    
+
     val app = new AppRuntime(0, options.valueOf(threadsOpt), appInfo)
-    
+
     // start the source
     object O {
-      def unapply(a: Any): Option[org.json.simple.JSONObject] = 
-        if (a.isInstanceOf[org.json.simple.JSONObject]) 
+      def unapply(a: Any): Option[org.json.simple.JSONObject] =
+        if (a.isInstanceOf[org.json.simple.JSONObject])
           Some(a.asInstanceOf[org.json.simple.JSONObject])
         else None
     }
