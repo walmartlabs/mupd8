@@ -124,7 +124,10 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
   }
 
   private def destroyReader : Unit = {
-    _reader = _reader.flatMap(r => {r.close; None})
+    if (_reader isDefined) {
+      _reader.get.close; 
+      _reader = None
+    }
   }
 
   override def getNextDataPair: Mupd8DataPair = {
