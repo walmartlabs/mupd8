@@ -37,6 +37,7 @@ import org.jboss.netty.buffer.{ ChannelBuffers, ChannelBuffer }
 import org.jboss.netty.channel.{ ChannelHandlerContext, Channel }
 import org.jboss.netty.handler.codec.oneone.OneToOneEncoder
 import org.jboss.netty.handler.codec.replay.ReplayingDecoder
+import com.walmartlabs.mupd8.application.binary.Slate
 import com.walmartlabs.mupd8.application.binary
 import com.walmartlabs.mupd8.compression.CompressionFactory
 import com.walmartlabs.mupd8.compression.CompressionService
@@ -56,12 +57,22 @@ import com.walmartlabs.mupd8.network.server._
 import com.walmartlabs.mupd8.network.common._
 import scala.collection.JavaConversions._
 import grizzled.slf4j.Logging
+// import miscM._
+// import GT._
+// import Mupd8Type._
+import com.walmartlabs.mupd8.network.common.Decoder.DecodingState._
+// import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
+import java.nio.ByteBuffer
+import java.io.ByteArrayOutputStream
 
 object miscM extends Logging {
 
   val SLATE_CAPACITY = 1048576 // 1M size
   val INTMAX: Long = Int.MaxValue.toLong
   val HASH_BASE: Long = Int.MaxValue.toLong - Int.MinValue.toLong
+
+  // A SlateUpdater receives a SlateValue.slate of type SlateObject.
+  type SlateObject = Object
 
   def log(s: => { def toString: String }) = {} //println("[" + Thread.currentThread().getName() + "]" + s.toString)
 
@@ -394,7 +405,6 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
 object GT {
   type Key = Array[Byte]
   type Event = Array[Byte]
-  type Slate = Array[Byte]
   type Priority = Int
 
   val source: Priority = 96 * 1024
@@ -405,15 +415,15 @@ object GT {
 
 import GT._
 
-trait IoPool extends Logging {
-  def fetch(name: String, key: Key, next: Option[Slate] => Unit)
-  def write(columnName: String, key: Key, slate: Slate): Boolean
+trait IoPool extends Logging{
+  def fetch(name: String, key: Key, next: Option[Array[Byte]] => Unit)
+  def write(columnName: String, key: Key, slate: Array[Byte]): Boolean
   def pendingCount = 0
 }
 
 class NullPool extends IoPool {
-  def fetch(name: String, key: Key, next: Option[Slate] => Unit) { next(None) }
-  def write(columnName: String, key: Key, slate: Slate): Boolean = true
+  def fetch(name: String, key: Key, next: Option[Array[Byte]] => Unit) { next(None) }
+  def write(columnName: String, key: Key, slate: Array[Byte]): Boolean = true
 }
 
 class CassandraPool(
@@ -447,11 +457,11 @@ class CassandraPool(
   val selector = Pelops.createSelector(poolName) // TODO: Should this be per thread?
   val pool = new java.util.concurrent.ThreadPoolExecutor(10, 50, 5, TimeUnit.SECONDS, new LinkedBlockingQueue[Runnable]) // TODO: We can drop events unless we have a Rejection Handler or LinkedQueue
 
-  def fetch(name: String, key: Key, next: Option[Slate] => Unit) {
+  def fetch(name: String, key: Key, next: Option[Array[Byte]] => Unit) {
     pool.submit(run {
       val start = java.lang.System.nanoTime()
       val col = excToOption(selector.getColumnFromRow(getCF(name), Bytes.fromByteArray(key), Bytes.fromByteArray(name.getBytes), ConsistencyLevel.QUORUM))
-      log("Fetch " + (java.lang.System.nanoTime() - start) / 1000000 + " " + name + " " + str(key))
+      debug("Fetch " + (java.lang.System.nanoTime() - start) / 1000000 + " " + name + " " + str(key))
       next(col.map { col =>
         assert(col != null)
         val ba = Bytes.fromByteBuffer(col.value).toByteArray
@@ -460,7 +470,7 @@ class CassandraPool(
     })
   }
 
-  def write(columnName: String, key: Key, slate: Slate) = {
+  def write(columnName: String, key: Key, slate: Array[Byte]) = {
     val compressed = cService.compress(slate)
     val mutator = Pelops.createMutator(poolName)
     mutator.writeColumn(
@@ -507,9 +517,11 @@ class DLList[T] {
   }
 }
 
-class SlateValue(val slate: Slate, val keyRef: Node[String], var dirty: Boolean = true)
+
+class SlateValue(val slate: SlateObject, val keyRef: Node[String], var dirty: Boolean = true)
 
 class SlateCache(val io: IoPool, val usageLimit: Long) {
+  println("Creating new SlateCache with IoPool " + io + " and usageLimit " + usageLimit);
   private val lock = new scala.concurrent.Lock
   private val table = new mutable.HashMap[String, SlateValue]()
   private val lru = new DLList[String]
@@ -531,7 +543,7 @@ class SlateCache(val io: IoPool, val usageLimit: Long) {
     item.map(_.slate)
   }
 
-  def waitForSlate(akey: (String, Key), action: Slate => Unit) {
+  def waitForSlate(akey: (String, Key), action: SlateObject => Unit, updater : binary.SlateUpdater, slateBuilder : binary.SlateBuilder, doSafePut : Boolean = true) {
     val skey = buildKey(akey._1, akey._2)
     lock.acquire()
     val item = table.get(skey)
@@ -544,19 +556,26 @@ class SlateCache(val io: IoPool, val usageLimit: Long) {
       action(p.slate)
     } getOrElse {
       while (io.pendingCount > 200) java.lang.Thread.sleep(100)
-      io.fetch(akey._1, akey._2, p => action(safePut(akey, p.getOrElse("{}" getBytes))))
+      def slateFromBytes(p:Array[Byte]) = { slateBuilder.toSlate(p) }
+      if( doSafePut ) {
+        io.fetch(akey._1, akey._2, p => action(safePut(akey, p.map {slateFromBytes}.getOrElse(updater.getDefaultSlate()))))
+      } else {
+        io.fetch(akey._1, akey._2, p => action(p.map {slateFromBytes}.getOrElse(updater.getDefaultSlate())))
+      }
     }
   }
 
-  private def unLockedPut(skey: String, value: Slate, dirty: Boolean = true) = {
+  @inline private def bytesConsumed(skey : String, item : SlateObject) = 1
+
+  private def unLockedPut(skey: String, value: SlateObject, dirty: Boolean = true) = {
     val newVal = new SlateValue(value, new Node(skey), dirty)
     lru.add(newVal.keyRef)
-    currentUsage += 2 * skey.length + value.size + 2 * objOverhead
+    currentUsage += bytesConsumed(skey, value)
     val oldVal = table.put(skey, newVal)
     assert(dirty || oldVal == None)
     oldVal map { p =>
       lru.remove(p.keyRef)
-      currentUsage -= 2 * skey.length + p.slate.size + 2 * objOverhead
+      currentUsage -= bytesConsumed(skey, value)
     }
 
     var count = 0
@@ -569,7 +588,7 @@ class SlateCache(val io: IoPool, val usageLimit: Long) {
           // Potential infinite loop here, which is why we are forced to use count
           lru.add(p.keyRef)
         } else {
-          currentUsage -= 2 * item.length + p.slate.size + 2 * objOverhead
+          currentUsage -= bytesConsumed(skey, value)
           table.remove(item)
         }
       } getOrElse {
@@ -581,14 +600,14 @@ class SlateCache(val io: IoPool, val usageLimit: Long) {
   }
 
   // To be used only by replaceSlate
-  def put(akey: (String, Key), value: Slate) {
+  def put(akey: (String, Key), value: SlateObject) {
     val skey = buildKey(akey._1, akey._2)
     lock.acquire()
     unLockedPut(skey, value)
     lock.release()
   }
 
-  private def safePut(akey: (String, Key), value: Slate) = {
+  private def safePut(akey: (String, Key), value: SlateObject) = {
     val skey = buildKey(akey._1, akey._2)
     lock.acquire()
     val slate = table get (skey) getOrElse unLockedPut(skey, value, false)
@@ -616,7 +635,6 @@ object Mupd8Type extends Enumeration {
   type Mupd8Type = Value
   val Source, Mapper, Updater = Value
 }
-
 import Mupd8Type._
 
 case class Performer(name: String,
@@ -626,6 +644,7 @@ case class Performer(name: String,
   ptype: Option[String],
   jclass: Option[String],
   wrapperClass: Option[String],
+  slateBuilderClass: Option[String],
   workers: Int,
   cf: Option[String],
   ttl: Int,
@@ -652,12 +671,31 @@ object loadConfig {
         ptype = Option(p._2.get("type").asInstanceOf[String]),
         jclass = Option(p._2.get("class").asInstanceOf[String]),
         wrapperClass = { Option(p._2.get("wrapper_class").asInstanceOf[String]) },
+        slateBuilderClass = Option(p._2.get("slate_builder").asInstanceOf[String]),
         workers = if (p._2.get("workers") == null) 1.toInt else p._2.get("workers").asInstanceOf[Number].intValue(),
         cf = Option(p._2.get("column_family").asInstanceOf[String]),
         ttl = if (p._2.get("slate_ttl") == null) Mutator.NO_TTL else p._2.get("slate_ttl").asInstanceOf[Number].intValue(),
         copy = isTrue(Option(p._2.get("clone").asInstanceOf[String]))))(breakOut)
   }
 
+}
+
+// A factory that constructs a SlateUpdater that runs an Updater.
+// The SlateUpdater expects to be accompanied by a ByteArraySlateBuilder as
+// its SlateBuilder so that the slate object indeed stays the raw byte[].
+class UpdaterFactory[U <: binary.Updater](val updaterType : Class[U]) {
+  val updaterConstructor = updaterType.getConstructor(classOf[Config], classOf[String])
+  def construct(config : Config, name : String) : binary.SlateUpdater = {
+    val updater = updaterConstructor.newInstance(config, name)
+    val updaterWrapper = new binary.SlateUpdater() {
+      override def getName() = updater.getName()
+      override def update(util : binary.PerformerUtilities, stream : String, k : Array[Byte], v : Array[Byte], slate : SlateObject) = {
+        updater.update(util, stream, k, v, slate.asInstanceOf[Array[Byte]])
+      }
+      override def getDefaultSlate() : Array[Byte] = Array[Byte]()
+    }
+    updaterWrapper
+  }
 }
 
 class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String], val sysConfig: Option[String], val loadClasses: Boolean, statistics: Boolean, elastic: Boolean) extends Logging {
@@ -667,7 +705,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
   val statusPort = Option(config.getScopedValue(Array("mupd8", "mupd8_status", "http_port"))).getOrElse(new Integer(6001)).asInstanceOf[Number].intValue()
   val performerName2ID = Map(performers.map(_.name).zip(0 until performers.size): _*)
   val edgeName2IDs = performers.map(p => p.subs.map((_, performerName2ID(p.name)))).flatten.groupBy(_._1).mapValues(_.map(_._2))
-  var performerArray: Array[binary.Performer] = new Array(performers.size)
+  var performerArray: Array[binary.Performer] = new Array[binary.Performer](performers.size)
 
   val performerFactory: Vector[Option[() => binary.Performer]] = if (loadClasses) (
     0 until performers.size map { i =>
@@ -676,14 +714,45 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
       // the wrapper class that wraps a performer instance
       var wrapperClass: Option[String] = null
       info("Loading ... " + p.name + " " + p.mtype)
-      val classObject = p.mtype match {
-        case Mapper => isMapper = true; wrapperClass = p.wrapperClass; p.jclass.map(Class.forName(_).asInstanceOf[Class[binary.Mapper]])
-        case Updater => isMapper = false; wrapperClass = p.wrapperClass; p.jclass.map(Class.forName(_).asInstanceOf[Class[binary.Updater]])
+      val constructor : Option[() => binary.Performer] = p.mtype match {
+        case Mapper => {
+          isMapper = true; wrapperClass = p.wrapperClass;
+          p.jclass.map(Class.forName(_)).map { m =>
+            if (classOf[binary.Mapper].isAssignableFrom(m)) {
+              val mapperConstructor = m.asSubclass(classOf[binary.Mapper]).getConstructor(config.getClass, "".getClass)
+              () => mapperConstructor.newInstance(config, p.name)
+            } else {
+              val msg = "Mapper "+p.name+" uses class "+m.getName()+" that is not assignable to "+classOf[binary.Mapper].getName()
+              error(msg)
+              throw new ClassCastException(msg)
+            }
+          }
+        }
+        case Updater => {
+          isMapper = false; wrapperClass = p.wrapperClass;
+          p.jclass.map(Class.forName(_)).map { u =>
+            if (classOf[binary.SlateUpdater].isAssignableFrom(u)) {
+              if (p.slateBuilderClass.isEmpty) {
+                val msg = "Updater "+p.name+" uses a SlateUpdater class but does not specify a corresponding slate_builder."
+                error(msg)
+                info("An updater with no slate_builder may use a class Updater but not SlateUpdater.");
+                throw new ClassCastException("Updater "+p.name+" does not define slate_builder but class "+u.getName()+" implements SlateUpdater, not Updater.")
+              }
+              val updaterConstructor = u.asSubclass(classOf[binary.SlateUpdater]).getConstructor(config.getClass, "".getClass)
+              () => updaterConstructor.newInstance(config, p.name)
+            } else if (classOf[binary.Updater].isAssignableFrom(u)) {
+              val updaterFactory = new UpdaterFactory(u.asSubclass(classOf[binary.Updater]))
+              () => updaterFactory.construct(config, p.name)
+            } else {
+              val msg = "Updater "+p.name+" uses class "+u+" that is not assignable to "+classOf[binary.Updater].getName()
+              error(msg)
+              throw new ClassCastException(msg)
+            }
+          }
+        }
         case _ => None
       }
-      classObject.map { x =>
-        val classobject = x.getConstructor(config.getClass, "".getClass)
-        val userProvidedPerformer = classobject.newInstance(config, p.name)
+      constructor.map { performerConstructor => 
         val needToCollectStatistics = statistics | elastic
         val wrappedPerformer =
           if (statistics) {
@@ -694,12 +763,12 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
             var constructor = Class.forName(wrapperClassname).asInstanceOf[Class[com.walmartlabs.mupd8.application.statistics.PrePerformer]].getConstructor("".getClass());
             val prePerformer = constructor.newInstance(p.name)
             if (isMapper) {
-              new MapWrapper(userProvidedPerformer, prePerformer)
+              new MapWrapper(performerConstructor().asInstanceOf[binary.Mapper], prePerformer)
             } else {
-              new UpdateWrapper(userProvidedPerformer, prePerformer)
+              new UpdateWrapper(performerConstructor().asInstanceOf[binary.SlateUpdater], prePerformer)
             }
           } else {
-            userProvidedPerformer
+            performerConstructor()
           }
 
         performerArray(i) = wrappedPerformer
@@ -714,12 +783,37 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
       }
     })(breakOut)
   else Vector()
+  
+  val slateBuilderFactory: Vector[Option[() => binary.SlateBuilder]] = if (loadClasses) (
+    0 until performers.size map { i =>
+      val p = performers(i)
+      val slateBuilder = p.mtype match {
+        case Updater => {
+          // TODO Keep enough state to detect the error case: SlateUpdater but no SlateBuilder specified.
+          val slateBuilderClass = p.slateBuilderClass.map(Class.forName(_)).getOrElse(classOf[binary.ByteArraySlateBuilder])
+          val castSlateBuilderClass = try {
+            slateBuilderClass.asSubclass(classOf[binary.SlateBuilder])
+          } catch {
+            case e : ClassCastException => {
+              error("SlateBuilder class " + slateBuilderClass.getName() + " for updater " + p.name + " is not an implementation of " + classOf[binary.SlateBuilder].getName()+" as required: ", e)
+              throw e
+            }
+          }
+          val slateBuilderConstructor = castSlateBuilderClass.getConstructor(config.getClass, "".getClass)
+          Some(() => { slateBuilderConstructor.newInstance(config, p.name) })
+        }
+        case _ => None
+      }
+      slateBuilder
+    })(breakOut)
+  else Vector()
 
   val cassPort = config.getScopedValue(Array("mupd8", "slate_store", "port")).asInstanceOf[Number].intValue()
   val cassKeySpace = config.getScopedValue(Array("mupd8", "slate_store", "keyspace")).asInstanceOf[String]
   val cassHosts = config.getScopedValue(Array("mupd8", "slate_store", "hosts")).asInstanceOf[ArrayList[String]].asScala.toArray
   val cassColumnFamily = config.getScopedValue(Array("mupd8", "application")).asInstanceOf[java.util.HashMap[String, java.lang.Object]].asScala.toMap.head._1
   val cassWriteInterval = Option(config.getScopedValue(Array("mupd8", "slate_store", "write_interval"))) map { _.asInstanceOf[Number].intValue() } getOrElse 15
+  val slateCacheCount = Option(config.getScopedValue(Array("mupd8", "slate_store", "slate_cache_count"))) map { _.asInstanceOf[Number].intValue() } getOrElse 1000
   val compressionCodec = Option(config.getScopedValue(Array("mupd8", "slate_store", "compression"))).getOrElse("gzip").asInstanceOf[String].toLowerCase
 
   var systemHosts: IndexedSeq[String] = null
@@ -788,7 +882,7 @@ case class PerformerPacket(pri: Priority,
       } getOrElse {
         debug("Failed fetch for " + name + "," + new String(key))
         // Re-introduce self after issuing a read
-        cache.waitForSlate((name, key), _ => appRun.pool.put(new StringOps(this.getKey), this))
+        cache.waitForSlate((name,key),_ => appRun.pool.put(new StringOps(this.getKey), this), appRun.getUpdater(pid, key), appRun.getSlateBuilder(pid))
       }
       s
     } else
@@ -798,7 +892,7 @@ case class PerformerPacket(pri: Priority,
       val slate = optSlate.flatMap(p => p)
 
       slate.map(s =>
-        debug("Update now " + "DBG for performer " + name + " Key " + str(key) + " \nEvent " + str(event) + "\nSlate " + str(s)))
+        debug("Update now " + "DBG for performer " + name + " Key " + str(key) + " \nEvent " + str(event) + "\nSlate " + s.toString()))
 
       val tls = appRun.getTLS
       tls.perfPacket = this
@@ -814,9 +908,6 @@ case class PerformerPacket(pri: Priority,
     }
   }
 }
-
-import com.walmartlabs.mupd8.network.common.Decoder.DecodingState._
-import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
 
 class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PRIORITY) {
   var pri: Priority = -1
@@ -891,7 +982,8 @@ class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PR
 
 class TLS(appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
   val objects = appRun.app.performerFactory.map(_.map(_.apply()))
-  val slateCache = new SlateCache(appRun.storeIo, appRun.slateRAM / appRun.pool.poolsize)
+  // val slateCache = new SlateCache(appRun.storeIo, appRun.slateRAM / appRun.pool.poolsize)
+  val slateCache = new SlateCache(appRun.storeIo, appRun.app.slateCacheCount) 
   val queue = new PriorityBlockingQueue[Runnable]
   var perfPacket: PerformerPacket = null
   var startTime: Long = 0
@@ -919,14 +1011,12 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
 
   //  import com.walmartlabs.mupd8.application.SlateSizeException
   @throws(classOf[SlateSizeException])
-  override def replaceSlate(slate: Array[Byte]) {
-    if (slate.size >= Misc.SLATE_CAPACITY)
-      throw new SlateSizeException(slate.size, Misc.SLATE_CAPACITY - 1)
+  override def replaceSlate(slate: SlateObject) {
     // TODO: Optimize replace slate to avoid hash table look ups
     val name = appRun.app.performers(perfPacket.pid).name
     assert(appRun.app.performers(perfPacket.pid).mtype == Updater)
     val cache = appRun.getTLS(perfPacket.pid, perfPacket.key).slateCache
-    debug("replaceSlate " + appRun.app.performers(perfPacket.pid).name + "/" + str(perfPacket.key) + " Oldslate " + (cache.getSlate((name,perfPacket.key)).get).length + " Newslate " + slate.length)
+    debug("replaceSlate " + appRun.app.performers(perfPacket.pid).name + "/" + str(perfPacket.key) + " Oldslate " + (cache.getSlate((name,perfPacket.key)).get).toString() + " Newslate " + slate.toString())
     cache.put((name, perfPacket.key), slate)
   }
 }
@@ -998,15 +1088,19 @@ class AppRuntime(appID: Int,
 
   val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
   info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
+  val slateBuilders = app.slateBuilderFactory.map(_.map(_.apply()))
   private val threadMap: Map[Long, TLS] = pool.pool.map(_.thread.getId -> new TLS(this))(breakOut)
   private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
 
   def getSlate(key: (String, Key)) = {
-    val host = ring(new StringOps(PerformerPacket.getKey(app.performerName2ID(key._1), key._2)))
+    val performerId = app.performerName2ID(key._1)
+    val host = ring(new StringOps(PerformerPacket.getKey(performerId, key._2)))
     assert(host.compareTo(pool.cluster.self) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
-    val future = new Later[Slate]
-    getTLS(app.performerName2ID(key._1), key._2).slateCache.waitForSlate(key, future.set(_))
-    Option(future.get())
+    val future = new Later[SlateObject]
+    getTLS(performerId, key._2).slateCache.waitForSlate(key, future.set(_), getUpdater(performerId, key._2), getSlateBuilder(performerId), false)
+    val bytes = new ByteArrayOutputStream()
+    getSlateBuilder(performerId).toBytes(future.get(), bytes)
+    Option(bytes.toByteArray())
   }
 
   val maxWorkerCount = 2 * Runtime.getRuntime.availableProcessors
@@ -1169,8 +1263,12 @@ class AppRuntime(appID: Int,
     val key = item._1
     val slateVal = item._2
     val colname = key.take(key.indexOf("~~~"))
+    val slateByteStream = new ByteArrayOutputStream()
+    debug("Serializing cached slate for updater "+colname+" to Cassandra: "+slateVal.slate)
+    var suc = getSlateBuilder(app.performerName2ID(colname)).toBytes(slateVal.slate, slateByteStream)
     // TODO: .getBytes may not work the way you want it to!! Encoding issues!
-    val suc = storeIo.write(colname, key.drop(colname.length + 3).getBytes, slateVal.slate)
+    suc &&= storeIo.write(colname, key.drop(colname.length + 3).getBytes, slateByteStream.toByteArray())
+    // val suc = storeIo.write(colname, key.drop(colname.length + 3).getBytes, slateVal.slate.toBytes())
     if (suc) {
       slateVal.dirty = false
       log("Wrote record for " + colname + " " + key)
@@ -1180,12 +1278,19 @@ class AppRuntime(appID: Int,
     }
   }
 
+  def getSlateBuilder(pid: Int) = slateBuilders(pid).get
+
+  // The getTLS method, and therefore the getFoo(pid) methods that depend on it,
+  // succeed only for threads in threadMap (namely, MapUpdatePool threads).
+  // Other threads need to use the getFoo(pid, key) form instead to "borrow" a
+  // Foo from one of the threadMap threads (chosen by key).
+  //
   def getTLS = threadMap(Thread.currentThread().getId)
 
   def getMapper(pid: Int) = getTLS.objects(pid).get.asInstanceOf[binary.Mapper]
 
-  def getUpdater(pid: Int) = getTLS.objects(pid).get.asInstanceOf[binary.Updater]
-
+  def getUpdater(pid: Int) = getTLS.objects(pid).get.asInstanceOf[binary.SlateUpdater]
+  def getUpdater(pid: Int, key: Key) = getTLS(pid, key).objects(pid).get.asInstanceOf[binary.SlateUpdater]
   def getUnifiedUpdater(pid: Int) = getTLS.objects(pid).get.asInstanceOf[binary.UnifiedUpdater]
 
   // This hash function must be the same as the MapUpdatePool and different from SlateCache
