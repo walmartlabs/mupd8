@@ -14,12 +14,33 @@
  * limitations under the License.
  * 
  */
+
 package com.walmartlabs.mupd8.application.binary;
 
-/** An Updater component of an application.
- * 
- * Applications should implement Mapper and Updater interfaces as needed.
+import java.io.IOException;
+import java.io.OutputStream;
+
+import com.walmartlabs.mupd8.application.Config;
+
+/** A passthrough SlateBuilder (from byte[] to byte[]).
+ *
  */
-public interface Updater extends Performer {
-	public void update(PerformerUtilities submitter, String stream, byte[] key, byte[] event, byte[] slate);
+public class ByteArraySlateBuilder implements SlateBuilder {
+	public ByteArraySlateBuilder(Config config, String name) {}
+
+	@Override
+	public byte[] toSlate(byte[] bytes) {
+		return bytes;
+	}
+
+	@Override
+	public boolean toBytes(Object slate, OutputStream out) {
+		byte[] b = (byte[]) slate;
+		try {
+			out.write(b);
+			return true;
+		} catch (IOException e) {
+			return false;
+		}
+	}
 }
