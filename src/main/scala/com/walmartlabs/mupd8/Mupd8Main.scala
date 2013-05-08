@@ -442,14 +442,14 @@ class CassandraPool(
     {
       for (
         keySpaceManager <- Option(Pelops.createKeyspaceManager(cluster));
-        _ <- { info("Getting keyspaces from Cassandra Cluster " + hosts.reduceLeft(_ + "," + _) + ":" + port); Some(true) }; 
+        _ <- { info("Getting keyspaces from Cassandra Cluster " + hosts.reduceLeft(_ + "," + _) + ":" + port); Some(true) };
         keySpaces <- excToOption(keySpaceManager.getKeyspaceNames.toArray.map(_.asInstanceOf[org.apache.cassandra.thrift.KsDef]));
         _ <- { info("[OK] - Checking for keyspace " + keyspace); Some(true) };
         ks <- keySpaces find (_.getName == keyspace)
       //_ <- {info("[OK] - Checking for column family " + columnFamily) ; Some(true)} ;
       //cfs             <- ks.getCf_defs.toArray find {_.asInstanceOf[org.apache.cassandra.thrift.CfDef].getName == columnFamily}
-      ) yield { info("Keyspace " + keyspace + " is found"); true } 
-    } getOrElse { error("Keyspace " + keyspace + " is not found. Terminating Mupd8..."); false } 
+      ) yield { info("Keyspace " + keyspace + " is found"); true }
+    } getOrElse { error("Keyspace " + keyspace + " is not found. Terminating Mupd8..."); false }
 
   if (!dbIsConnected) java.lang.System.exit(1)
 
@@ -752,7 +752,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
         }
         case _ => None
       }
-      constructor.map { performerConstructor => 
+      constructor.map { performerConstructor =>
         val needToCollectStatistics = statistics | elastic
         val wrappedPerformer =
           if (statistics) {
@@ -783,7 +783,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
       }
     })(breakOut)
   else Vector()
-  
+
   val slateBuilderFactory: Vector[Option[() => binary.SlateBuilder]] = if (loadClasses) (
     0 until performers.size map { i =>
       val p = performers(i)
@@ -983,7 +983,7 @@ class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PR
 class TLS(appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
   val objects = appRun.app.performerFactory.map(_.map(_.apply()))
   // val slateCache = new SlateCache(appRun.storeIo, appRun.slateRAM / appRun.pool.poolsize)
-  val slateCache = new SlateCache(appRun.storeIo, appRun.app.slateCacheCount) 
+  val slateCache = new SlateCache(appRun.storeIo, appRun.app.slateCacheCount)
   val queue = new PriorityBlockingQueue[Runnable]
   var perfPacket: PerformerPacket = null
   var startTime: Long = 0
@@ -1033,7 +1033,7 @@ class AppRuntime(appID: Int,
 
 
   val msClient: MessageServerClient = if (app.messageServerHost != None && app.messageServerPort != None) {
-    new MessageServerClient(app.messageServerHost.get.asInstanceOf[String], app.messageServerPort.get.asInstanceOf[Number].intValue(), 1000L)
+    new MessageServerClient(app.messageServerHost.get.asInstanceOf[String], app.messageServerPort.get.asInstanceOf[Number].intValue(), 1000)
   } else {
     error("AppRuntime error: message server host name or port is empty")
     null
@@ -1062,7 +1062,6 @@ class AppRuntime(appID: Int,
     Thread.sleep(500)
   }
 
-  _ring = null
   while (ring == null) {
     info("Waiting for hash ring")
     // TODO: change to a graceful way to wait
@@ -1388,7 +1387,7 @@ object Mupd8Main extends Logging {
           if (runtime.ring != null) {
             if (app.sources.size > 0) {
               fetchFromSources(app, runtime)
-            } else {
+            } else if (p.contains("-to") && p.contains("-sc")) {
               info("start source from cmdLine")
               runtime.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
             }
