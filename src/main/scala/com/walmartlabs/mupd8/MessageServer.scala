@@ -77,6 +77,7 @@ object MessageServer extends Logging {
                 info("CmdID "  + lastCmdID + ": Sending " + ring2 + " to " + ring2.hosts)
 
                 // reset Timer
+                TimerActor.stopTimer(lastCmdID - 1, "cmdID: " + lastCmdID)
                 TimerActor.startTimer(lastCmdID, 2000L, () => info("TIMEOUT"))
                 // reset counter
                 AckedNodeCounter ! StartCounter(lastCmdID, ring2.hosts, "localhost", port)
@@ -103,6 +104,7 @@ object MessageServer extends Logging {
                 // Local message server's port is always port + 1
                 info("Sending " + ring2 + " to " + ring2.hosts)
                 // reset Timer
+                TimerActor.stopTimer(lastCmdID - 1, "cmdID: " + lastCmdID)
                 TimerActor.startTimer(lastCmdID, 5000L, () => info("TIMEOUT")) // TODO: replace info
                 // reset counter
                 AckedNodeCounter ! StartCounter(lastCmdID, ring2.hosts, "localhost", port)
@@ -112,11 +114,11 @@ object MessageServer extends Logging {
               }
 
             case ACKPrepareAddHostMessage(cmdID, host) =>
-              info("MessageServer: Receive ACKPrepareAddHostMessage - " + cmdID)
+              info("MessageServer: Receive ACKPrepareAddHostMessage - " + (cmdID, host))
               AckedNodeCounter ! CountPrepareACK(cmdID, host)
 
             case ACKPrepareRemoveHostMessage(cmdID, host) =>
-              info("MessageServer: Receive ACKPrepareRemoveHostMessage - " + cmdID)
+              info("MessageServer: Receive ACKPrepareRemoveHostMessage - " + (cmdID, host))
               AckedNodeCounter ! CountPrepareACK(cmdID, host)
 
             case AllNodesACKedPrepareMessage(cmdID: Int) =>
@@ -225,7 +227,7 @@ object MessageServer extends Logging {
       server.daemonize
       server.run
     } else {
-      info("It is not a message server host, quit...")
+      info("It is not a message server host")
       System.exit(0);
     }
   }
@@ -236,10 +238,10 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
   private var lastCmdID = -1;
 
   override def run() {
-    info("LocalMessageServerThread: Start listening to :" + port)
+    info("LocalMessageServerThread: Start listening to " + port)
     val serverSocketChannel = ServerSocketChannel.open()
     serverSocketChannel.socket().bind(new InetSocketAddress(port))
-    debug("LocalMessageServer started, listening to" + port)
+    debug("LocalMessageServer started, listening to " + port)
     while (true) {
       try {
         val channel = serverSocketChannel.accept()
@@ -252,10 +254,13 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             if (cmdID > lastCmdID) {
               runtime.ring = hash
               runtime.app.systemHosts = hosts
-              if (runtime.pool != null) runtime.pool.cluster.addHost(hostToAdd)
+              if (runtime.pool != null) {
+                info("LocalMessageServer: cmdID " + cmdID + ", Addhost " + hostToAdd)
+                runtime.pool.cluster.addHost(hostToAdd)
+              }
               lastCmdID = cmdID
               debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)
-              runtime.msClient.sendMessage(ACKPrepareAddHostMessage(cmdID, hostToAdd))
+              runtime.msClient.sendMessage(ACKPrepareAddHostMessage(cmdID, runtime.app.self))
               info("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareAddHostMessage to message server")
             }  else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
@@ -264,10 +269,13 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             if (cmdID > lastCmdID) {
               runtime.ring = hash
               runtime.app.systemHosts = hosts
-              if (runtime.pool != null) runtime.pool.cluster.removeHost(hostToRemove)
+              if (runtime.pool != null) {
+                info("LocalMessageServer: cmdID " + cmdID + ", Removehost " + hostToRemove)
+                runtime.pool.cluster.removeHost(hostToRemove)
+              }
               lastCmdID = cmdID
               debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)
-              runtime.msClient.sendMessage(ACKPrepareRemoveHostMessage(cmdID, hostToRemove))
+              runtime.msClient.sendMessage(ACKPrepareRemoveHostMessage(cmdID, runtime.app.self))
               info("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareRemoveHostMessage to message server")
             } else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)

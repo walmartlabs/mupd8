@@ -165,13 +165,10 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
     }
   }, encoder, callableFactory)
 
-  def self = InetAddress.getLocalHost.getHostName
-  info("Host id is " + self)
-
   def init() {
     server.start()
     client.init()
-    hosts.filter(_.compareTo(self) != 0).foreach (host => connectToHost(host))
+    hosts.filter(_.compareTo(app.self) != 0).foreach (host => connectToHost(host))
   }
 
   private def connectToHost(host: String): Unit = {
@@ -189,7 +186,7 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   }
 
   // Add host to connection map
-  def addHost(host: String): Unit = connectToHost(host)
+  def addHost(host: String): Unit = if (host.compareTo(app.self) != 0) connectToHost(host)
   // Remove host from connection map
   def removeHost(host: String): Unit = client.disconnect(host)
 
@@ -221,7 +218,6 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
           item.job.run() // This is a mapper job
         } else {
           val (i1, i2) = getPoolIndices(item.key)
-          debug("ThreadData: item = " + item + "; item.key = " + item.key + ", index = " + (i1, i2))
           assert(me == i1 || me == i2)
           lock(i1, i2)
           if (attemptQueue(item.job, item.key, i1, i2)) {
@@ -364,7 +360,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
 
   def put(key: Any, x: T) {
     val dest = runtime.ring(key)
-    if (dest == cluster.self) putLocal(key, x) else cluster.send(dest, x)
+    if (dest == runtime.app.self) putLocal(key, x) else cluster.send(dest, x)
   }
 
   /*
@@ -461,7 +457,7 @@ class CassandraPool(
     pool.submit(run {
       val start = java.lang.System.nanoTime()
       val col = excToOption(selector.getColumnFromRow(getCF(name), Bytes.fromByteArray(key), Bytes.fromByteArray(name.getBytes), ConsistencyLevel.QUORUM))
-      debug("Fetch " + (java.lang.System.nanoTime() - start) / 1000000 + " " + name + " " + str(key))
+      //debug("Fetch " + (java.lang.System.nanoTime() - start) / 1000000 + " " + name + " " + str(key))
       next(col.map { col =>
         assert(col != null)
         val ba = Bytes.fromByteBuffer(col.value).toByteArray
@@ -700,6 +696,9 @@ class UpdaterFactory[U <: binary.Updater](val updaterType : Class[U]) {
 
 class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String], val sysConfig: Option[String], val loadClasses: Boolean, statistics: Boolean, elastic: Boolean) extends Logging {
   assert(appConfig.size == sysConfig.size && appConfig.size != configDir.size)
+  val self = InetAddress.getLocalHost.getHostName
+  info("Host id is " + self)
+
   val config = configDir map { p => new application.Config(new File(p)) } getOrElse new application.Config(sysConfig.get, appConfig.get)
   val performers = loadConfig.convertPerformers(config.workerJSONs)
   val statusPort = Option(config.getScopedValue(Array("mupd8", "mupd8_status", "http_port"))).getOrElse(new Integer(6001)).asInstanceOf[Number].intValue()
@@ -1094,7 +1093,7 @@ class AppRuntime(appID: Int,
   def getSlate(key: (String, Key)) = {
     val performerId = app.performerName2ID(key._1)
     val host = ring(new StringOps(PerformerPacket.getKey(performerId, key._2)))
-    assert(host.compareTo(pool.cluster.self) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
+    assert(host.compareTo(app.self) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
     val future = new Later[SlateObject]
     getTLS(performerId, key._2).slateCache.waitForSlate(key, future.set(_), getUpdater(performerId, key._2), getSlateBuilder(performerId), false)
     val bytes = new ByteArrayOutputStream()
@@ -1142,7 +1141,7 @@ class AppRuntime(appID: Int,
         val key: (String, Key) = (tok(4), tok(5).map(_.toByte).toArray)
         val poolKey = PerformerPacket.getKey(app.performerName2ID(key._1), key._2)
         val dest = InetAddress.getByName(ring(new StringOps(poolKey))).getHostName
-        if (pool.cluster.self.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
+        if (app.self.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
           getSlate(key)
         else {
           val slate = fetchURL("http://" + dest + ":" + (app.statusPort + 300) + s)
@@ -1263,17 +1262,16 @@ class AppRuntime(appID: Int,
     val slateVal = item._2
     val colname = key.take(key.indexOf("~~~"))
     val slateByteStream = new ByteArrayOutputStream()
-    debug("Serializing cached slate for updater "+colname+" to Cassandra: "+slateVal.slate)
     var suc = getSlateBuilder(app.performerName2ID(colname)).toBytes(slateVal.slate, slateByteStream)
     // TODO: .getBytes may not work the way you want it to!! Encoding issues!
     suc &&= storeIo.write(colname, key.drop(colname.length + 3).getBytes, slateByteStream.toByteArray())
     // val suc = storeIo.write(colname, key.drop(colname.length + 3).getBytes, slateVal.slate.toBytes())
     if (suc) {
       slateVal.dirty = false
-      log("Wrote record for " + colname + " " + key)
+      debug("Wrote record for " + colname + " " + key)
     } else {
       slateVal.dirty = true
-      log("Failed to write record for " + colname + " " + key)
+      debug("Failed to write record for " + colname + " " + key)
     }
   }
 

@@ -16,7 +16,13 @@ object TimerActor extends Actor with Logging {
     _cmdID = cmdID
     func = f
     info("Timer starts: cmdID = " + _cmdID + ", timeout = " + _timeout)
-    if (getState == Actor.State.Terminated)	this.restart else	this.start
+    if (this.getState == Actor.State.Terminated) {
+      this.restart
+      info("Timer restarted")
+    } else {
+	    this.start
+      info("Timer started")
+    }
   }
 
   def stopTimer(cmdID: Int, reason: AnyRef) {
@@ -83,7 +89,6 @@ object AckedNodeCounter extends Actor with Logging {
             val msClient = new MessageServerClient(mshost, msport)
             msClient.sendMessage(AllNodesACKedPrepareMessage(cmdID))
             currentCmdID = -1
-            Actor.exit
           }
         }
         act
@@ -102,7 +107,6 @@ object AckedNodeCounter extends Actor with Logging {
           // TODO: if all nodes acked cmdID, pin message server
           if (nodesNotAcked.isEmpty) {
             currentCmdID = -1
-            Actor.exit
           }
         }
         act
