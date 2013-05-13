@@ -1,0 +1,48 @@
+<configuration scan="true" scanPeriod="3 seconds">
+
+  <statusListener class="ch.qos.logback.core.status.OnConsoleStatusListener"/>
+
+  <appender name="STDOUT"
+            class="ch.qos.logback.core.ConsoleAppender">
+    <layout class="ch.qos.logback.classic.PatternLayout">
+      <pattern>
+        %d [%thread] %-5level %logger{32} - %msg%n
+      </pattern>
+    </layout>
+  </appender>
+
+  <appender name="FILE"
+            class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <File>mupd8.log</File>
+
+    <rollingPolicy
+            class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+      <FileNamePattern>
+        mupd8.log.%d{yyyy-MM-dd}.zip
+      </FileNamePattern>
+    </rollingPolicy>
+
+    <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
+      <evaluator>
+        <expression>return logger.contains("CommonsBackedPool") || logger.contains("pelops");</expression>
+      </evaluator>
+      <OnMismatch>NEUTRAL</OnMismatch>
+      <OnMatch>DENY</OnMatch>
+    </filter>
+
+    <layout class="ch.qos.logback.classic.PatternLayout">
+      <Pattern>
+        %d [%-5level] %-32logger{32} [%thread] - %msg%n
+      </Pattern>
+    </layout>
+  </appender>
+
+  <root>
+    <level value="DEBUG"/>
+    <appender-ref ref="STDOUT"/>
+    <appender-ref ref="FILE"/>
+  </root>
+
+  <!--<include file="/tmp/logback-demo.xml"/>-->
+
+</configuration>
