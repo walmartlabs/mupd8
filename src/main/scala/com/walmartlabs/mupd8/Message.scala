@@ -17,18 +17,31 @@
 package com.walmartlabs.mupd8
 
 abstract class Message extends Serializable
+abstract class MessageWOACK extends Message // message needs NO ACK
+abstract class MessageWACK extends Message // message needs ACK
 // To message server
-case class NodeRemoveMessage(val node: String) extends Message
-case class NodeJoinMessage(val node: String) extends Message
+case class NodeRemoveMessage(node: String) extends MessageWACK
+case class NodeJoinMessage(node: String) extends MessageWACK
+case class ACKPrepareAddHostMessage(cmdID: Int, hostToAdd: String) extends MessageWOACK
+case class ACKPrepareRemoveHostMessage(cmdID: Int, hostToRemove: String) extends MessageWOACK
+case class AllNodesACKedPrepareMessage(cmdID: Int) extends MessageWOACK
+case class ACKTIMEOUTMessage(cmdID: Int) extends MessageWACK
 
 // To local message server
-case class AddHostMessage(val cmdID: Int, val addedHost: String, val hashInNewRing: IndexedSeq[String], val hostsInNewRing: IndexedSeq[String]) extends Message {
+// case class AddHostMessage(cmdID: Int, addedHost: String, hashInNewRing: IndexedSeq[String], hostsInNewRing: IndexedSeq[String]) extends Message {
+//   override def toString() = "AddHostMessage(" + cmdID + ", " + addedHost + ", " + hostsInNewRing + ")"
+// }
+case class PrepareAddHostMessage(cmdID: Int, addedHost: String, hashInNewRing: IndexedSeq[String], hostsInNewRing: IndexedSeq[String]) extends MessageWOACK {
   override def toString() = "AddHostMessage(" + cmdID + ", " + addedHost + ", " + hostsInNewRing + ")"
 }
-case class RemoveHostMessage(val cmdID: Int, val removedHost: String, val hashInNewRing: IndexedSeq[String], val hostsInNewRing: IndexedSeq[String]) extends Message {
+// case class RemoveHostMessage(cmdID: Int, removedHost: String, hashInNewRing: IndexedSeq[String], hostsInNewRing: IndexedSeq[String]) extends Message {
+//   override def toString() = "RemoveHostMessage(" + cmdID + ", " + removedHost + ", " + hostsInNewRing + ")"
+// }
+case class PrepareRemoveHostMessage(cmdID: Int, removedHost: String, hashInNewRing: IndexedSeq[String], hostsInNewRing: IndexedSeq[String]) extends MessageWOACK {
   override def toString() = "RemoveHostMessage(" + cmdID + ", " + removedHost + ", " + hostsInNewRing + ")"
 }
+case class UpdateRing(cmdID: Int) extends MessageWACK
 
-case class AckOfNewRing(val commandId: Int) extends Message
-case class AckOfNodeJoin(val node: String) extends Message
-case class AckOfNodeRemove(val node: String) extends Message
+// To MessageServerClient
+case class ACKNodeJoin(node: String) extends MessageWACK
+case class ACKNodeRemove(node: String) extends MessageWACK
