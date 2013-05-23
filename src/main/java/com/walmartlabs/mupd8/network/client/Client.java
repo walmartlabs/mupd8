@@ -86,12 +86,22 @@ public class Client {
     public boolean connect(String host, int port) {
         InetSocketAddress remoteAddr = new InetSocketAddress(host, port);
 
-        ChannelFuture future = bootstrap.connect(remoteAddr);
-        if (!future.awaitUninterruptibly().isSuccess()) {
-            logger.error("CLIENT - Failed to connect to server at " +
-                    remoteAddr.getHostName() + ":" + remoteAddr.getPort());
-            return false;
+        ChannelFuture future = null;
+        // retry 3 times for now
+        int i = 0;
+        for (; i < 3; i++) {
+          future= bootstrap.connect(remoteAddr);
+          if (!future.awaitUninterruptibly().isSuccess()) {
+            logger.warn("CLIENT - Failed to connect to server at " +
+                        remoteAddr.getHostName() + ":" + remoteAddr.getPort());
+            try {
+              Thread.sleep(500);
+            } catch (InterruptedException e) {
+            }
+          } else break;
         }
+        if (i >= 3) return false;
+        logger.warn("CLIENT - Connected to " + remoteAddr.getHostName() + ":" + remoteAddr.getPort());
 
         Channel connector = future.getChannel();
         connectors.put(host, connector);

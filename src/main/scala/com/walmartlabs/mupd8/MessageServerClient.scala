@@ -28,21 +28,23 @@ import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import grizzled.slf4j.Logging
 
-class MessageServerClient(serverHost: String, serverPort: Int, timeout: Long = 2000L) extends Logging {
+class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 2000) extends Logging {
 
   def sendMessage(msg: Message): Boolean = synchronized {
     try {
-      info("MessageServerClient: send " + msg + " to Message Server: " + serverHost + ", " + serverPort)
+      debug("MessageServerClient: send " + msg + " to Message Server: " + serverHost + ", " + serverPort)
       val socket = new Socket(serverHost, serverPort)
       val out = new ObjectOutputStream(socket.getOutputStream)
       val in = new ObjectInputStream(socket.getInputStream)
+      socket.setSoTimeout(timeout)
       info("MessageServerClient: connected")
       out.writeObject(msg)
-      val ack = in.readObject
-      ack match {
-        case AckOfNodeRemove(node) => debug("MessageServerClient: " + ack)
-        case AckOfNodeJoin(node) => debug("MessageServerClient: " + ack)
-        case _ => error("MessageServerClient error: received wrong message while expecting ACK, " + ack)
+      msg match {
+        case m: MessageWOACK =>
+
+        case m: MessageWACK =>
+          val ack = in.readObject
+          debug("MessageServerClient: received " + ack)
       }
       out.close
       in.close
@@ -56,23 +58,17 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Long = 2
 
 }
 
-class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Long = 2000L) extends Logging {
+class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 2000) extends Logging {
 
   def sendMessage(msg: Message): Boolean = synchronized {
     try {
       info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
       val socket = new Socket(serverHost, serverPort)
       val out = new ObjectOutputStream(socket.getOutputStream)
-      val in = new ObjectInputStream(socket.getInputStream)
+      socket.setSoTimeout(timeout)
       info("LocalMessageServerClient: connected")
       out.writeObject(msg)
-      val ack = in.readObject
-      ack match {
-        case AckOfNewRing(commandId: Int) => info("LocalMessageServerClient: received " + ack)
-        case _ => error("MessageServerClient error: received wrong message while expecting ACK, " + ack)
-      }
       out.close
-      in.close
       socket.close
       true
     } catch {

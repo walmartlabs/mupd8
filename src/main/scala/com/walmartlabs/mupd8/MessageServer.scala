@@ -41,9 +41,9 @@ object MessageServer extends Logging {
   /* socket server to communicate clients */
   // In unit test skip sending new ring to all nodes
   class MessageServerThread(val port : Int, val isTest: Boolean = false) extends Runnable {
-
     var keepRunning = true
     var currentThread: Thread = null
+
     override def run(): Unit = {
       info("MessageServerThread: Start listening to :" + port)
       val serverSocketChannel = ServerSocketChannel.open()
@@ -67,36 +67,66 @@ object MessageServer extends Logging {
               lastCmdID += 1
               lastRingUpdateCmdID  = lastCmdID
               // send ACK to reported
-              out.writeObject(AckOfNodeRemove(node))
+              out.writeObject(ACKNodeRemove(node))
               // update hash ring
               val newHostList = ring2.hosts filter (host => host.compareTo(node) != 0)
               ring2 = ring2.remove(newHostList, node)
               if (!isTest) {
                 // if it is unit test, don't send new ring to all nodes
                 // Local message server's port is always port + 1
-                ring2.hosts foreach (host => SendNewRing ! (lastCmdID, host, (port + 1), RemoveHostMessage(lastCmdID, node, ring2.hash, ring2.hosts), port))
+                info("CmdID "  + lastCmdID + ": Sending " + ring2 + " to " + ring2.hosts)
+
+                // reset Timer
+                TimerActor.stopTimer(lastCmdID - 1, "cmdID: " + lastCmdID)
+                TimerActor.startTimer(lastCmdID, 2000L, () => info("TIMEOUT"))
+                // reset counter
+                AckedNodeCounter ! StartCounter(lastCmdID, ring2.hosts, "localhost", port)
+
+                // Send prepare ring update message
+                SendNewRing ! SendMessageToNode(lastCmdID, ring2.hosts, (port + 1), PrepareRemoveHostMessage(lastCmdID, node, ring2.hash, ring2.hosts), port)
               }
+
             case NodeJoinMessage(node) =>
               info("MessageServer: Received node join message: " + msg)
               lastCmdID += 1
               lastRingUpdateCmdID = lastCmdID
               // send ACK to reported
-              out.writeObject(AckOfNodeJoin(node))
+              out.writeObject(ACKNodeJoin(node))
               // update hash ring
-              ring2 = if (ring2 == null) {
-                HashRing2.initFromHost(node)
-              } else {
-                val newHostList = ring2.hosts :+ node
-                ring2.add(newHostList, node)
-              }
+              ring2 = if (ring2 == null) HashRing2.initFromHost(node)
+                      else {
+                        val newHostList = ring2.hosts :+ node
+                        ring2.add(newHostList, node)
+                      }
+              // TODO: replace isTest with new SendNewRing
               if (!isTest) {
                 // if it is unit test, don't send new ring to all nodes
                 // Local message server's port is always port + 1
-                ring2.hosts foreach {host =>
-                  info("Sending " + ring2 + " to " + host)
-                  SendNewRing ! (lastCmdID, host, port + 1, AddHostMessage(lastCmdID, node, ring2.hash, ring2.hosts), port)}
+                info("Sending " + ring2 + " to " + ring2.hosts)
+                // reset Timer
+                TimerActor.stopTimer(lastCmdID - 1, "cmdID: " + lastCmdID)
+                TimerActor.startTimer(lastCmdID, 5000L, () => info("TIMEOUT")) // TODO: replace info
+                // reset counter
+                AckedNodeCounter ! StartCounter(lastCmdID, ring2.hosts, "localhost", port)
+
+                // Send prepare ring update message
+                SendNewRing ! SendMessageToNode(lastCmdID, ring2.hosts, port + 1, PrepareAddHostMessage(lastCmdID, node, ring2.hash, ring2.hosts), port)
               }
-            case _ => error("CmdResponse error: not a valid msg: " + msg)
+
+            case ACKPrepareAddHostMessage(cmdID, host) =>
+              info("MessageServer: Receive ACKPrepareAddHostMessage - " + (cmdID, host))
+              AckedNodeCounter ! CountPrepareACK(cmdID, host)
+
+            case ACKPrepareRemoveHostMessage(cmdID, host) =>
+              info("MessageServer: Receive ACKPrepareRemoveHostMessage - " + (cmdID, host))
+              AckedNodeCounter ! CountPrepareACK(cmdID, host)
+
+            case AllNodesACKedPrepareMessage(cmdID: Int) =>
+              info("MessageServer: AllNodesACKedPrepareMessage received, cmdID = " + cmdID)
+              // send update ring message to Nodes
+              SendNewRing ! SendMessageToNode(cmdID, ring2.hosts, port + 1, UpdateRing(cmdID), port)
+
+            case _ => error("MessageServerThread: Not a valid msg: " + msg)
           }
           out.close; in.close; channel.close
         }  catch {
@@ -126,28 +156,33 @@ object MessageServer extends Logging {
   }
 
   /* actor sending new ring to nodes in cluster */
+  abstract class SendNewRingMessage
+  case class SendMessageToNode(cmdID: Int, hosts: IndexedSeq[String], port: Int, msg: Message, msport: Int) extends SendNewRingMessage
   object SendNewRing extends Actor {
+    private val stop = false
+
     def act() {
       react {
         // msport: port of message server
-        case (cmdID: Int, endpointHost: String, endpointPort: Int, msg: Message, msport: Int) =>
-          if (cmdID == lastRingUpdateCmdID) {
-            // it is still latest command and hash ring
-            info("SendNewRing: Sending cmdID " + cmdID + ", msg = " + msg + " to endpoint " + (endpointHost, endpointPort))
-            val client = new LocalMessageServerClient(endpointHost, endpointPort)
-            if (!client.sendMessage(msg)) {
-              // report host fails if any exception happens
-              info("SendNewRing: report " + endpointHost + " fails")
-              val msClient = new MessageServerClient("localhost", msport)
-              msClient.sendMessage(NodeRemoveMessage(endpointHost))
-            }
-          } else
-            info("SendNewRing: skip non-currernt command - " + lastRingUpdateCmdID + ", " + ring2)
+        case SendMessageToNode(cmdID, hosts, port, msg, msport) =>
+          hosts foreach ( host =>
+            // check it is still latest command and hash ring
+            if (cmdID == lastRingUpdateCmdID) {
+              info("SendNewRing: Sending cmdID " + cmdID + ", msg = " + msg + " to endpoint " + (host, port))
+              val client = new LocalMessageServerClient(host, port)
+              if (!client.sendMessage(msg)) {
+                // report host fails if any exception happens
+                info("SendNewRing: report " + host + " fails")
+                val msClient = new MessageServerClient("localhost", msport)
+                msClient.sendMessage(NodeRemoveMessage(host))
+              }
+            } else info("SendNewRing: skip non-currernt command - " + lastRingUpdateCmdID + ", " + ring2)
+          )
           act()
         case "EXIT" =>
           info("SendNewRing receive EXIT")
         case msg =>
-          error("MSG - " + msg + "is not supported now")
+          error("MSG - " + msg + " is not supported now")
       }
     }
   }
@@ -158,6 +193,7 @@ object MessageServer extends Logging {
   var lastCmdID = -1
   var lastRingUpdateCmdID = -1
   var ring2: HashRing2 = null // TODO: find a way to init hash ring2
+  AckedNodeCounter start
 
   def main(args: Array[String]) {
     val parser = new OptionParser
@@ -191,7 +227,7 @@ object MessageServer extends Logging {
       server.daemonize
       server.run
     } else {
-      info("It is not a message server host, quit...")
+      info("It is not a message server host")
       System.exit(0);
     }
   }
@@ -202,44 +238,57 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
   private var lastCmdID = -1;
 
   override def run() {
-    info("LocalMessageServerThread: Start listening to :" + port)
+    info("LocalMessageServerThread: Start listening to " + port)
     val serverSocketChannel = ServerSocketChannel.open()
     serverSocketChannel.socket().bind(new InetSocketAddress(port))
-    info("local message server started, listening " + port)
+    debug("LocalMessageServer started, listening to " + port)
     while (true) {
       try {
         val channel = serverSocketChannel.accept()
         val in = new ObjectInputStream(Channels.newInputStream(channel))
-        val out = new ObjectOutputStream(Channels.newOutputStream(channel))
         val msg = in.readObject
         info("LocalMessageServer: Received " + msg)
         msg match {
-          case AddHostMessage(cmdID, hostToAdd, hash, hosts) => {
+          // PrepareAddHostMessage: accept new ring from message server and prepare for switching
+          case PrepareAddHostMessage(cmdID, hostToAdd, hash, hosts) =>
             if (cmdID > lastCmdID) {
               runtime.ring = hash
               runtime.app.systemHosts = hosts
-              if (runtime.pool != null) runtime.pool.cluster.addHost(hostToAdd)
-              out.writeObject(AckOfNewRing(cmdID))
+              if (runtime.pool != null) {
+                info("LocalMessageServer: cmdID " + cmdID + ", Addhost " + hostToAdd)
+                runtime.pool.cluster.addHost(hostToAdd)
+              }
               lastCmdID = cmdID
-              info("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)
-            } else
+              debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)
+              runtime.msClient.sendMessage(ACKPrepareAddHostMessage(cmdID, runtime.app.self))
+              info("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareAddHostMessage to message server")
+            }  else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
-          }
-          case RemoveHostMessage(cmdID, hostToRemove, hash, hosts) => {
+
+          case PrepareRemoveHostMessage(cmdID, hostToRemove, hash, hosts) =>
             if (cmdID > lastCmdID) {
               runtime.ring = hash
               runtime.app.systemHosts = hosts
-              if (runtime.pool != null) runtime.pool.cluster.removeHost(hostToRemove)
-              out.writeObject(AckOfNewRing(cmdID))
+              if (runtime.pool != null) {
+                info("LocalMessageServer: cmdID " + cmdID + ", Removehost " + hostToRemove)
+                runtime.pool.cluster.removeHost(hostToRemove)
+              }
               lastCmdID = cmdID
-              info("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)
+              debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)
+              runtime.msClient.sendMessage(ACKPrepareRemoveHostMessage(cmdID, runtime.app.self))
+              info("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareRemoveHostMessage to message server")
             } else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
-          }
-          case _ => error("LocalMessageServer error: Not a valid msg, " + msg.toString)
+
+          case UpdateRing(cmdID) =>
+            debug("Received UpdateRing")
+            // TODO: switch to new ring
+
+            info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
+
+          case _ => error("LocalMessageServer: Not a valid msg, " + msg.toString)
         }
         in.close
-        out.close
         channel.close
       } catch {
         case e : Exception => error("LocalMessageServer exception", e)
