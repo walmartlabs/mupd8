@@ -52,7 +52,7 @@ class JSONObjectBuilder(config : Config, val name : String) extends SlateBuilder
   override def toBytes(slate : Object, os : OutputStream) : Boolean = {
     try {
       val s = slate.asInstanceOf[TestSlate]
-      os.write(s.json.toString().getBytes())
+      os.write(s.json.toString().getBytes("utf-8"))
       true
     } catch {
       case _ => false
@@ -75,7 +75,7 @@ class KnUpdaterJson (config : Config, val name : String) extends SlateUpdater wi
       slatej.put("key", new String(key, "UTF-8"))
     perfUtil.replaceSlate(testSlate)
   }
-  
+
   override def getDefaultSlate() = {
     new TestSlate(None)
   }
