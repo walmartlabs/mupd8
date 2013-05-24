@@ -37,7 +37,6 @@ import org.jboss.netty.buffer.{ ChannelBuffers, ChannelBuffer }
 import org.jboss.netty.channel.{ ChannelHandlerContext, Channel }
 import org.jboss.netty.handler.codec.oneone.OneToOneEncoder
 import org.jboss.netty.handler.codec.replay.ReplayingDecoder
-import com.walmartlabs.mupd8.application.binary.Slate
 import com.walmartlabs.mupd8.application.binary
 import com.walmartlabs.mupd8.compression.CompressionFactory
 import com.walmartlabs.mupd8.compression.CompressionService
