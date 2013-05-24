@@ -90,18 +90,16 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
   }
 
   override def hasNext() : Boolean = {
-    // Make _currentLine always reads in hasNext so that _currentLine wouldn't
-    // get stale once _currentLine somehow becomes a not valid json string
-    try {
-      _currentLine = readLine()
-    } catch {
-      case e : Exception =>
-        _currentLine = None
-      error("JSONSource: reader readLine failed", e)
-      destroyReader
-      None
-    }
-
+    _currentLine = _currentLine.orElse({
+      try {
+        readLine()
+      } catch {
+        case e : Exception =>
+          error("JSONSource: reader readLine failed", e)
+          destroyReader
+          None
+      }
+    })
     _currentLine isDefined
   }
 
