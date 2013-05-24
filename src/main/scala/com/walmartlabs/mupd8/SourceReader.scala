@@ -153,4 +153,3 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
     }
   }
 }
-
