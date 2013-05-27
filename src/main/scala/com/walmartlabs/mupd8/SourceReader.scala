@@ -131,8 +131,8 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
   }
 
   override def getNextDataPair: Mupd8DataPair = {
-    try {
-      if (hasNext) {
+    if (hasNext) {
+      try {
         val rtn = new Mupd8DataPair
         info("getNextDataPair: " + _currentLine.get)
         val key = getValue(keyStr, objMapper.readTree(_currentLine.get))
@@ -141,13 +141,15 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
         rtn._value = new String(_currentLine.get).getBytes()
         _currentLine = None
         rtn
-      } else {
-        // clean _currentLine
+      } catch {
+        case e: Exception => throw new NoSuchElementException("JSONSource doesn't have next data pair")
+      } finally {
         _currentLine = None
-        throw new NoSuchElementException("JSONSource doesn't have next data pair")
       }
-    } catch {
-      case e: Exception => _currentLine = None; throw new NoSuchElementException("JSONSource doesn't have next data pair")
+    } else {
+      // clean _currentLine
+      _currentLine = None
+      throw new NoSuchElementException("JSONSource doesn't have next data pair")
     }
   }
 }
