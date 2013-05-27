@@ -36,7 +36,7 @@ import grizzled.slf4j.Logging
  * @constructor create a JSON Source Reader with source and key path in json
  * @param source source either a socket or a file
  * @param key path of key in json line
- * @note This implementation is not thread-safe in the sense that only one consumer thread can interact with this object 
+ * @note This implementation is not thread-safe in the sense that only one consumer thread can interact with this object
  *
  */
 class JSONSource (args : java.util.List[String]) extends Mupd8Source with Logging {
@@ -91,15 +91,15 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
 
   override def hasNext() : Boolean = {
     _currentLine = _currentLine.orElse({
-        try {
-          readLine()
-        } catch {
-          case e : Exception => {error("JSONSource: reader readLine failed", e)
-                                 destroyReader
-                                 None}
-        }
-      })
-
+      try {
+        readLine()
+      } catch {
+        case e : Exception =>
+          error("JSONSource: reader readLine failed", e)
+          destroyReader
+          None
+      }
+    })
     _currentLine isDefined
   }
 
@@ -112,7 +112,7 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
         if (! _reconnectOnEof) {
           None
         } else {
-          // Sleep exponential time, upper bounded 
+          // Sleep exponential time, upper bounded
           val maxSleepTime = 1 << (10 + (if (retryCount > 6) 6 else retryCount))
           Thread.sleep(_random.nextInt(maxSleepTime))
           // Reconstruct reader and read
@@ -125,21 +125,30 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
 
   private def destroyReader : Unit = {
     if (_reader isDefined) {
-      _reader.get.close; 
+      _reader.get.close;
       _reader = None
     }
   }
 
   override def getNextDataPair: Mupd8DataPair = {
     if (hasNext) {
-      val rtn = new Mupd8DataPair
-      val key = getValue(keyStr, objMapper.readTree(_currentLine.get))
-      assert(key != None, "key from source is wrong: " + _currentLine)
-      rtn._key = key.get.asText
-      rtn._value = new String(_currentLine.get).getBytes()
-      _currentLine = None
-      rtn
+      try {
+        val rtn = new Mupd8DataPair
+        info("getNextDataPair: " + _currentLine.get)
+        val key = getValue(keyStr, objMapper.readTree(_currentLine.get))
+        assert(key != None, "key from source is wrong: " + _currentLine)
+        rtn._key = key.get.asText
+        rtn._value = new String(_currentLine.get).getBytes()
+        _currentLine = None
+        rtn
+      } catch {
+        case e: Exception => throw new NoSuchElementException("JSONSource doesn't have next data pair")
+      } finally {
+        _currentLine = None
+      }
     } else {
+      // clean _currentLine
+      _currentLine = None
       throw new NoSuchElementException("JSONSource doesn't have next data pair")
     }
   }
