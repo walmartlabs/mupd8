@@ -85,8 +85,8 @@ public class NetworkTest extends TestCase {
       },Encoder.getInstance(), decoderFactory);
     client.init();
     // since server only host use key, here use "localhost" and "127.0.0.1" to register 2 client
-    client.connect("localhost", 8443);
-    client.connect("127.0.0.1", 8444);
+    client.addEndpoint("localhost", 8443);
+    client.addEndpoint("127.0.0.1", 8444);
   }
 
   public void testNetwork() throws Exception {
