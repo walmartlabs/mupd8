@@ -64,26 +64,32 @@ object MessageServer extends Logging {
           msg match {
             case NodeRemoveMessage(node) =>
               info("MessageServer: received node remove message: " + msg)
-              lastCmdID += 1
-              lastRingUpdateCmdID  = lastCmdID
-              // send ACK to reported
-              out.writeObject(ACKNodeRemove(node))
-              // update hash ring
-              val newHostList = ring2.hosts filter (host => host.compareTo(node) != 0)
-              ring2 = ring2.remove(newHostList, node)
-              if (!isTest) {
-                // if it is unit test, don't send new ring to all nodes
-                // Local message server's port is always port + 1
-                info("CmdID "  + lastCmdID + " - Sending " + ring2 + " to " + ring2.hosts)
+              // check if node is already removed
+              if (!ring2.hosts.contains(node)) {
+                trace("MessageServer: NodeRemoveMessage - " + node + " is already removed in message server")
+                out.writeObject(ACKNodeRemove(node))
+              } else {
+                lastCmdID += 1
+                lastRingUpdateCmdID  = lastCmdID
+                // send ACK to reported
+                out.writeObject(ACKNodeRemove(node))
+                // update hash ring
+                val newHostList = ring2.hosts filter (host => host.compareTo(node) != 0)
+                ring2 = ring2.remove(newHostList, node)
+                if (!isTest) {
+                  // if it is unit test, don't send new ring to all nodes
+                  // Local message server's port is always port + 1
+                  trace("NodeRemoveMessage: CmdID "  + lastCmdID + " - Sending " + ring2 + " to " + ring2.hosts)
 
-                // reset Timer
-                TimerActor.stopTimer(lastCmdID - 1, "cmdID: " + lastCmdID)
-                TimerActor.startTimer(lastCmdID, 2000L, () => info("TIMEOUT"))
-                // reset counter
-                AckedNodeCounter ! StartCounter(lastCmdID, ring2.hosts, "localhost", port)
+                  // reset Timer
+                  TimerActor.stopTimer(lastCmdID - 1, "cmdID: " + lastCmdID)
+                  TimerActor.startTimer(lastCmdID, 2000L, () => info("TIMEOUT"))
+                  // reset counter
+                  AckedNodeCounter ! StartCounter(lastCmdID, ring2.hosts, "localhost", port)
 
-                // Send prepare ring update message
-                SendNewRing ! SendMessageToNode(lastCmdID, ring2.hosts, (port + 1), PrepareRemoveHostMessage(lastCmdID, node, ring2.hash, ring2.hosts), port)
+                  // Send prepare ring update message
+                  SendNewRing ! SendMessageToNode(lastCmdID, ring2.hosts, (port + 1), PrepareRemoveHostMessage(lastCmdID, node, ring2.hash, ring2.hosts), port)
+                }
               }
 
             case NodeJoinMessage(node) =>
@@ -102,7 +108,7 @@ object MessageServer extends Logging {
               if (!isTest) {
                 // if it is unit test, don't send new ring to all nodes
                 // Local message server's port is always port + 1
-                info("cmdID: " + lastCmdID + " - Sending " + ring2 + " to " + ring2.hosts)
+                info("NodeJoinMessage: cmdID " + lastCmdID + " - Sending " + ring2 + " to " + ring2.hosts)
                 // reset Timer
                 TimerActor.stopTimer(lastCmdID - 1, "cmdID: " + lastCmdID)
                 TimerActor.startTimer(lastCmdID, 5000L, () => info("TIMEOUT")) // TODO: replace info
@@ -254,39 +260,40 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             if (cmdID > lastCmdID) {
               runtime.ring2 = (hash, hosts)
               if (runtime.pool != null) {
-                info("LocalMessageServer: cmdID " + cmdID + ", Addhost " + hostToAdd)
+                info("LocalMessageServer: cmdID " + cmdID + ", Addhost " + hostToAdd + " to mucluster")
                 runtime.pool.cluster.addHost(hostToAdd)
               }
               lastCmdID = cmdID
               debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)
               runtime.msClient.sendMessage(ACKPrepareAddHostMessage(cmdID, runtime.app.self))
-              info("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareAddHostMessage to message server")
+              trace("LocalMessageServer: PrepareAddHostMessage - CMD " + cmdID + " - Sent ACKPrepareAddHostMessage to message server")
             }  else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
 
           case PrepareRemoveHostMessage(cmdID, hostToRemove, hash, hosts) =>
             if (cmdID > lastCmdID) {
-              runtime.ring = hash
-              runtime.app.systemHosts = hosts
+              runtime.ring2 = (hash, hosts)
               if (runtime.pool != null) {
-                info("LocalMessageServer: cmdID " + cmdID + ", Removehost " + hostToRemove)
+                info("LocalMessageServer: PrepareRemoveHostMessage - cmdID " + cmdID + ", remove host " + hostToRemove + " from mucluster")
                 runtime.pool.cluster.removeHost(hostToRemove)
               }
               lastCmdID = cmdID
-              debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)
               runtime.msClient.sendMessage(ACKPrepareRemoveHostMessage(cmdID, runtime.app.self))
-              info("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareRemoveHostMessage to message server")
+              trace("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareRemoveHostMessage to message server")
             } else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
 
           case UpdateRing(cmdID) =>
             debug("Received UpdateRing")
 
-            runtime.ring = runtime.ring2._1
-            runtime.app.systemHosts = runtime.ring2._2
-            runtime.ring2 = null
-
-            info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
+            if (runtime.ring2 != null) {
+              runtime.ring = runtime.ring2._1
+              runtime.app.systemHosts = runtime.ring2._2
+              runtime.ring2 = null
+              info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
+            } else {
+              warn("UpdateRing: candidate ring is null in UpdateRing")
+            }
 
           case _ => error("LocalMessageServer: Not a valid msg, " + msg.toString)
         }

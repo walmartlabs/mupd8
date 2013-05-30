@@ -28,15 +28,9 @@ case class AllNodesACKedPrepareMessage(cmdID: Int) extends MessageWOACK
 case class ACKTIMEOUTMessage(cmdID: Int) extends MessageWACK
 
 // To local message server
-// case class AddHostMessage(cmdID: Int, addedHost: String, hashInNewRing: IndexedSeq[String], hostsInNewRing: IndexedSeq[String]) extends Message {
-//   override def toString() = "AddHostMessage(" + cmdID + ", " + addedHost + ", " + hostsInNewRing + ")"
-// }
 case class PrepareAddHostMessage(cmdID: Int, addedHost: String, hashInNewRing: IndexedSeq[String], hostsInNewRing: IndexedSeq[String]) extends MessageWOACK {
   override def toString() = "AddHostMessage(" + cmdID + ", " + addedHost + ", " + hostsInNewRing + ")"
 }
-// case class RemoveHostMessage(cmdID: Int, removedHost: String, hashInNewRing: IndexedSeq[String], hostsInNewRing: IndexedSeq[String]) extends Message {
-//   override def toString() = "RemoveHostMessage(" + cmdID + ", " + removedHost + ", " + hostsInNewRing + ")"
-// }
 case class PrepareRemoveHostMessage(cmdID: Int, removedHost: String, hashInNewRing: IndexedSeq[String], hostsInNewRing: IndexedSeq[String]) extends MessageWOACK {
   override def toString() = "RemoveHostMessage(" + cmdID + ", " + removedHost + ", " + hostsInNewRing + ")"
 }

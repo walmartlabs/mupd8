@@ -177,9 +177,8 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
 
   def send(dest: String, obj: T) {
     if (!client.send(dest, obj)) {
-      if (msClient != null)
-        error("Failed to send message to destination " + dest)
-        msClient.sendMessage(NodeRemoveMessage(dest))
+      error("Failed to send message to destination " + dest)
+      if(msClient != null) msClient.sendMessage(NodeRemoveMessage(dest))
     }
   }
 }
@@ -1078,7 +1077,8 @@ class AppRuntime(appID: Int,
           val slate = fetchURL("http://" + dest + ":" + (app.statusPort + 300) + s)
           if (slate == None) {
             // TODO: send remove messageServer
-            warn("Can't reach dest " + dest)
+            warn("Can't reach dest " + dest + "; going to report " + dest + " missing.")
+            msClient.sendMessage(NodeRemoveMessage(dest))
           }
           slate
         }
