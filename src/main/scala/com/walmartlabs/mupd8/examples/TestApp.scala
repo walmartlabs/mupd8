@@ -37,6 +37,7 @@ class T10Mapper(config : Config, val name : String) extends Mapper with Logging 
     streams foreach { case(key,stream) =>
       perfUtil.publish(stream, json.getString(key).getBytes("UTF-8"), event)
     }
+    debug("T10Mapper: map is done")
   }
 }
 
@@ -74,6 +75,7 @@ class KnUpdaterJson (config : Config, val name : String) extends SlateUpdater wi
     if (!slatej.has("key"))
       slatej.put("key", new String(key, "UTF-8"))
     perfUtil.replaceSlate(testSlate)
+    debug("KnUpdaterJson: update is done")
   }
 
   override def getDefaultSlate() = {
@@ -106,5 +108,6 @@ class KnUpdaterBytes (config : Config, val name : String) extends Updater with L
     val replacedSlate = new ByteArrayOutputStream
     serializer.toBytes(testSlate, replacedSlate)
     perfUtil.replaceSlate(replacedSlate.toByteArray())
+    debug("KnUpdaterBytes: update is done")
   }
 }

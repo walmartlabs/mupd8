@@ -134,7 +134,6 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
     if (hasNext) {
       try {
         val rtn = new Mupd8DataPair
-        info("getNextDataPair: " + _currentLine.get)
         val key = getValue(keyStr, objMapper.readTree(_currentLine.get))
         assert(key != None, "key from source is wrong: " + _currentLine)
         rtn._key = key.get.asText
