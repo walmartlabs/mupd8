@@ -173,7 +173,7 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   // Add host to connection map
   def addHost(host: String): Unit = if (host.compareTo(app.self) != 0) client.addEndpoint(host, port)
   // Remove host from connection map
-  def removeHost(host: String): Unit = client.disconnect(host)
+  def removeHost(host: String): Unit = client.removeEndpoint(host)
 
   def send(dest: String, obj: T) {
     if (!client.send(dest, obj)) {

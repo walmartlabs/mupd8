@@ -107,7 +107,7 @@ public class Client {
     disconnect(host);
   }
 
-  public boolean connect(String host, int port) {
+  private boolean connect(String host, int port) {
     InetSocketAddress remoteAddr = new InetSocketAddress(host, port);
 
     ChannelFuture future = null;
@@ -139,7 +139,7 @@ public class Client {
       return false;
   }
 
-  public void disconnect(String host) {
+  private void disconnect(String host) {
     if (connectors.containsKey(host)) {
       Channel connector = connectors.get(host);
       if (connector != null) {
