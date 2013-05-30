@@ -163,29 +163,15 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
       true
     }
   }, encoder, callableFactory)
+  client.init()
 
   def init() {
     server.start()
-    client.init()
-    hosts.filter(_.compareTo(app.self) != 0).foreach (host => connectToHost(host))
-  }
-
-  private def connectToHost(host: String): Unit = {
-    val timeout: Long = java.lang.System.currentTimeMillis + (10000 * java.lang.Math.sqrt(hosts.size)).toLong
-    info("Connecting to " + host + " at port " + port)
-    while (!client.connect(host, port) && java.lang.System.currentTimeMillis < timeout) {
-      java.lang.Thread.sleep(500)
-    }
-    if (client.isConnected(host))
-      info("Connected to " + host + " at port " + port)
-    else {
-      if (msClient != null) msClient.sendMessage(NodeRemoveMessage(host))
-      error("Failed to connect to " + host + " at port " + port)
-    }
+    hosts.filter(_.compareTo(app.self) != 0).foreach (host => client.addEndpoint(host, port))
   }
 
   // Add host to connection map
-  def addHost(host: String): Unit = if (host.compareTo(app.self) != 0) connectToHost(host)
+  def addHost(host: String): Unit = if (host.compareTo(app.self) != 0) client.addEndpoint(host, port)
   // Remove host from connection map
   def removeHost(host: String): Unit = client.disconnect(host)
 
@@ -359,7 +345,10 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
 
   def put(key: Any, x: T) {
     val dest = runtime.ring(key)
-    if (dest == runtime.app.self) putLocal(key, x) else cluster.send(dest, x)
+    if (dest == runtime.app.self)
+      putLocal(key, x)
+    else
+      cluster.send(dest, x)
   }
 
   /*
@@ -888,10 +877,6 @@ case class PerformerPacket(pri: Priority,
 
     if (optSlate != Some(None)) {
       val slate = optSlate.flatMap(p => p)
-
-      slate.map(s =>
-        debug("Update now " + "DBG for performer " + name + " Key " + str(key) + " \nEvent " + str(event) + "\nSlate " + s.toString()))
-
       val tls = appRun.getTLS
       tls.perfPacket = this
       tls.startTime = java.lang.System.nanoTime()
@@ -1001,10 +986,10 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
         debug("TLS::publish: Publishing to " + app.performers(pid).name)
         val packet = PerformerPacket(normal, pid, key, event, stream, appRun)
         if (app.performers(pid).mtype == Mapper)
-          appRun.pool.put(packet)
+          appRun.pool.put(packet)  // publish to mapper?
         else
           appRun.pool.put(new StringOps(packet.getKey), packet)
-      })).getOrElse(log("Bad Stream name" + stream))
+      })).getOrElse(error("publish: Bad Stream name" + stream))
   }
 
   //  import com.walmartlabs.mupd8.application.SlateSizeException
@@ -1046,59 +1031,6 @@ class AppRuntime(appID: Int,
   }
   if (localMessageServer != null) localMessageServer.start
   Thread.sleep(200) // Give local Message Server sometime to start
-
-  /* generate Hash Ring */
-  private var _ring: HashRing = null
-  def ring = _ring // getter
-  def ring_= (r: HashRing2): Unit = _ring = new HashRing(r.hash) // setter
-  def ring_= (hash: IndexedSeq[String]): Unit = _ring = new HashRing(hash)
-
-  // Try to Register host to message server and get updated hash ring from message server
-  // even if hash ring is generated from system hosts already
-  while (!msClient.sendMessage(NodeJoinMessage(InetAddress.getLocalHost.getHostName))) {
-    info("Connecting to message server failed")
-    Thread.sleep(500)
-  }
-
-  while (ring == null) {
-    info("Waiting for hash ring")
-    // TODO: change to a graceful way to wait
-    Thread.sleep(500)
-  }
-  info("Update ring from Message server")
-
-  if (ring == null) error("AppRuntime: No hash ring either from config file or message server")
-
-  val pool = initMapUpdatePool(poolsize, this,
-    action => new MUCluster[PerformerPacket](app, app.statusPort + 100,
-                                             PerformerPacket(0, 0, Array(), Array(), "", this),
-                                             () => { new Decoder(this) },
-                                             action, msClient))
-
-  val storeIo = if (useNullPool) new NullPool
-                else new CassandraPool(app.cassHosts,
-                                       app.cassPort,
-                                       app.cassKeySpace,
-                                       p => (app.performers(app.performerName2ID(p)).cf).getOrElse(app.cassColumnFamily),
-                                       p => app.performers(app.performerName2ID(p)).ttl,
-                                       app.compressionCodec)
-
-  val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
-  info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
-  val slateBuilders = app.slateBuilderFactory.map(_.map(_.apply()))
-  private val threadMap: Map[Long, TLS] = pool.pool.map(_.thread.getId -> new TLS(this))(breakOut)
-  private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
-
-  def getSlate(key: (String, Key)) = {
-    val performerId = app.performerName2ID(key._1)
-    val host = ring(new StringOps(PerformerPacket.getKey(performerId, key._2)))
-    assert(host.compareTo(app.self) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
-    val future = new Later[SlateObject]
-    getTLS(performerId, key._2).slateCache.waitForSlate(key, future.set(_), getUpdater(performerId, key._2), getSlateBuilder(performerId), false)
-    val bytes = new ByteArrayOutputStream()
-    getSlateBuilder(performerId).toBytes(future.get(), bytes)
-    Option(bytes.toByteArray())
-  }
 
   val maxWorkerCount = 2 * Runtime.getRuntime.availableProcessors
   val slateURLserver = new HttpServer(app.statusPort, maxWorkerCount, s => {
@@ -1158,6 +1090,64 @@ class AppRuntime(appID: Int,
     }
   })
   slateURLserver.start
+  info("slateURLserver is up on port" + app.statusPort)
+
+  val pool = initMapUpdatePool(poolsize, this,
+    action => new MUCluster[PerformerPacket](app, app.statusPort + 100,
+                                             PerformerPacket(0, 0, Array(), Array(), "", this),
+                                             () => { new Decoder(this) },
+                                             action, msClient))
+
+  /* generate Hash Ring */
+  private var _ring: HashRing = null
+  def ring = _ring // getter
+  def ring_= (r: HashRing2): Unit = _ring = new HashRing(r.hash) // setter
+  def ring_= (hash: IndexedSeq[String]): Unit = _ring = new HashRing(hash)
+
+  // candidate ring from message server
+  // _1: hash table; _2: system hosts
+  var ring2: (IndexedSeq[String], IndexedSeq[String]) = null
+
+  // Try to Register host to message server and get updated hash ring from message server
+  // even if hash ring is generated from system hosts already
+  while (!msClient.sendMessage(NodeJoinMessage(InetAddress.getLocalHost.getHostName))) {
+    info("Connecting to message server failed")
+    Thread.sleep(500)
+  }
+
+  while (ring == null) {
+    info("Waiting for hash ring")
+    // TODO: change to a graceful way to wait
+    Thread.sleep(500)
+  }
+  info("Update ring from Message server")
+
+  if (ring == null) error("AppRuntime: No hash ring either from config file or message server")
+
+  val storeIo = if (useNullPool) new NullPool
+                else new CassandraPool(app.cassHosts,
+                                       app.cassPort,
+                                       app.cassKeySpace,
+                                       p => (app.performers(app.performerName2ID(p)).cf).getOrElse(app.cassColumnFamily),
+                                       p => app.performers(app.performerName2ID(p)).ttl,
+                                       app.compressionCodec)
+
+  val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
+  info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
+  val slateBuilders = app.slateBuilderFactory.map(_.map(_.apply()))
+  private val threadMap: Map[Long, TLS] = pool.pool.map(_.thread.getId -> new TLS(this))(breakOut)
+  private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
+
+  def getSlate(key: (String, Key)) = {
+    val performerId = app.performerName2ID(key._1)
+    val host = ring(new StringOps(PerformerPacket.getKey(performerId, key._2)))
+    assert(host.compareTo(app.self) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
+    val future = new Later[SlateObject]
+    getTLS(performerId, key._2).slateCache.waitForSlate(key, future.set(_), getUpdater(performerId, key._2), getSlateBuilder(performerId), false)
+    val bytes = new ByteArrayOutputStream()
+    getSlateBuilder(performerId).toBytes(future.get(), bytes)
+    Option(bytes.toByteArray())
+  }
 
   // We need a separate slate server that does not redirect to prevent deadlocks
   val slateServer = new HttpServer(app.statusPort + 300, maxWorkerCount, s => {
@@ -1201,7 +1191,10 @@ class AppRuntime(appID: Int,
               if (ins.hasNext()) {
                 val data = ins.getNextDataPair();
                 continuation(data)
-              } else break() // end source thread at first no next returns
+              } else {
+                warn("SourceThread: hasNext returns false; stop this source thread")
+                break() // end source thread at first no next returns
+              }
             } catch {
               case e: Exception => error("SourceThread: hit exception", e)
             } // catch everything to keep source running
@@ -1253,7 +1246,6 @@ class AppRuntime(appID: Int,
   // This step should be the last step in the initialization (it brings up the MapUpdatePool sockets)
   // to avoid exposing the JVM to external input before it is ready
   pool.init()
-
 
   //COMMMENT:  A utility method to write slate to cassandra.
   def writeSlateToCassandra(item: (String, SlateValue)) = {

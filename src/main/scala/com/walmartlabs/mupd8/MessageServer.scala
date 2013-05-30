@@ -74,7 +74,7 @@ object MessageServer extends Logging {
               if (!isTest) {
                 // if it is unit test, don't send new ring to all nodes
                 // Local message server's port is always port + 1
-                info("CmdID "  + lastCmdID + ": Sending " + ring2 + " to " + ring2.hosts)
+                info("CmdID "  + lastCmdID + " - Sending " + ring2 + " to " + ring2.hosts)
 
                 // reset Timer
                 TimerActor.stopTimer(lastCmdID - 1, "cmdID: " + lastCmdID)
@@ -102,7 +102,7 @@ object MessageServer extends Logging {
               if (!isTest) {
                 // if it is unit test, don't send new ring to all nodes
                 // Local message server's port is always port + 1
-                info("Sending " + ring2 + " to " + ring2.hosts)
+                info("cmdID: " + lastCmdID + " - Sending " + ring2 + " to " + ring2.hosts)
                 // reset Timer
                 TimerActor.stopTimer(lastCmdID - 1, "cmdID: " + lastCmdID)
                 TimerActor.startTimer(lastCmdID, 5000L, () => info("TIMEOUT")) // TODO: replace info
@@ -252,8 +252,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
           // PrepareAddHostMessage: accept new ring from message server and prepare for switching
           case PrepareAddHostMessage(cmdID, hostToAdd, hash, hosts) =>
             if (cmdID > lastCmdID) {
-              runtime.ring = hash
-              runtime.app.systemHosts = hosts
+              runtime.ring2 = (hash, hosts)
               if (runtime.pool != null) {
                 info("LocalMessageServer: cmdID " + cmdID + ", Addhost " + hostToAdd)
                 runtime.pool.cluster.addHost(hostToAdd)
@@ -282,7 +281,10 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
 
           case UpdateRing(cmdID) =>
             debug("Received UpdateRing")
-            // TODO: switch to new ring
+
+            runtime.ring = runtime.ring2._1
+            runtime.app.systemHosts = runtime.ring2._2
+            runtime.ring2 = null
 
             info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
 
