@@ -66,7 +66,7 @@ object MessageServer extends Logging {
               info("MessageServer: received node remove message: " + msg)
               // check if node is already removed
               if (!ring2.hosts.contains(node)) {
-                trace("MessageServer: NodeRemoveMessage - " + node + " is already removed in message server")
+                info("MessageServer: NodeRemoveMessage - " + node + " is already removed in message server")
                 out.writeObject(ACKNodeRemove(node))
               } else {
                 lastCmdID += 1
@@ -79,7 +79,7 @@ object MessageServer extends Logging {
                 if (!isTest) {
                   // if it is unit test, don't send new ring to all nodes
                   // Local message server's port is always port + 1
-                  trace("NodeRemoveMessage: CmdID "  + lastCmdID + " - Sending " + ring2 + " to " + ring2.hosts)
+                  info("NodeRemoveMessage: CmdID "  + lastCmdID + " - Sending " + ring2 + " to " + ring2.hosts)
 
                   // reset Timer
                   TimerActor.stopTimer(lastCmdID - 1, "cmdID: " + lastCmdID)
@@ -266,7 +266,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               lastCmdID = cmdID
               debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)
               runtime.msClient.sendMessage(ACKPrepareAddHostMessage(cmdID, runtime.app.self))
-              trace("LocalMessageServer: PrepareAddHostMessage - CMD " + cmdID + " - Sent ACKPrepareAddHostMessage to message server")
+              info("LocalMessageServer: PrepareAddHostMessage - CMD " + cmdID + " - Sent ACKPrepareAddHostMessage to message server")
             }  else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
 
@@ -279,7 +279,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               }
               lastCmdID = cmdID
               runtime.msClient.sendMessage(ACKPrepareRemoveHostMessage(cmdID, runtime.app.self))
-              trace("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareRemoveHostMessage to message server")
+              info("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareRemoveHostMessage to message server")
             } else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
 

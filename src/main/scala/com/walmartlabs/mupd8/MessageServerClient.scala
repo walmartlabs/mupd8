@@ -37,14 +37,14 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 20
       val out = new ObjectOutputStream(socket.getOutputStream)
       val in = new ObjectInputStream(socket.getInputStream)
       socket.setSoTimeout(timeout)
-      trace("MessageServerClient: connected")
+      info("MessageServerClient: connected")
       out.writeObject(msg)
       msg match {
         case m: MessageWOACK =>
 
         case m: MessageWACK =>
           val ack = in.readObject
-          trace("MessageServerClient: received " + ack)
+          info("MessageServerClient: received " + ack)
       }
       out.close
       in.close
