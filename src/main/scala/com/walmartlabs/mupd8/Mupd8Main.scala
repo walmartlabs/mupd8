@@ -150,7 +150,7 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   val server = new Server(port, new Listener() {
     override def messageReceived(packet: AnyRef): Boolean = {
       val destObj = packet.asInstanceOf[T]
-      debug("Server receives: " + destObj)
+      trace("Server receives: " + destObj)
       onReceipt(destObj)
       true
     }
@@ -864,9 +864,9 @@ case class PerformerPacket(pri: Priority,
     val optSlate = if (performer.mtype == Updater) Some {
       val s = cache.getSlate((name, key))
       s map {
-        p => debug("Succeeded for " + name + "," + new String(key) + " " + p)
+        p => trace("Succeeded for " + name + "," + new String(key) + " " + p)
       } getOrElse {
-        debug("Failed fetch for " + name + "," + new String(key))
+        trace("Failed fetch for " + name + "," + new String(key))
         // Re-introduce self after issuing a read
         cache.waitForSlate((name,key),_ => appRun.pool.put(new StringOps(this.getKey), this), appRun.getUpdater(pid, key), appRun.getSlateBuilder(pid))
       }
@@ -886,7 +886,7 @@ case class PerformerPacket(pri: Priority,
       }
       tls.perfPacket = null
       tls.startTime = 0
-      debug("Executed " + performer.mtype.toString + " " + name)
+      trace("Executed " + performer.mtype.toString + " " + name)
     }
   }
 }
@@ -979,10 +979,10 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
 
   override def publish(stream: String, key: Array[Byte], event: Array[Byte]) {
     val app = appRun.app
-    debug("TLS::Publish: Publishing to " + stream + " Key " + str(key) + " event " + str(event))
+    trace("TLS::Publish: Publishing to " + stream + " Key " + str(key) + " event " + str(event))
     app.edgeName2IDs.get(stream).map(_.foreach(
       pid => {
-        debug("TLS::publish: Publishing to " + app.performers(pid).name)
+        trace("TLS::publish: Publishing to " + app.performers(pid).name)
         val packet = PerformerPacket(normal, pid, key, event, stream, appRun)
         if (app.performers(pid).mtype == Mapper)
           appRun.pool.put(packet)  // publish to mapper?
@@ -998,7 +998,7 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
     val name = appRun.app.performers(perfPacket.pid).name
     assert(appRun.app.performers(perfPacket.pid).mtype == Updater)
     val cache = appRun.getTLS(perfPacket.pid, perfPacket.key).slateCache
-    debug("replaceSlate " + appRun.app.performers(perfPacket.pid).name + "/" + str(perfPacket.key) + " Oldslate " + (cache.getSlate((name,perfPacket.key)).get).toString() + " Newslate " + slate.toString())
+    trace("replaceSlate " + appRun.app.performers(perfPacket.pid).name + "/" + str(perfPacket.key) + " Oldslate " + (cache.getSlate((name,perfPacket.key)).get).toString() + " Newslate " + slate.toString())
     cache.put((name, perfPacket.key), slate)
   }
 }
@@ -1224,21 +1224,19 @@ class AppRuntime(appID: Int,
   val writerThread = new Thread(run {
     val interval = app.cassWriteInterval * 1000 / threadVect.size
     while (true) {
-      threadVect foreach { tls =>
-        {
-          val target = java.lang.System.currentTimeMillis + interval
-          val items = tls.slateCache.getDirtyItems
-          // println("num of dirty items " + items.length)
-          items.zipWithIndex.foreach {
-            case ((key, item), i) => {
-              writeSlateToCassandra((key, item))
-              val sleepTime = (target - java.lang.System.currentTimeMillis) / (items.size - i)
-              if (sleepTime > 0) java.lang.Thread.sleep(sleepTime)
-            }
+      threadVect foreach { tls => {
+        val target = java.lang.System.currentTimeMillis + interval
+        val items = tls.slateCache.getDirtyItems
+        // println("num of dirty items " + items.length)
+        items.zipWithIndex.foreach {
+          case ((key, item), i) => {
+            writeSlateToCassandra((key, item))
+            val sleepTime = (target - java.lang.System.currentTimeMillis) / (items.size - i)
+            if (sleepTime > 0) java.lang.Thread.sleep(sleepTime)
           }
-          java.lang.Thread.sleep(10)
         }
-      }
+        java.lang.Thread.sleep(10)
+      }}
     }
   }, "writerThread")
   writerThread.start()
@@ -1247,22 +1245,20 @@ class AppRuntime(appID: Int,
   // to avoid exposing the JVM to external input before it is ready
   pool.init()
 
-  //COMMMENT:  A utility method to write slate to cassandra.
+  // A utility method to write slate to cassandra.
   def writeSlateToCassandra(item: (String, SlateValue)) = {
     val key = item._1
     val slateVal = item._2
     val colname = key.take(key.indexOf("~~~"))
     val slateByteStream = new ByteArrayOutputStream()
-    var suc = getSlateBuilder(app.performerName2ID(colname)).toBytes(slateVal.slate, slateByteStream)
+    if (getSlateBuilder(app.performerName2ID(colname)).toBytes(slateVal.slate, slateByteStream)
     // TODO: .getBytes may not work the way you want it to!! Encoding issues!
-    suc &&= storeIo.write(colname, key.drop(colname.length + 3).getBytes, slateByteStream.toByteArray())
-    // val suc = storeIo.write(colname, key.drop(colname.length + 3).getBytes, slateVal.slate.toBytes())
-    if (suc) {
+        && storeIo.write(colname, key.drop(colname.length + 3).getBytes, slateByteStream.toByteArray())) {
       slateVal.dirty = false
-      debug("Wrote record for " + colname + " " + key)
+      trace("Wrote record for " + colname + " " + key)
     } else {
       slateVal.dirty = true
-      debug("Failed to write record for " + colname + " " + key)
+      trace("Failed to write record for " + colname + " " + key)
     }
   }
 
