@@ -261,6 +261,10 @@ EOF
 <code class="prompt">$</code> <strong class="userinput"><code>mkdir -p etc/ &amp;&amp; cat &gt; etc/100-application.cfg &lt;&lt;EOF
 {
   "mupd8" : {
+    "messageserver":{
+      "host": "localhost",
+      "port": 8888
+    },
     "application" : {
       "mupd8_demo" : {
         "performers" : {
