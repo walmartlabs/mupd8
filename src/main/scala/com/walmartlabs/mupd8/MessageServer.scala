@@ -244,6 +244,11 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
   private var lastCmdID = -1;
 
   override def run() {
+    def setCandidateRingAndHostList(hash: IndexedSeq[String], hosts: IndexedSeq[String]) {
+      runtime.candidateRing = new HashRing(hash)
+      runtime.candidateHostList = hosts
+    }
+
     info("LocalMessageServerThread: Start listening to " + port)
     val serverSocketChannel = ServerSocketChannel.open()
     serverSocketChannel.socket().bind(new InetSocketAddress(port))
@@ -258,7 +263,8 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
           // PrepareAddHostMessage: accept new ring from message server and prepare for switching
           case PrepareAddHostMessage(cmdID, hostToAdd, hash, hosts) =>
             if (cmdID > lastCmdID) {
-              runtime.ring2 = (hash, hosts)
+              setCandidateRingAndHostList(hash, hosts)
+              runtime.flushDirtySlateToCassandra
               if (runtime.pool != null) {
                 info("LocalMessageServer: cmdID " + cmdID + ", Addhost " + hostToAdd + " to mucluster")
                 runtime.pool.cluster.addHost(hostToAdd)
@@ -272,7 +278,8 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
 
           case PrepareRemoveHostMessage(cmdID, hostToRemove, hash, hosts) =>
             if (cmdID > lastCmdID) {
-              runtime.ring2 = (hash, hosts)
+              setCandidateRingAndHostList(hash, hosts)
+              runtime.flushDirtySlateToCassandra
               if (runtime.pool != null) {
                 info("LocalMessageServer: PrepareRemoveHostMessage - cmdID " + cmdID + ", remove host " + hostToRemove + " from mucluster")
                 runtime.pool.cluster.removeHost(hostToRemove)
@@ -286,10 +293,11 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
           case UpdateRing(cmdID) =>
             debug("Received UpdateRing")
 
-            if (runtime.ring2 != null) {
-              runtime.ring = runtime.ring2._1
-              runtime.app.systemHosts = runtime.ring2._2
-              runtime.ring2 = null
+            if (runtime.candidateRing != null) {
+              runtime.ring = runtime.candidateRing
+              runtime.app.systemHosts = runtime.candidateHostList
+              runtime.candidateRing = null
+              runtime.candidateHostList = null
               info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
             } else {
               warn("UpdateRing: candidate ring is null in UpdateRing")

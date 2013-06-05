@@ -56,11 +56,7 @@ import com.walmartlabs.mupd8.network.server._
 import com.walmartlabs.mupd8.network.common._
 import scala.collection.JavaConversions._
 import grizzled.slf4j.Logging
-// import miscM._
-// import GT._
-// import Mupd8Type._
 import com.walmartlabs.mupd8.network.common.Decoder.DecodingState._
-// import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
 import java.nio.ByteBuffer
 import java.io.ByteArrayOutputStream
 
@@ -177,8 +173,8 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
 
   def send(dest: String, obj: T) {
     if (!client.send(dest, obj)) {
-      error("Failed to send message to destination " + dest)
-      if(msClient != null) msClient.sendMessage(NodeRemoveMessage(dest))
+      error("Failed to send slate to destination " + dest)
+      if (msClient != null) msClient.sendMessage(NodeRemoveMessage(dest))
     }
   }
 }
@@ -245,7 +241,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
     }
   }
 
-  val pool = 0 until poolsize map { new ThreadData(_) }
+  val threadDataPool = 0 until poolsize map { new ThreadData(_) }
   private val rand = new java.util.Random(System.currentTimeMillis)
   val cluster = clusterFactory(p => putLocal(p.getKey, p))
   def init() { cluster.init() }
@@ -257,8 +253,8 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
   private def getPoolIndices(key: Any) = {
     val fullhash = key.hashCode()
     val hash = fullhash / HASH_CONSTANT //cluster.hosts.size
-    val i1 = hash % pool.size
-    val i2 = (hash / pool.size) % (pool.size - 1)
+    val i1 = hash % threadDataPool.size
+    val i2 = (hash / threadDataPool.size) % (threadDataPool.size - 1)
     val (m1, m2) = (mod(i1), mod(i2))
     (m1, if (m2 < m1) m2 else m2 + 1)
   }
@@ -266,24 +262,24 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
   def getPreferredPoolIndex(key: Any) = {
     val fullhash = key.hashCode()
     val hash = fullhash / HASH_CONSTANT //cluster.hosts.size
-    mod(hash % pool.size)
+    mod(hash % threadDataPool.size)
   }
 
   private def lock(i1: Int, i2: Int) {
     val (k1, k2) = if (i1 < i2) (i1, i2) else (i2, i1)
-    pool(k1).keyLock.acquire()
-    if (k1 != k2) pool(k2).keyLock.acquire()
+    threadDataPool(k1).keyLock.acquire()
+    if (k1 != k2) threadDataPool(k2).keyLock.acquire()
   }
 
   private def unlock(i1: Int, i2: Int) {
     val (k1, k2) = if (i1 < i2) (i1, i2) else (i2, i1)
-    pool(k2).keyLock.release()
-    if (k1 != k2) pool(k1).keyLock.release()
+    threadDataPool(k2).keyLock.release()
+    if (k1 != k2) threadDataPool(k1).keyLock.release()
   }
 
   // This method should only be called after acquiring the (i1,i2) locks
   private def attemptQueue(job: Runnable with Comparable[T], key: Any, i1: Int, i2: Int): Boolean = {
-    val (p1, p2) = (pool(i1), pool(i2))
+    val (p1, p2) = (threadDataPool(i1), threadDataPool(i2))
 
     // somehow scala convert keyInUse or key into StringOps, so need to convert to string to call equals
     // o.w. it always returns false
@@ -300,17 +296,17 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
   }
 
   def put(x: T) {
-    val a = rand.nextInt(pool.size) //TODO: Do we need to serialize this call?
-    val sa = pool(a).keyQueue.size + pool(a).queue.size()
+    val a = rand.nextInt(threadDataPool.size) //TODO: Do we need to serialize this call?
+    val sa = threadDataPool(a).keyQueue.size + threadDataPool(a).queue.size()
 
     val destination =
       if (sa > 1) {
-        val temp = rand.nextInt(pool.size - 1)
+        val temp = rand.nextInt(threadDataPool.size - 1)
         val b = if (temp < a) temp else temp + 1
-        if (pool(b).keyQueue.size + pool(b).queue.size < sa) b else a
+        if (threadDataPool(b).keyQueue.size + threadDataPool(b).queue.size < sa) b else a
       } else a
 
-    pool(destination).queue.put(innerCompare(x, null))
+    threadDataPool(destination).queue.put(innerCompare(x, null))
   }
 
   // Put source into queue
@@ -318,14 +314,14 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
     var a = 0
     var sa = 0
     while ({
-      a = rand.nextInt(pool.size) //TODO: Do we need to serialize this call?
-      sa = pool(a).keyQueue.size + pool(a).queue.size()
+      a = rand.nextInt(threadDataPool.size) //TODO: Do we need to serialize this call?
+      sa = threadDataPool(a).keyQueue.size + threadDataPool(a).queue.size()
       sa > 50
     }) {
       java.lang.Thread.sleep((sa - 50L) * (sa - 50L) / 25 min 1000)
     }
 
-    pool(a).queue.put(innerCompare(x, null))
+    threadDataPool(a).queue.put(innerCompare(x, null))
   }
 
   def putLocal(key: Any, x: T) { // TODO : Fix key : Any??
@@ -334,7 +330,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
 
     if (!attemptQueue(x, key, i1, i2)) {
       // TODO: HOT conductor check not accurate, use time stamps
-      val (p1, p2) = (pool(i1), pool(i2))
+      val (p1, p2) = (threadDataPool(i1), threadDataPool(i2))
       val dest = if (p1.keyQueue.size + p1.queue.size > 1.3 * (p2.keyQueue.size + p2.queue.size)) p2 else p1
       dest.queue.put(innerCompare(x, key))
     }
@@ -344,7 +340,10 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
 
   def put(key: Any, x: T) {
     val dest = runtime.ring(key)
-    if (dest == runtime.app.self)
+    if (dest == runtime.app.self
+        ||
+        // during ring chagne process, if dest is going to be removed from cluster
+        (runtime.candidateHostList != null && !runtime.candidateHostList.contains(dest)))
       putLocal(key, x)
     else
       cluster.send(dest, x)
@@ -857,6 +856,21 @@ case class PerformerPacket(pri: Priority,
       val result = excToOptionWithLog(x)
       if (result == None) log("Bad exception Bro")
     }
+
+    def executeUpdate(tls: TLS, slate: SlateObject) {
+      if (appRun.candidateRing != null
+          && appRun.ring(getKey) == appRun.app.self
+          && appRun.candidateRing(getKey) != appRun.app.self) {
+            // if in ring change process and dest of this slate changes by candidate ring
+            appRun.pool.put(new StringOps(getKey), this)
+          } else if (appRun.candidateRing == null && appRun.ring(getKey) != appRun.app.self) {
+            // if not in ring change process and dest of this slate is not this node
+            appRun.pool.cluster.send(appRun.ring(getKey), this)
+          } else {
+            execute(appRun.getUpdater(pid).update(tls, stream, key, event, slate))
+          }
+    }
+
     val performer = appRun.app.performers(pid)
     val name = performer.name
 
@@ -881,7 +895,7 @@ case class PerformerPacket(pri: Priority,
       tls.startTime = java.lang.System.nanoTime()
       (performer.mtype, tls.unifiedUpdaters(pid)) match {
         case (Updater, true) => execute(appRun.getUnifiedUpdater(pid).update(tls, stream, key, Array(event), Array(slate.get)))
-        case (Updater, false) => execute(appRun.getUpdater(pid).update(tls, stream, key, event, slate.get))
+        case (Updater, false) => executeUpdate(tls, slate.get)
         case (Mapper, false) => execute(appRun.getMapper(pid).map(tls, stream, key, event))
       }
       tls.perfPacket = null
@@ -1046,7 +1060,7 @@ class AppRuntime(appID: Int,
           sortWith(_._2 >= _._2).
           map(x => x._1 + (x._1.length to 50 map (_ => " ")).foldLeft("")(_ + _) + " " + x._2).foldLeft("")(_ + _ + "\n") +
           {
-            val poolsizes = pool.pool.map(p => (p.queue.size, p.getSerialQueueSize())).sortWith { case ((a, b), (c, d)) => a + b < c + d }
+            val poolsizes = pool.threadDataPool.map(p => (p.queue.size, p.getSerialQueueSize())).sortWith { case ((a, b), (c, d)) => a + b < c + d }
             val num = (10 :: poolsizes.size / 2 :: Nil).min
             val currTime = java.lang.System.nanoTime()
             val startTimes = threadVect.map(_.startTime).filter(_ != 0)
@@ -1102,11 +1116,12 @@ class AppRuntime(appID: Int,
   private var _ring: HashRing = null
   def ring = _ring // getter
   def ring_= (r: HashRing2): Unit = _ring = new HashRing(r.hash) // setter
+  def ring_= (r: HashRing): Unit = _ring = new HashRing(r.hash)
   def ring_= (hash: IndexedSeq[String]): Unit = _ring = new HashRing(hash)
 
-  // candidate ring from message server
-  // _1: hash table; _2: system hosts
-  var ring2: (IndexedSeq[String], IndexedSeq[String]) = null
+  // candidate ring and host list from message server
+  var candidateRing: HashRing = null
+  var candidateHostList: IndexedSeq[String] = null
 
   // Try to Register host to message server and get updated hash ring from message server
   // even if hash ring is generated from system hosts already
@@ -1135,7 +1150,7 @@ class AppRuntime(appID: Int,
   val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
   info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
   val slateBuilders = app.slateBuilderFactory.map(_.map(_.apply()))
-  private val threadMap: Map[Long, TLS] = pool.pool.map(_.thread.getId -> new TLS(this))(breakOut)
+  private val threadMap: Map[Long, TLS] = pool.threadDataPool.map(_.thread.getId -> new TLS(this))(breakOut)
   private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
 
   def getSlate(key: (String, Key)) = {
@@ -1224,6 +1239,18 @@ class AppRuntime(appID: Int,
   val writerThread = new Thread(run {
     val interval = app.cassWriteInterval * 1000 / threadVect.size
     while (true) {
+      flushDirtySlateToCassandra
+    }
+  }, "writerThread")
+  writerThread.start()
+
+  // This step should be the last step in the initialization (it brings up the MapUpdatePool sockets)
+  // to avoid exposing the JVM to external input before it is ready
+  pool.init()
+
+  def flushDirtySlateToCassandra() {
+    if (threadVect != null) { // Need to make node is initted
+      val interval = app.cassWriteInterval * 1000 / threadVect.size
       threadVect foreach { tls => {
         val target = java.lang.System.currentTimeMillis + interval
         val items = tls.slateCache.getDirtyItems
@@ -1238,12 +1265,7 @@ class AppRuntime(appID: Int,
         java.lang.Thread.sleep(10)
       }}
     }
-  }, "writerThread")
-  writerThread.start()
-
-  // This step should be the last step in the initialization (it brings up the MapUpdatePool sockets)
-  // to avoid exposing the JVM to external input before it is ready
-  pool.init()
+  }
 
   // A utility method to write slate to cassandra.
   def writeSlateToCassandra(item: (String, SlateValue)) = {
