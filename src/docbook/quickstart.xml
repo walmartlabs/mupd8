@@ -281,6 +281,10 @@ EOF
 <prompt>$</prompt> <userinput>mkdir -p etc/ &amp;&amp; cat > etc/100-application.cfg &lt;&lt;EOF
 {
   "mupd8" : {
+    "messageserver":{
+      "host": "localhost",
+      "port": 8888
+    },
     "application" : {
       "mupd8_demo" : {
         "performers" : {
