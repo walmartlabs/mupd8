@@ -502,7 +502,7 @@ class DLList[T] {
 
 class SlateValue(val slate: SlateObject, val keyRef: Node[String], var dirty: Boolean = true)
 
-class SlateCache(val io: IoPool, val usageLimit: Long) {
+class SlateCache(val io: IoPool, val usageLimit: Long, val tls: TLS) extends Logging {
   println("Creating new SlateCache with IoPool " + io + " and usageLimit " + usageLimit);
   private val lock = new scala.concurrent.Lock
   private val table = new mutable.HashMap[String, SlateValue]()
@@ -540,9 +540,9 @@ class SlateCache(val io: IoPool, val usageLimit: Long) {
       while (io.pendingCount > 200) java.lang.Thread.sleep(100)
       def slateFromBytes(p:Array[Byte]) = { slateBuilder.toSlate(p) }
       if( doSafePut ) {
-        io.fetch(akey._1, akey._2, p => action(safePut(akey, p.map {slateFromBytes}.getOrElse(updater.getDefaultSlate()))))
+        io.fetch(akey._1, akey._2, p => action(safePut(akey, p.map {slateFromBytes}.getOrElse{updater.getDefaultSlate()})))
       } else {
-        io.fetch(akey._1, akey._2, p => action(p.map {slateFromBytes}.getOrElse(updater.getDefaultSlate())))
+        io.fetch(akey._1, akey._2, p => action(p.map {slateFromBytes}.getOrElse{updater.getDefaultSlate()}))
       }
     }
   }
@@ -581,7 +581,7 @@ class SlateCache(val io: IoPool, val usageLimit: Long) {
     newVal
   }
 
-  // To be used only by replaceSlate
+  // Used only by replaceSlate
   def put(akey: (String, Key), value: SlateObject) {
     val skey = buildKey(akey._1, akey._2)
     lock.acquire()
@@ -597,10 +597,25 @@ class SlateCache(val io: IoPool, val usageLimit: Long) {
     slate.slate
   }
 
-  def getDirtyItems() = {
+  def getDirtyItems(): List[(String, SlateValue)] = {
     lock.acquire()
     val retVal = table.filter(_._2.dirty).toList
     lock.release()
+    retVal
+  }
+
+  // filter out (string, slatevalue) list which needs to be flushed into cassandra during ring change
+  def getFilteredDirtyItems(): List[(String, SlateValue)] = {
+    lock.acquire
+    val retVal = table.filter(x => if (!x._2.dirty) false
+                                   else if (tls.appRun.candidateRing == null) false
+                                   else {
+                                     // decompose key to build performerpacket key
+                                     val key1 = x._1.take(x._1.indexOf("~~~"))
+                                     val key2 = x._1.drop(key1.length + 3)
+                                     tls.appRun.candidateRing(PerformerPacket.getKey(tls.appRun.app.performerName2ID(key1), key2.getBytes)) != tls.appRun.app.self
+                                   }).toList
+    lock.release
     retVal
   }
 
@@ -976,10 +991,10 @@ class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PR
   }
 }
 
-class TLS(appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
+class TLS(val appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
   val objects = appRun.app.performerFactory.map(_.map(_.apply()))
   // val slateCache = new SlateCache(appRun.storeIo, appRun.slateRAM / appRun.pool.poolsize)
-  val slateCache = new SlateCache(appRun.storeIo, appRun.app.slateCacheCount)
+  val slateCache = new SlateCache(appRun.storeIo, appRun.app.slateCacheCount, this)
   val queue = new PriorityBlockingQueue[Runnable]
   var perfPacket: PerformerPacket = null
   var startTime: Long = 0
@@ -1239,7 +1254,8 @@ class AppRuntime(appID: Int,
   val writerThread = new Thread(run {
     val interval = app.cassWriteInterval * 1000 / threadVect.size
     while (true) {
-      flushDirtySlateToCassandra
+      flushDirtySlateToCassandra()
+      Thread.sleep(app.cassWriteInterval * 1000)
     }
   }, "writerThread")
   writerThread.start()
@@ -1249,20 +1265,22 @@ class AppRuntime(appID: Int,
   pool.init()
 
   def flushDirtySlateToCassandra() {
-    if (threadVect != null) { // Need to make node is initted
-      val interval = app.cassWriteInterval * 1000 / threadVect.size
+    if (threadVect != null) { // flush only when node is initted
       threadVect foreach { tls => {
-        val target = java.lang.System.currentTimeMillis + interval
         val items = tls.slateCache.getDirtyItems
-        // println("num of dirty items " + items.length)
-        items.zipWithIndex.foreach {
-          case ((key, item), i) => {
-            writeSlateToCassandra((key, item))
-            val sleepTime = (target - java.lang.System.currentTimeMillis) / (items.size - i)
-            if (sleepTime > 0) java.lang.Thread.sleep(sleepTime)
-          }
-        }
-        java.lang.Thread.sleep(10)
+        items.foreach (writeSlateToCassandra(_))
+//        java.lang.Thread.sleep(10)
+      }}
+    }
+  }
+
+  // During ring change process, flush dirty and dest changed slate into cassandra
+  def flushFilteredDirtySlateToCassandra() {
+    if (threadVect != null) { // flush only when node is initted
+      threadVect foreach { tls => {
+        val items = tls.slateCache.getFilteredDirtyItems
+        items.foreach (writeSlateToCassandra(_))
+//        java.lang.Thread.sleep(10)
       }}
     }
   }

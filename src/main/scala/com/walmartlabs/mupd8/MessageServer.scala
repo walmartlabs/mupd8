@@ -264,8 +264,10 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
           case PrepareAddHostMessage(cmdID, hostToAdd, hash, hosts) =>
             if (cmdID > lastCmdID) {
               setCandidateRingAndHostList(hash, hosts)
-              runtime.flushDirtySlateToCassandra
+              debug("PrepareAddHostMessage - going to flush cassandra")
+              runtime.flushFilteredDirtySlateToCassandra
               if (runtime.pool != null) {
+                // update mucluster if node is up already
                 info("LocalMessageServer: cmdID " + cmdID + ", Addhost " + hostToAdd + " to mucluster")
                 runtime.pool.cluster.addHost(hostToAdd)
               }
@@ -279,8 +281,10 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
           case PrepareRemoveHostMessage(cmdID, hostToRemove, hash, hosts) =>
             if (cmdID > lastCmdID) {
               setCandidateRingAndHostList(hash, hosts)
-              runtime.flushDirtySlateToCassandra
+              debug("PrepareRemoveHostMessage - going to flush cassandra")
+              runtime.flushFilteredDirtySlateToCassandra
               if (runtime.pool != null) {
+                // update mucluster if node is up already
                 info("LocalMessageServer: PrepareRemoveHostMessage - cmdID " + cmdID + ", remove host " + hostToRemove + " from mucluster")
                 runtime.pool.cluster.removeHost(hostToRemove)
               }
