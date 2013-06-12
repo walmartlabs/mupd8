@@ -26,6 +26,7 @@ import scala.util.parsing.json.JSON
 import util.control.Breaks._
 import java.util.concurrent._
 import java.util.ArrayList
+import java.util.Arrays
 import java.io.{ File, InputStream, OutputStream }
 import java.lang.Integer
 import java.lang.Number
@@ -385,7 +386,23 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
 }
 
 object GT {
-  type Key = Array[Byte]
+  
+  // wrap up Array[Byte] with Key since Array[Byte]'s comparison doesn't 
+  // compare array's content which is needed in mupd8
+  case class Key(val value: Array[Byte]) {
+
+	override def hashCode() = Arrays.hashCode(value)
+
+    override def equals(other: Any) = other match {
+      case that: Key => Arrays.equals(that.value, value)
+      case _ => false
+    }
+
+    override def toString() = {
+      new String(value)
+    }
+  }
+
   type Event = Array[Byte]
   type Priority = Int
 
@@ -601,7 +618,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 }
 
 object PerformerPacket {
-  @inline def getKey(pid: Int, key: Key): String = pid.toString + "?/%%%>*" + str(key)
+  @inline def getKey(pid: Int, key: Key): String = pid.toString + "?/%%%>*" + str(key.value)
 }
 
 case class PerformerPacket(pri: Priority,
@@ -614,19 +631,19 @@ case class PerformerPacket(pri: Priority,
 
   override def compareTo(other: PerformerPacket) = pri.compareTo(other.pri)
 
-  override def toString = "{" + pri + "," + pid + "," + str(key) + "," + str(event) + "," + stream + "}"
+  override def toString = "{" + pri + "," + pid + "," + str(key.value) + "," + str(event) + "," + stream + "}"
 
   // Treat this as a static method, do not touch "this", use msg
   override protected def encode(channelHandlerContext: ChannelHandlerContext, channel: Channel, msg: AnyRef): AnyRef = {
     log("Invoked encoder")
     if (msg.isInstanceOf[PerformerPacket]) {
       val packet = msg.asInstanceOf[PerformerPacket]
-      val size: Int = 4 + 4 + 4 + packet.key.length + 4 + packet.event.length + 4 + packet.stream.length
+      val size: Int = 4 + 4 + 4 + packet.key.value.length + 4 + packet.event.length + 4 + packet.stream.length
       val buffer: ChannelBuffer = ChannelBuffers.buffer(size)
       buffer.writeInt(packet.pri)
       buffer.writeInt(packet.pid)
-      buffer.writeInt(packet.key.length)
-      buffer.writeBytes(packet.key)
+      buffer.writeInt(packet.key.value.length)
+      buffer.writeBytes(packet.key.value)
       buffer.writeInt(packet.event.length)
       buffer.writeBytes(packet.event)
       buffer.writeInt(packet.stream.length)
@@ -652,7 +669,7 @@ case class PerformerPacket(pri: Priority,
             // if not in ring change process and dest of this slate is not this node
             appRun.pool.cluster.send(appRun.ring(getKey), this)
           } else {
-            execute(appRun.getUpdater(pid).update(tls, stream, key, event, slate))
+            execute(appRun.getUpdater(pid).update(tls, stream, key.value, event, slate))
           }
     }
 
@@ -663,9 +680,9 @@ case class PerformerPacket(pri: Priority,
     val optSlate = if (performer.mtype == Updater) Some {
       val s = cache.getSlate((name, key))
       s map {
-        p => trace("Succeeded for " + name + "," + new String(key) + " " + p)
+        p => trace("Succeeded for " + name + "," + key + " " + p)
       } getOrElse {
-        trace("Failed fetch for " + name + "," + new String(key))
+        trace("Failed fetch for " + name + "," + key)
         // Re-introduce self after issuing a read
         cache.waitForSlate((name,key),_ => appRun.pool.put(new StringOps(this.getKey), this), appRun.getUpdater(pid, key), appRun.getSlateBuilder(pid))
       }
@@ -679,9 +696,9 @@ case class PerformerPacket(pri: Priority,
       tls.perfPacket = this
       tls.startTime = java.lang.System.nanoTime()
       (performer.mtype, tls.unifiedUpdaters(pid)) match {
-        case (Updater, true) => execute(appRun.getUnifiedUpdater(pid).update(tls, stream, key, Array(event), Array(slate.get)))
+        case (Updater, true) => execute(appRun.getUnifiedUpdater(pid).update(tls, stream, key.value, Array(event), Array(slate.get)))
         case (Updater, false) => executeUpdate(tls, slate.get)
-        case (Mapper, false) => execute(appRun.getMapper(pid).map(tls, stream, key, event))
+        case (Mapper, false) => execute(appRun.getMapper(pid).map(tls, stream, key.value, event))
       }
       tls.perfPacket = null
       tls.startTime = 0
@@ -693,7 +710,7 @@ case class PerformerPacket(pri: Priority,
 class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PRIORITY) {
   var pri: Priority = -1
   var pid: Int = -1
-  var key: Key = Array()
+  var key: Key = Key(new Array[Byte](0))
   var event: Event = Array()
   var stream: Array[Byte] = Array()
 
@@ -702,7 +719,7 @@ class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PR
     checkpoint(PRIORITY)
     pri = -1
     pid = -1
-    key = Array()
+    key = Key(new Array[Byte](0))
     event = Array()
     stream = Array()
   }
@@ -725,10 +742,10 @@ class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PR
           if (keyLen < 0) {
             throw new Exception("Invalid key size")
           }
-          key = new Array[Byte](keyLen)
+          key = Key(new Array[Byte](keyLen))
           checkpoint(KEY)
         case KEY =>
-          buffer.readBytes(key, 0, key.length)
+          buffer.readBytes(key.value, 0, key.value.length)
           checkpoint(EVENT_LENGTH)
         case EVENT_LENGTH =>
           val eventLen = buffer.readInt
@@ -782,7 +799,7 @@ class TLS(val appRun: AppRuntime) extends binary.PerformerUtilities with Logging
     app.edgeName2IDs.get(stream).map(_.foreach(
       pid => {
         trace("TLS::publish: Publishing to " + app.performers(pid).name)
-        val packet = PerformerPacket(normal, pid, key, event, stream, appRun)
+        val packet = PerformerPacket(normal, pid, Key(key), event, stream, appRun)
         if (app.performers(pid).mtype == Mapper)
           appRun.pool.put(packet)  // publish to mapper?
         else
@@ -797,7 +814,7 @@ class TLS(val appRun: AppRuntime) extends binary.PerformerUtilities with Logging
     val name = appRun.appStatic.performers(perfPacket.pid).name
     assert(appRun.appStatic.performers(perfPacket.pid).mtype == Updater)
     val cache = appRun.getTLS(perfPacket.pid, perfPacket.key).slateCache
-    trace("replaceSlate " + appRun.appStatic.performers(perfPacket.pid).name + "/" + str(perfPacket.key) + " Oldslate " + (cache.getSlate((name,perfPacket.key)).get).toString() + " Newslate " + slate.toString())
+    trace("replaceSlate " + appRun.appStatic.performers(perfPacket.pid).name + "/" + perfPacket.key + " Oldslate " + (cache.getSlate((name,perfPacket.key)).get).toString() + " Newslate " + slate.toString())
     cache.put((name, perfPacket.key), slate)
   }
 }
@@ -867,7 +884,7 @@ class AppRuntime(appID: Int,
       if (tok.length != 6) {
         None
       } else {
-        val key: (String, Key) = (tok(4), tok(5).map(_.toByte).toArray)
+        val key: (String, Key) = (tok(4), Key(tok(5).map(_.toByte).toArray))
         val poolKey = PerformerPacket.getKey(appStatic.performerName2ID(key._1), key._2)
         val dest = InetAddress.getByName(ring(new StringOps(poolKey))).getHostName
         if (appStatic.self.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
@@ -893,7 +910,7 @@ class AppRuntime(appID: Int,
 
   val pool = initMapUpdatePool(poolsize, this,
     action => new MUCluster[PerformerPacket](appStatic, appStatic.statusPort + 100,
-                                             PerformerPacket(0, 0, Array(), Array(), "", this),
+                                             PerformerPacket(0, 0, Key(new Array[Byte](0)), Array(), "", this),
                                              () => { new Decoder(this) },
                                              action, msClient))
 
@@ -952,7 +969,7 @@ class AppRuntime(appID: Int,
   // We need a separate slate server that does not redirect to prevent deadlocks
   val slateServer = new HttpServer(appStatic.statusPort + 300, maxWorkerCount, s => {
     val tok = java.net.URLDecoder.decode(s, "UTF-8").split('/')
-    getSlate((tok(4), tok(5).map(_.toByte).toArray))
+    getSlate((tok(4), Key(tok(5).map(_.toByte).toArray)))
   })
   slateServer.start
 
@@ -972,7 +989,7 @@ class AppRuntime(appID: Int,
         pool.putSource(PerformerPacket(
           source,
           performerID,
-          data._key.getBytes(),
+          Key(data._key.getBytes()),
           data._value,
           stream,
           this))
@@ -1077,7 +1094,7 @@ class AppRuntime(appID: Int,
     val slateByteStream = new ByteArrayOutputStream()
     getSlateBuilder(appStatic.performerName2ID(colname)).toBytes(slateVal.slate, slateByteStream)
     // TODO: .getBytes may not work the way you want it to!! Encoding issues!
-    storeIo.batchWrite(colname, key.drop(colname.length + 3).getBytes, slateByteStream.toByteArray())
+    storeIo.batchWrite(colname, Key(key.drop(colname.length + 3).getBytes), slateByteStream.toByteArray())
   }
 
   def getSlateBuilder(pid: Int) = slateBuilders(pid).get

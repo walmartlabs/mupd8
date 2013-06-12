@@ -17,7 +17,7 @@ class SlateCache(val io: IoPool, val usageLimit: Long, val tls: TLS) extends Log
   private var currentUsage: Long = 0
   private val objOverhead: Long = 32
 
-  def buildKey(name: String, key: Key) = name + "~~~" + str(key)
+  def buildKey(name: String, key: Key) = name + "~~~" + str(key.value)
 
   def getSlate(akey: (String, Key)) = {
     val skey = buildKey(akey._1, akey._2)
@@ -119,7 +119,7 @@ class SlateCache(val io: IoPool, val usageLimit: Long, val tls: TLS) extends Log
                                      // decompose key to build performerpacket key
                                      val key1 = x._1.take(x._1.indexOf("~~~"))
                                      val key2 = x._1.drop(key1.length + 3)
-                                     tls.appRun.candidateRing(PerformerPacket.getKey(tls.appRun.appStatic.performerName2ID(key1), key2.getBytes)) != tls.appRun.appStatic.self
+                                     tls.appRun.candidateRing(PerformerPacket.getKey(tls.appRun.appStatic.performerName2ID(key1), Key(key2.getBytes))) != tls.appRun.appStatic.self
                                    }).toList
     lock.release
     retVal
