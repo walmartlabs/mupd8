@@ -1056,9 +1056,9 @@ class AppRuntime(appID: Int,
   def flushDirtySlateToCassandra() {
     if (threadVect != null) { // flush only when node is initted
       storeIo.initBatchWrite
-      var dirtySlateList: List[(String, SlateValue)] = List.empty
+      var dirtySlateList: List[((String, Key), SlateValue)] = List.empty
       threadVect foreach { tls => {
-        val items: List[(String, SlateValue)] = tls.slateCache.getDirtyItems
+        val items: List[((String, Key), SlateValue)] = tls.slateCache.getDirtyItems
         dirtySlateList = dirtySlateList ++: items
         items.foreach (writeSlateToCassandra(_))
       }}
@@ -1073,7 +1073,7 @@ class AppRuntime(appID: Int,
     if (threadVect != null) { // flush only when node is initted
       info("flushFilteredDirtySlateToCassandra: starts to flush slates")
       storeIo.initBatchWrite
-      var dirtySlateList: List[(String, SlateValue)] = List.empty
+      var dirtySlateList: List[((String, Key), SlateValue)] = List.empty
       threadVect foreach { tls => {
         val items = tls.slateCache.getFilteredDirtyItems
         dirtySlateList ++:= items
@@ -1087,14 +1087,13 @@ class AppRuntime(appID: Int,
   }
 
   // A utility method to write slate to cassandra.
-  def writeSlateToCassandra(item: (String, SlateValue)) = {
+  def writeSlateToCassandra(item: ((String, Key), SlateValue)) = {
     val key = item._1
     val slateVal = item._2
-    val colname = key.take(key.indexOf("~~~"))
     val slateByteStream = new ByteArrayOutputStream()
-    getSlateBuilder(appStatic.performerName2ID(colname)).toBytes(slateVal.slate, slateByteStream)
+    getSlateBuilder(appStatic.performerName2ID(key._1)).toBytes(slateVal.slate, slateByteStream)
     // TODO: .getBytes may not work the way you want it to!! Encoding issues!
-    storeIo.batchWrite(colname, Key(key.drop(colname.length + 3).getBytes), slateByteStream.toByteArray())
+    storeIo.batchWrite(key._1, key._2, slateByteStream.toByteArray())
   }
 
   def getSlateBuilder(pid: Int) = slateBuilders(pid).get

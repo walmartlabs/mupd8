@@ -6,23 +6,22 @@ import com.walmartlabs.mupd8.application.binary
 import grizzled.slf4j.Logging
 import scala.collection._
 
-class SlateValue(val slate: SlateObject, val keyRef: Node[String], var dirty: Boolean = true)
+class SlateValue(val slate: SlateObject, val keyRef: Node[(String, Key)], var dirty: Boolean = true)
 
 class SlateCache(val io: IoPool, val usageLimit: Long, val tls: TLS) extends Logging {
   println("Creating new SlateCache with IoPool " + io + " and usageLimit " + usageLimit);
   private val lock = new scala.concurrent.Lock
-  private val table = new mutable.HashMap[String, SlateValue]()
-  private val lru = new DLList[String]
+  private val table = new mutable.HashMap[(String, Key), SlateValue]()
+  private val lru = new DLList[(String, Key)]
 
   private var currentUsage: Long = 0
   private val objOverhead: Long = 32
 
   def buildKey(name: String, key: Key) = name + "~~~" + str(key.value)
 
-  def getSlate(akey: (String, Key)) = {
-    val skey = buildKey(akey._1, akey._2)
+  def getSlate(key: (String, Key)) = {
     lock.acquire()
-    val item = table.get(skey)
+    val item = table.get(key)
     item map { p =>
       lru.remove(p.keyRef)
       lru.add(p.keyRef)
@@ -31,10 +30,9 @@ class SlateCache(val io: IoPool, val usageLimit: Long, val tls: TLS) extends Log
     item.map(_.slate)
   }
 
-  def waitForSlate(akey: (String, Key), action: SlateObject => Unit, updater : binary.SlateUpdater, slateBuilder : binary.SlateBuilder, doSafePut : Boolean = true) {
-    val skey = buildKey(akey._1, akey._2)
+  def waitForSlate(key: (String, Key), action: SlateObject => Unit, updater : binary.SlateUpdater, slateBuilder : binary.SlateBuilder, doSafePut : Boolean = true) {
     lock.acquire()
-    val item = table.get(skey)
+    val item = table.get(key)
     item map { p =>
       lru.remove(p.keyRef)
       lru.add(p.keyRef)
@@ -46,24 +44,24 @@ class SlateCache(val io: IoPool, val usageLimit: Long, val tls: TLS) extends Log
       while (io.pendingCount > 200) java.lang.Thread.sleep(100)
       def slateFromBytes(p:Array[Byte]) = { slateBuilder.toSlate(p) }
       if( doSafePut ) {
-        io.fetch(akey._1, akey._2, p => action(safePut(akey, p.map {slateFromBytes}.getOrElse{updater.getDefaultSlate()})))
+        io.fetch(key._1, key._2, p => action(safePut(key, p.map {slateFromBytes}.getOrElse{updater.getDefaultSlate()})))
       } else {
-        io.fetch(akey._1, akey._2, p => action(p.map {slateFromBytes}.getOrElse{updater.getDefaultSlate()}))
+        io.fetch(key._1, key._2, p => action(p.map {slateFromBytes}.getOrElse{updater.getDefaultSlate()}))
       }
     }
   }
 
-  @inline private def bytesConsumed(skey : String, item : SlateObject) = 1
+  @inline private def bytesConsumed(key : (String, Key), item : SlateObject) = 1
 
-  private def unLockedPut(skey: String, value: SlateObject, dirty: Boolean = true) = {
-    val newVal = new SlateValue(value, new Node(skey), dirty)
+  private def unLockedPut(key: (String, Key), value: SlateObject, dirty: Boolean = true) = {
+    val newVal = new SlateValue(value, new Node(key), dirty)
     lru.add(newVal.keyRef)
-    currentUsage += bytesConsumed(skey, value)
-    val oldVal = table.put(skey, newVal)
+    currentUsage += bytesConsumed(key, value)
+    val oldVal = table.put(key, newVal)
     assert(dirty || oldVal == None)
     oldVal map { p =>
       lru.remove(p.keyRef)
-      currentUsage -= bytesConsumed(skey, value)
+      currentUsage -= bytesConsumed(key, value)
     }
 
     var count = 0
@@ -76,7 +74,7 @@ class SlateCache(val io: IoPool, val usageLimit: Long, val tls: TLS) extends Log
           // Potential infinite loop here, which is why we are forced to use count
           lru.add(p.keyRef)
         } else {
-          currentUsage -= bytesConsumed(skey, value)
+          currentUsage -= bytesConsumed(key, value)
           table.remove(item)
         }
       } getOrElse {
@@ -88,22 +86,20 @@ class SlateCache(val io: IoPool, val usageLimit: Long, val tls: TLS) extends Log
   }
 
   // Used only by replaceSlate
-  def put(akey: (String, Key), value: SlateObject) {
-    val skey = buildKey(akey._1, akey._2)
+  def put(key: (String, Key), value: SlateObject) {
     lock.acquire()
-    unLockedPut(skey, value)
+    unLockedPut(key, value)
     lock.release()
   }
 
-  private def safePut(akey: (String, Key), value: SlateObject) = {
-    val skey = buildKey(akey._1, akey._2)
+  private def safePut(key: (String, Key), value: SlateObject) = {
     lock.acquire()
-    val slate = table get (skey) getOrElse unLockedPut(skey, value, false)
+    val slate = table get (key) getOrElse unLockedPut(key, value, false)
     lock.release()
     slate.slate
   }
 
-  def getDirtyItems(): List[(String, SlateValue)] = {
+  def getDirtyItems(): List[((String, Key), SlateValue)] = {
     lock.acquire()
     val retVal = table.filter(_._2.dirty).toList
     lock.release()
@@ -111,15 +107,13 @@ class SlateCache(val io: IoPool, val usageLimit: Long, val tls: TLS) extends Log
   }
 
   // filter out (string, slatevalue) list which needs to be flushed into cassandra during ring change
-  def getFilteredDirtyItems(): List[(String, SlateValue)] = {
+  def getFilteredDirtyItems(): List[((String, Key), SlateValue)] = {
     lock.acquire
     val retVal = table.filter(x => if (!x._2.dirty) false
                                    else if (tls.appRun.candidateRing == null) false
                                    else {
                                      // decompose key to build performerpacket key
-                                     val key1 = x._1.take(x._1.indexOf("~~~"))
-                                     val key2 = x._1.drop(key1.length + 3)
-                                     tls.appRun.candidateRing(PerformerPacket.getKey(tls.appRun.appStatic.performerName2ID(key1), Key(key2.getBytes))) != tls.appRun.appStatic.self
+                                     tls.appRun.candidateRing(PerformerPacket.getKey(tls.appRun.appStatic.performerName2ID(x._1._1), x._1._2)) != tls.appRun.appStatic.self
                                    }).toList
     lock.release
     retVal
