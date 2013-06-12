@@ -77,7 +77,7 @@ object AckedNodeCounter extends Actor with Logging {
         else {
           // clear host
           nodesNotAcked -= host
-          debug("AckedNodeCounter: CountPrepareACK - updated nodesNotAcked = " + nodesNotAcked)
+          info("AckedNodeCounter: CountPrepareACK - updated nodesNotAcked = " + nodesNotAcked)
 
           // if all nodes acked cmdID, pin message server
           if (nodesNotAcked.isEmpty) {

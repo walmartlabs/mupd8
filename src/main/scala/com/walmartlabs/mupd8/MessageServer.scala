@@ -273,7 +273,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               }
               lastCmdID = cmdID
               debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + hosts)
-              runtime.msClient.sendMessage(ACKPrepareAddHostMessage(cmdID, runtime.app.self))
+              runtime.msClient.sendMessage(ACKPrepareAddHostMessage(cmdID, runtime.appStatic.self))
               info("LocalMessageServer: PrepareAddHostMessage - CMD " + cmdID + " - Sent ACKPrepareAddHostMessage to message server")
             }  else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
@@ -289,7 +289,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
                 runtime.pool.cluster.removeHost(hostToRemove)
               }
               lastCmdID = cmdID
-              runtime.msClient.sendMessage(ACKPrepareRemoveHostMessage(cmdID, runtime.app.self))
+              runtime.msClient.sendMessage(ACKPrepareRemoveHostMessage(cmdID, runtime.appStatic.self))
               info("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareRemoveHostMessage to message server")
             } else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
@@ -299,7 +299,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
 
             if (runtime.candidateRing != null) {
               runtime.ring = runtime.candidateRing
-              runtime.app.systemHosts = runtime.candidateHostList
+              runtime.appStatic.systemHosts = runtime.candidateHostList
               runtime.candidateRing = null
               runtime.candidateHostList = null
               info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
