@@ -180,11 +180,11 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   }
 }
 
-class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRuntime, clusterFactory: (T => Unit) => MUCluster[T]) extends Logging {
+class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntime, clusterFactory: (T => Unit) => MUCluster[T]) extends Logging {
   case class innerCompare(job: T, key: Any) extends Comparable[innerCompare] {
     override def compareTo(other: innerCompare) = job.compareTo(other.job)
   }
-  val ring = runtime.ring
+  val ring = appRun.ring
 
   class ThreadData(val me: Int) {
     val queue = new PriorityBlockingQueue[innerCompare]
@@ -340,11 +340,11 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, runtime: AppRunti
   }
 
   def put(key: Any, x: T) {
-    val dest = runtime.ring(key)
-    if (dest == runtime.appStatic.self
+    val dest = appRun.ring(key)
+    if (dest == appRun.appStatic.self
         ||
         // during ring chagne process, if dest is going to be removed from cluster
-        (runtime.candidateHostList != null && !runtime.candidateHostList.contains(dest)))
+        (appRun.candidateHostList != null && !appRun.candidateHostList.contains(dest)))
       putLocal(key, x)
     else
       cluster.send(dest, x)
@@ -620,32 +620,33 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 }
 
 object PerformerPacket {
-  @inline def getKey(pid: Int, key: Key): StringOps = pid.toString + "?/%%%>*" + str(key.value)
+  @inline def getKey(pid: Int, key: Key): (Int, Key) = (pid, key)
 }
 
 case class PerformerPacket(pri: Priority,
                            pid: Int,
-                           key: Key,
+                           slateKey: Key,
                            event: Event,
                            stream: String, // This field can be replaced by source performer ID
                            appRun: AppRuntime) extends MapUpdateClass[PerformerPacket] with Logging {
-  override def getKey = PerformerPacket.getKey(pid, key)
+  val ppKey = (pid, slateKey)
+  override def getKey = ppKey
 
   override def compareTo(other: PerformerPacket) = pri.compareTo(other.pri)
 
-  override def toString = "{" + pri + "," + pid + "," + str(key.value) + "," + str(event) + "," + stream + "}"
+  override def toString = "{" + pri + "," + pid + "," + str(slateKey.value) + "," + str(event) + "," + stream + "}"
 
   // Treat this as a static method, do not touch "this", use msg
   override protected def encode(channelHandlerContext: ChannelHandlerContext, channel: Channel, msg: AnyRef): AnyRef = {
     log("Invoked encoder")
     if (msg.isInstanceOf[PerformerPacket]) {
       val packet = msg.asInstanceOf[PerformerPacket]
-      val size: Int = 4 + 4 + 4 + packet.key.value.length + 4 + packet.event.length + 4 + packet.stream.length
+      val size: Int = 4 + 4 + 4 + packet.slateKey.value.length + 4 + packet.event.length + 4 + packet.stream.length
       val buffer: ChannelBuffer = ChannelBuffers.buffer(size)
       buffer.writeInt(packet.pri)
       buffer.writeInt(packet.pid)
-      buffer.writeInt(packet.key.value.length)
-      buffer.writeBytes(packet.key.value)
+      buffer.writeInt(packet.slateKey.value.length)
+      buffer.writeBytes(packet.slateKey.value)
       buffer.writeInt(packet.event.length)
       buffer.writeBytes(packet.event)
       buffer.writeInt(packet.stream.length)
@@ -666,27 +667,27 @@ case class PerformerPacket(pri: Priority,
         && appRun.ring(getKey) == appRun.appStatic.self
         && appRun.candidateRing(getKey) != appRun.appStatic.self) {
         // if in ring change process and dest of this slate changes by candidate ring
-        appRun.pool.put(getKey, this)
+        appRun.pool.putLocal(getKey, this)
       } else if (appRun.candidateRing == null && appRun.ring(getKey) != appRun.appStatic.self) {
         // if not in ring change process and dest of this slate is not this node
         appRun.pool.cluster.send(appRun.ring(getKey), this)
       } else {
-        execute(appRun.getUpdater(pid).update(tls, stream, key.value, event, slate))
+        execute(appRun.getUpdater(pid).update(tls, stream, slateKey.value, event, slate))
       }
     }
 
     val performer = appRun.appStatic.performers(pid)
     val name = performer.name
 
-    val cache = appRun.getTLS(pid, key).slateCache
+    val cache = appRun.getTLS(pid, slateKey).slateCache
     val optSlate = if (performer.mtype == Updater) Some {
-      val s = cache.getSlate((name, key))
+      val s = cache.getSlate((name, slateKey))
       s map {
-        p => trace("Succeeded for " + name + "," + key + " " + p)
+        p => trace("Succeeded for " + name + "," + slateKey + " " + p)
       } getOrElse {
-        trace("Failed fetch for " + name + "," + key)
+        trace("Failed fetch for " + name + "," + slateKey)
         // Re-introduce self after issuing a read
-        cache.waitForSlate((name,key),_ => appRun.pool.put(this.getKey, this), appRun.getUpdater(pid, key), appRun.getSlateBuilder(pid))
+        cache.waitForSlate((name,slateKey),_ => appRun.pool.put(this.getKey, this), appRun.getUpdater(pid, slateKey), appRun.getSlateBuilder(pid))
       }
       s
     } else
@@ -698,9 +699,9 @@ case class PerformerPacket(pri: Priority,
       tls.perfPacket = this
       tls.startTime = java.lang.System.nanoTime()
       (performer.mtype, tls.unifiedUpdaters(pid)) match {
-        case (Updater, true) => execute(appRun.getUnifiedUpdater(pid).update(tls, stream, key.value, Array(event), Array(slate.get)))
+        case (Updater, true) => execute(appRun.getUnifiedUpdater(pid).update(tls, stream, slateKey.value, Array(event), Array(slate.get)))
         case (Updater, false) => executeUpdate(tls, slate.get)
-        case (Mapper, false) => execute(appRun.getMapper(pid).map(tls, stream, key.value, event))
+        case (Mapper, false) => execute(appRun.getMapper(pid).map(tls, stream, slateKey.value, event))
       }
       tls.perfPacket = null
       tls.startTime = 0
@@ -814,9 +815,9 @@ class TLS(val appRun: AppRuntime) extends binary.PerformerUtilities with Logging
     // TODO: Optimize replace slate to avoid hash table look ups
     val name = appRun.appStatic.performers(perfPacket.pid).name
     assert(appRun.appStatic.performers(perfPacket.pid).mtype == Updater)
-    val cache = appRun.getTLS(perfPacket.pid, perfPacket.key).slateCache
-    trace("replaceSlate " + appRun.appStatic.performers(perfPacket.pid).name + "/" + perfPacket.key + " Oldslate " + (cache.getSlate((name,perfPacket.key)).get).toString() + " Newslate " + slate.toString())
-    cache.put((name, perfPacket.key), slate)
+    val cache = appRun.getTLS(perfPacket.pid, perfPacket.slateKey).slateCache
+    trace("replaceSlate " + appRun.appStatic.performers(perfPacket.pid).name + "/" + perfPacket.slateKey + " Oldslate " + (cache.getSlate((name,perfPacket.slateKey)).get).toString() + " Newslate " + slate.toString())
+    cache.put((name, perfPacket.slateKey), slate)
   }
 }
 
@@ -829,7 +830,6 @@ class AppRuntime(appID: Int,
 
   def initMapUpdatePool(poolsize: Int, runtime: AppRuntime, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
     new MapUpdatePool[PerformerPacket](poolsize, runtime, clusterFactory)
-
 
   val msClient: MessageServerClient = if (appStatic.messageServerHost != None && appStatic.messageServerPort != None) {
     new MessageServerClient(appStatic.messageServerHost.get.asInstanceOf[String], appStatic.messageServerPort.get.asInstanceOf[Number].intValue(), 1000)
@@ -887,7 +887,7 @@ class AppRuntime(appID: Int,
       } else {
         val key: (String, Key) = (tok(4), Key(tok(5).map(_.toByte).toArray))
         val poolKey = PerformerPacket.getKey(appStatic.performerName2ID(key._1), key._2)
-        val dest = InetAddress.getByName(ring(new StringOps(poolKey))).getHostName
+        val dest = InetAddress.getByName(ring(poolKey)).getHostName
         if (appStatic.self.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
           getSlate(key)
         else {
@@ -958,7 +958,7 @@ class AppRuntime(appID: Int,
 
   def getSlate(key: (String, Key)) = {
     val performerId = appStatic.performerName2ID(key._1)
-    val host = ring(new StringOps(PerformerPacket.getKey(performerId, key._2)))
+    val host = ring(PerformerPacket.getKey(performerId, key._2))
     assert(host.compareTo(appStatic.self) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
     val future = new Later[SlateObject]
     getTLS(performerId, key._2).slateCache.waitForSlate(key, future.set(_), getUpdater(performerId, key._2), getSlateBuilder(performerId), false)

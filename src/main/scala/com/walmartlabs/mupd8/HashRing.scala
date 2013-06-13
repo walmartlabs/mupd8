@@ -31,7 +31,7 @@ class HashRing(val hash: IndexedSeq[String]) extends Logging {
 
   // pick up hosts
   def apply(key : Any) : String = {
-    hash(((key.hashCode + Int.MaxValue.toLong) % N).toInt)
+    hash(((key.hashCode * 997 + Int.MaxValue.toLong) % N).toInt)
   }
 
   override def toString: String = hash.toString
@@ -77,12 +77,6 @@ object HashRing2 {
 class HashRing2 private (val hosts: IndexedSeq[String], val hash: IndexedSeq[String], map: Map[String, Int]) extends Serializable with Logging {
 
   def getCopyOfHash: IndexedSeq[String] = hash.toIndexedSeq
-
-  /** Map from key [0.0, 1.0] to an unremoved target [0, numTargets). */
-  def apply(key : Int) : String = {
-    val offset = key * 997 / HashRing2.N
-    hash(offset)
-  }
 
   /**
    * Remove a target [0, numTargets) (so apply will never return it again).
