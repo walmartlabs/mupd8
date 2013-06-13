@@ -491,7 +491,9 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
   val performers = loadConfig.convertPerformers(config.workerJSONs)
   val statusPort = Option(config.getScopedValue(Array("mupd8", "mupd8_status", "http_port"))).getOrElse(new Integer(6001)).asInstanceOf[Number].intValue()
   val performerName2ID = Map(performers.map(_.name).zip(0 until performers.size): _*)
+  debug("performerName2ID = " + performerName2ID)
   val edgeName2IDs = performers.map(p => p.subs.map((_, performerName2ID(p.name)))).flatten.groupBy(_._1).mapValues(_.map(_._2))
+  debug("edgeName2IDs = " + edgeName2IDs)
   var performerArray: Array[binary.Performer] = new Array[binary.Performer](performers.size)
 
   val performerFactory: Vector[Option[() => binary.Performer]] = if (loadClasses) (
@@ -618,7 +620,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 }
 
 object PerformerPacket {
-  @inline def getKey(pid: Int, key: Key): String = pid.toString + "?/%%%>*" + str(key.value)
+  @inline def getKey(pid: Int, key: Key): StringOps = pid.toString + "?/%%%>*" + str(key.value)
 }
 
 case class PerformerPacket(pri: Priority,
@@ -661,16 +663,16 @@ case class PerformerPacket(pri: Priority,
 
     def executeUpdate(tls: TLS, slate: SlateObject) {
       if (appRun.candidateRing != null
-          && appRun.ring(getKey) == appRun.appStatic.self
-          && appRun.candidateRing(getKey) != appRun.appStatic.self) {
-            // if in ring change process and dest of this slate changes by candidate ring
-            appRun.pool.put(new StringOps(getKey), this)
-          } else if (appRun.candidateRing == null && appRun.ring(getKey) != appRun.appStatic.self) {
-            // if not in ring change process and dest of this slate is not this node
-            appRun.pool.cluster.send(appRun.ring(getKey), this)
-          } else {
-            execute(appRun.getUpdater(pid).update(tls, stream, key.value, event, slate))
-          }
+        && appRun.ring(getKey) == appRun.appStatic.self
+        && appRun.candidateRing(getKey) != appRun.appStatic.self) {
+        // if in ring change process and dest of this slate changes by candidate ring
+        appRun.pool.put(getKey, this)
+      } else if (appRun.candidateRing == null && appRun.ring(getKey) != appRun.appStatic.self) {
+        // if not in ring change process and dest of this slate is not this node
+        appRun.pool.cluster.send(appRun.ring(getKey), this)
+      } else {
+        execute(appRun.getUpdater(pid).update(tls, stream, key.value, event, slate))
+      }
     }
 
     val performer = appRun.appStatic.performers(pid)
@@ -684,7 +686,7 @@ case class PerformerPacket(pri: Priority,
       } getOrElse {
         trace("Failed fetch for " + name + "," + key)
         // Re-introduce self after issuing a read
-        cache.waitForSlate((name,key),_ => appRun.pool.put(new StringOps(this.getKey), this), appRun.getUpdater(pid, key), appRun.getSlateBuilder(pid))
+        cache.waitForSlate((name,key),_ => appRun.pool.put(this.getKey, this), appRun.getUpdater(pid, key), appRun.getSlateBuilder(pid))
       }
       s
     } else
@@ -794,16 +796,15 @@ class TLS(val appRun: AppRuntime) extends binary.PerformerUtilities with Logging
     ) yield i)(breakOut)
 
   override def publish(stream: String, key: Array[Byte], event: Array[Byte]) {
-    val app = appRun.appStatic
     trace("TLS::Publish: Publishing to " + stream + " Key " + str(key) + " event " + str(event))
-    app.edgeName2IDs.get(stream).map(_.foreach(
+    appRun.appStatic.edgeName2IDs.get(stream).map(_.foreach(
       pid => {
-        trace("TLS::publish: Publishing to " + app.performers(pid).name)
+        trace("TLS::publish: Publishing to " + appRun.appStatic.performers(pid).name)
         val packet = PerformerPacket(normal, pid, Key(key), event, stream, appRun)
-        if (app.performers(pid).mtype == Mapper)
+        if (appRun.appStatic.performers(pid).mtype == Mapper)
           appRun.pool.put(packet)  // publish to mapper?
         else
-          appRun.pool.put(new StringOps(packet.getKey), packet)
+          appRun.pool.put(packet.getKey, packet)
       })).getOrElse(error("publish: Bad Stream name" + stream))
   }
 
