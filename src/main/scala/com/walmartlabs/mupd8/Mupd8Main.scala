@@ -1039,12 +1039,14 @@ class AppRuntime(appID: Int,
   }
 
   val writerThread = new Thread(run {
-    val interval = appStatic.cassWriteInterval * 1000 / threadVect.size
     while (true) {
+      val startTime = java.lang.System.currentTimeMillis
       debug("writeThread: start to flush dirty slates")
       flushDirtySlateToCassandra()
       debug("writeThread: flush dirty slates is done")
-      Thread.sleep(appStatic.cassWriteInterval * 1000)
+      val runTime = java.lang.System.currentTimeMillis - startTime
+      if (runTime > 0)
+        Thread.sleep(appStatic.cassWriteInterval * 1000 - runTime)
     }
   }, "writerThread")
   writerThread.start()
