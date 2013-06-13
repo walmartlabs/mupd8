@@ -386,8 +386,8 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntim
 }
 
 object GT {
-  
-  // wrap up Array[Byte] with Key since Array[Byte]'s comparison doesn't 
+
+  // wrap up Array[Byte] with Key since Array[Byte]'s comparison doesn't
   // compare array's content which is needed in mupd8
   case class Key(val value: Array[Byte]) {
 
@@ -1216,7 +1216,7 @@ object Mupd8Main extends Logging {
           } else {
             error("Mupd8Main: no hash ring found, exiting...")
           }
-          info("Goodbye")
+          info("Init is done")
         }
       }
     } getOrElse {
