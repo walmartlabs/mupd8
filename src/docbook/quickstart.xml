@@ -321,7 +321,7 @@ EOF
       "port"           : 9160,
       "keyspace"       : "Mupd8",
       "hosts"          : [ "localhost" ],
-      "#write_interval" : 15
+      "#write_interval" : 15,
       "#compression"    : "gzip"
     },
     "system_hosts"     : [ "localhost" ],
