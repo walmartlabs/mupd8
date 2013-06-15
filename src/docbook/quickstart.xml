@@ -281,6 +281,10 @@ EOF
 <prompt>$</prompt> <userinput>mkdir -p etc/ &amp;&amp; cat > etc/100-application.cfg &lt;&lt;EOF
 {
   "mupd8" : {
+    "messageserver":{
+      "host": "localhost",
+      "port": 8888
+    },
     "application" : {
       "mupd8_demo" : {
         "performers" : {
@@ -317,7 +321,7 @@ EOF
       "port"           : 9160,
       "keyspace"       : "Mupd8",
       "hosts"          : [ "localhost" ],
-      "#write_interval" : 15
+      "#write_interval" : 15,
       "#compression"    : "gzip"
     },
     "system_hosts"     : [ "localhost" ],
@@ -381,6 +385,13 @@ EOF
 <prompt>$</prompt> <userinput>(cd ../apache-cassandra-1.1.2 &amp;&amp; \
       echo 'create column family mupd8_demo;' | \
       bin/cassandra-cli --host localhost --keyspace Mupd8 )</userinput>
+</screen>
+    </para>
+        <para>
+      Run MUPD8's Message Server:
+<screen>
+<prompt>$</prompt> <userinput>java -cp ~/.m2/repository/org/slf4j/slf4j-simple/1.6.4/slf4j-simple-1.6.4.jar:~/.m2/repository/org/slf4j/slf4j-api/1.6.4/slf4j-api-1.6.4.jar:../mupd8/target/mupd8-1.0-SNAPSHOT.jar:../mupd8/target/mupd8-1.0-SNAPSHOT-jar-with-dependencies.jar:target/mupd8_demo-1.0-SNAPSHOT.jar \
+     com.walmartlabs.mupd8.MessageServer -pidFile messageserver.pid -d etc/ </userinput>
 </screen>
     </para>
     <para>

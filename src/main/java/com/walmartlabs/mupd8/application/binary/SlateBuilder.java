@@ -14,14 +14,17 @@
  * limitations under the License.
  *
  */
-package com.walmartlabs.mupd8.messaging
+package com.walmartlabs.mupd8.application.binary;
 
-class HostRequestMessage(sender: String) extends Message(MessageKind.HOST_REQUEST, MessageTransportKind.UNICAST) {
+import java.io.OutputStream;
 
-  override def toString(): String = {
-    sender
-  }
-  
-  def getSender() = sender
- 
+/** Serialize and deserialize slates of some type into byte[].
+ */
+public interface SlateBuilder {
+
+	/** Serialize slate into bytes. */
+	public boolean toBytes(Object slate, OutputStream out);
+
+	/** Deserialize bytes into a slate. */
+	public Object toSlate(byte[] bytes);
 }

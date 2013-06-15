@@ -18,15 +18,16 @@
 package com.walmartlabs.mupd8.application.binary;
 
 
-/** An Updater component of an application.
+
+/** An SlateUpdater component of an application.
  *
- * This Updater either updates a slate given an event, or merges two slates.
+ * This SlateUpdater either updates a slate given an event, or merges two slates.
  *
- * As in an ordinary Updater, any event passed in is considered handled
- * (and not redistributed to any other instance of the Updater).
+ * As in an ordinary SlateUpdater, any event passed in is considered handled
+ * (and not redistributed to any other instance of the SlateUpdater).
  *
- * Unlike an ordinary Updater, multiple slates may be provided, but like
- * an ordinary Updater, only one slate may be published (repeated publish
+ * Unlike an ordinary SlateUpdater, multiple slates may be provided, but like
+ * an ordinary SlateUpdater, only one slate may be published (repeated publish
  * calls overwrite the slate to publish).
  *
  * @see UnifiedUpdater
@@ -40,7 +41,7 @@ public interface DistributedUpdater extends Performer {
 	 *  @param event     - event value (payload)
 	 *  @param slate     - slate to update
      */
-	void update(PerformerUtilities submitter, String stream, byte[] key, byte[] event, byte[] slate);
+	void update(PerformerUtilities submitter, String stream, byte[] key, byte[] event, Object slate);
 
 	/** Update method that merges two slates into one.
 	 *
@@ -49,5 +50,5 @@ public interface DistributedUpdater extends Performer {
 	 *  @param slateA    - slate to merge (in no particular order)
 	 *  @param slateB    - slate to merge (in no particular order)
 	 */
-	void merge(PerformerUtilities submitter, byte[] key, byte[] slateA, byte[] slateB);
+	void merge(PerformerUtilities submitter, byte[] key, Object slateA, Object slateB);
 }

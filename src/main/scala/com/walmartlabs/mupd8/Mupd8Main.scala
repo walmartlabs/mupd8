@@ -26,6 +26,7 @@ import scala.util.parsing.json.JSON
 import util.control.Breaks._
 import java.util.concurrent._
 import java.util.ArrayList
+import java.util.Arrays
 import java.io.{ File, InputStream, OutputStream }
 import java.lang.Integer
 import java.lang.Number
@@ -46,27 +47,28 @@ import com.walmartlabs.mupd8.application.statistics.StatisticsBootstrap
 import com.walmartlabs.mupd8.application.statistics.StatisticsConstants
 import com.walmartlabs.mupd8.application.statistics.MapWrapper
 import com.walmartlabs.mupd8.application.statistics.UpdateWrapper
-import com.walmartlabs.mupd8.messaging.MessageHandler
-import com.walmartlabs.mupd8.messaging.BasicMessageHandler
 import com.walmartlabs.mupd8.application.statistics.StatisticsBootstrap
 import com.walmartlabs.mupd8.application.statistics.StatisticsConstants
 import com.walmartlabs.mupd8.application.statistics.MapWrapper
 import com.walmartlabs.mupd8.application.statistics.UpdateWrapper
-import com.walmartlabs.mupd8.elasticity.ElasticWrapper
-import com.walmartlabs.mupd8.elasticity.ElasticWrapper
-import com.walmartlabs.mupd8.messaging.NodeFailureMessage
-import com.walmartlabs.mupd8.messaging.HostRequestMessage
-import com.walmartlabs.mupd8.elasticity.RuntimeProvider
-
 import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
-import scala.collection.JavaConversions
+import com.walmartlabs.mupd8.network.client._
+import com.walmartlabs.mupd8.network.server._
+import com.walmartlabs.mupd8.network.common._
+import scala.collection.JavaConversions._
 import grizzled.slf4j.Logging
+import com.walmartlabs.mupd8.network.common.Decoder.DecodingState._
+import java.nio.ByteBuffer
+import java.io.ByteArrayOutputStream
 
-object miscM {
+object miscM extends Logging {
 
   val SLATE_CAPACITY = 1048576 // 1M size
   val INTMAX: Long = Int.MaxValue.toLong
   val HASH_BASE: Long = Int.MaxValue.toLong - Int.MinValue.toLong
+
+  // A SlateUpdater receives a SlateValue.slate of type SlateObject.
+  type SlateObject = Object
 
   def log(s: => { def toString: String }) = {} //println("[" + Thread.currentThread().getName() + "]" + s.toString)
 
@@ -120,8 +122,6 @@ object miscM {
     }
   }
 
-  def hash2Double(key: Any): Double = (key.hashCode.toLong + INTMAX).toDouble / HASH_BASE
-
 }
 
 import miscM._
@@ -130,33 +130,24 @@ trait MapUpdateClass[T] extends OneToOneEncoder with Runnable with Comparable[T]
   def getKey: Any
 }
 
-class MUCluster[T <: MapUpdateClass[T]](private var _hosts: Array[(String, Int)],
-  val port: Int,
-  encoder: OneToOneEncoder,
-  decoderFactory: () => ReplayingDecoder[network.common.Decoder.DecodingState],
-  onReceipt: T => Unit,
-  msClient: MessageServerClient = null) extends Logging {
-
-  import com.walmartlabs.mupd8.network.client._
-  import com.walmartlabs.mupd8.network.server._
-  import com.walmartlabs.mupd8.network.common._
+class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
+                                        val port: Int,
+                                        encoder: OneToOneEncoder,
+                                        decoderFactory: () => ReplayingDecoder[network.common.Decoder.DecodingState],
+                                        onReceipt: T => Unit,
+                                        msClient: MessageServerClient = null) extends Logging {
 
   private val callableFactory = new Callable[ReplayingDecoder[network.common.Decoder.DecodingState]] {
     override def call() = decoderFactory()
   }
 
   // hosts can be updated at runtime
-  def hosts = _hosts
-  def hosts_=(hs: Array[(String, Int)]) = {
-    _hosts = hs
-  }
-  def hosts_=(hs: String) = {
-  }
+  def hosts = app.systemHosts
 
   val server = new Server(port, new Listener() {
     override def messageReceived(packet: AnyRef): Boolean = {
       val destObj = packet.asInstanceOf[T]
-      debug("Server receives: " + destObj)
+      trace("Server receives: " + destObj)
       onReceipt(destObj)
       true
     }
@@ -169,60 +160,31 @@ class MUCluster[T <: MapUpdateClass[T]](private var _hosts: Array[(String, Int)]
       true
     }
   }, encoder, callableFactory)
-
-  val self = {
-    hosts.zipWithIndex.find {
-      case ((host, p), i) =>
-        port == p && isLocalHost(host)
-    }.get._2
-  }
-  info("Host id is " + self)
-
-  def updateHosts: Unit = {
-    val localhost = if (hosts.isEmpty) Some(InetAddress.getLocalHost()) else None
-    if (localhost != None && hosts.isEmpty) {
-      // if there is no hosts setup in config file,
-      // add this node to message server and get updated host list
-      info("Add node: " + localhost.get + " to cluster")
-    }
-  }
+  client.init()
 
   def init() {
     server.start()
-    client.init()
-    val finaltime: Long = java.lang.System.currentTimeMillis + (10000 * java.lang.Math.sqrt(hosts.size)).toLong
-    hosts.zipWithIndex.foreach {
-      case ((host, p), i) =>
-        info("Host id " + i + " is " + (host, p))
-        if (i != self) {
-          while (!client.connect(i.toString, host, p) && java.lang.System.currentTimeMillis < finaltime) {
-            java.lang.Thread.sleep(100)
-          }
-          if (client.isConnected(i.toString))
-            info("Connected to " + i + " " + host + ":" + port)
-          else {
-            if (msClient != null)
-             msClient.sendMessage(new NodeFailureMessage(getIPAddress(hosts(i)._1)))
-            warn("Failed to connect to" + i + " " + host + ":" + port)
-          }
-        }
-    }
+    hosts.filter(_.compareTo(app.self) != 0).foreach (host => client.addEndpoint(host, port))
   }
 
-  def send(dest: Int, obj: T) {
-    assert(dest < hosts.size)
-    if (!client.send(dest.toString, obj)) {
-      if (msClient != null)
-        msClient.sendMessage(new NodeFailureMessage(getIPAddress(hosts(dest)._1)))
-        warn("Failed to send message to destination " + dest)
+  // Add host to connection map
+  def addHost(host: String): Unit = if (host.compareTo(app.self) != 0) client.addEndpoint(host, port)
+  // Remove host from connection map
+  def removeHost(host: String): Unit = client.removeEndpoint(host)
+
+  def send(dest: String, obj: T) {
+    if (!client.send(dest, obj)) {
+      error("Failed to send slate to destination " + dest)
+      if (msClient != null) msClient.sendMessage(NodeRemoveMessage(dest))
     }
   }
 }
 
-class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRing, clusterFactory: (T => Unit) => MUCluster[T]) {
+class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntime, clusterFactory: (T => Unit) => MUCluster[T]) extends Logging {
   case class innerCompare(job: T, key: Any) extends Comparable[innerCompare] {
     override def compareTo(other: innerCompare) = job.compareTo(other.job)
   }
+  val ring = appRun.ring
 
   class ThreadData(val me: Int) {
     val queue = new PriorityBlockingQueue[innerCompare]
@@ -231,7 +193,6 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
     private[MapUpdatePool] val keyLock = new scala.concurrent.Lock
 
     val thread = new Thread(run {
-      log("MapUpdateThread " + me)
       while (true) {
         val item = queue.take()
         if (item.key == null) {
@@ -281,49 +242,50 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
     }
   }
 
-  val pool = 0 until poolsize map { new ThreadData(_) }
+  val threadDataPool = 0 until poolsize map { new ThreadData(_) }
   private val rand = new java.util.Random(System.currentTimeMillis)
   val cluster = clusterFactory(p => putLocal(p.getKey, p))
   def init() { cluster.init() }
 
   def mod(i: Int) = if (i < 0) -i else i
 
+  private val HASH_CONSTANT = 17
+  // Get queues in queue for key
   private def getPoolIndices(key: Any) = {
     val fullhash = key.hashCode()
-    val hash = fullhash / cluster.hosts.size
-    val i1 = hash % pool.size
-    val i2 = (hash / pool.size) % (pool.size - 1)
+    val hash = fullhash / HASH_CONSTANT //cluster.hosts.size
+    val i1 = hash % threadDataPool.size
+    val i2 = (hash / threadDataPool.size) % (threadDataPool.size - 1)
     val (m1, m2) = (mod(i1), mod(i2))
     (m1, if (m2 < m1) m2 else m2 + 1)
   }
 
   def getPreferredPoolIndex(key: Any) = {
     val fullhash = key.hashCode()
-    val hash = fullhash / cluster.hosts.size
-    mod(hash % pool.size)
+    val hash = fullhash / HASH_CONSTANT //cluster.hosts.size
+    mod(hash % threadDataPool.size)
   }
-
-  def getDestinationHost(key: Any) =
-    ring(hash2Double(key))
 
   private def lock(i1: Int, i2: Int) {
     val (k1, k2) = if (i1 < i2) (i1, i2) else (i2, i1)
-    pool(k1).keyLock.acquire()
-    if (k1 != k2) pool(k2).keyLock.acquire()
+    threadDataPool(k1).keyLock.acquire()
+    if (k1 != k2) threadDataPool(k2).keyLock.acquire()
   }
 
   private def unlock(i1: Int, i2: Int) {
     val (k1, k2) = if (i1 < i2) (i1, i2) else (i2, i1)
-    pool(k2).keyLock.release()
-    if (k1 != k2) pool(k1).keyLock.release()
+    threadDataPool(k2).keyLock.release()
+    if (k1 != k2) threadDataPool(k1).keyLock.release()
   }
 
   // This method should only be called after acquiring the (i1,i2) locks
   private def attemptQueue(job: Runnable with Comparable[T], key: Any, i1: Int, i2: Int): Boolean = {
-    val (p1, p2) = (pool(i1), pool(i2))
+    val (p1, p2) = (threadDataPool(i1), threadDataPool(i2))
 
-    val b1 = if (p1.keyInUse != null) p1.keyInUse.equals(key) else false
-    val b2 = if (p2.keyInUse != null) p2.keyInUse.equals(key) else false
+    // somehow scala convert keyInUse or key into StringOps, so need to convert to string to call equals
+    // o.w. it always returns false
+    val b1 = if (p1.keyInUse != null) p1.keyInUse.toString.equals(key.toString) else false
+    val b2 = if (p2.keyInUse != null) p2.keyInUse.toString.equals(key.toString) else false
     assert(!b1 || !b2 || b1 == b2)
     if (b1 || b2) {
       val dest = if (b1) p1 else p2
@@ -335,30 +297,32 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
   }
 
   def put(x: T) {
-    val a = rand.nextInt(pool.size) //TODO: Do we need to serialize this call?
-    val sa = pool(a).keyQueue.size + pool(a).queue.size()
+    val a = rand.nextInt(threadDataPool.size) //TODO: Do we need to serialize this call?
+    val sa = threadDataPool(a).keyQueue.size + threadDataPool(a).queue.size()
 
     val destination =
       if (sa > 1) {
-        val temp = rand.nextInt(pool.size - 1)
+        val temp = rand.nextInt(threadDataPool.size - 1)
         val b = if (temp < a) temp else temp + 1
-        if (pool(b).keyQueue.size + pool(b).queue.size < sa) b else a
+        if (threadDataPool(b).keyQueue.size + threadDataPool(b).queue.size < sa) b else a
       } else a
 
-    pool(destination).queue.put(innerCompare(x, null))
+    threadDataPool(destination).queue.put(innerCompare(x, null))
   }
 
+  // Put source into queue
   def putSource(x: T) {
     var a = 0
     var sa = 0
     while ({
-      a = rand.nextInt(pool.size) //TODO: Do we need to serialize this call?
-      sa = pool(a).keyQueue.size + pool(a).queue.size()
+      a = rand.nextInt(threadDataPool.size) //TODO: Do we need to serialize this call?
+      sa = threadDataPool(a).keyQueue.size + threadDataPool(a).queue.size()
       sa > 50
     }) {
       java.lang.Thread.sleep((sa - 50L) * (sa - 50L) / 25 min 1000)
     }
-    pool(a).queue.put(innerCompare(x, null))
+
+    threadDataPool(a).queue.put(innerCompare(x, null))
   }
 
   def putLocal(key: Any, x: T) { // TODO : Fix key : Any??
@@ -367,7 +331,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
 
     if (!attemptQueue(x, key, i1, i2)) {
       // TODO: HOT conductor check not accurate, use time stamps
-      val (p1, p2) = (pool(i1), pool(i2))
+      val (p1, p2) = (threadDataPool(i1), threadDataPool(i2))
       val dest = if (p1.keyQueue.size + p1.queue.size > 1.3 * (p2.keyQueue.size + p2.queue.size)) p2 else p1
       dest.queue.put(innerCompare(x, key))
     }
@@ -376,14 +340,18 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
   }
 
   def put(key: Any, x: T) {
-    val dest = getDestinationHost(key)
-    //log("Dest is " + dest + " for " + key)
-    if (dest == cluster.self)
+    val dest = appRun.ring(key)
+    if (dest == appRun.appStatic.self
+        ||
+        // during ring chagne process, if dest is going to be removed from cluster
+        (appRun.candidateHostList != null && !appRun.candidateHostList.contains(dest)))
       putLocal(key, x)
     else
       cluster.send(dest, x)
   }
 
+  /*
+   Since hot conductor is not used, comment it out temporarily.
   // Hot Conductor Queue Status
   val queueStatus = cluster.hosts.map(_ => 0).toArray
   var maxQueueBacklog = 0 // TODO: Make this volatile
@@ -396,14 +364,12 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
   queueStatusServer.start
 
   val queueStatusUpdater = new Thread(run {
-    (0 until cluster.hosts.size).foreach { i =>
+    cluster.hosts.foreach { host =>
       excToOptionWithLog {
         java.lang.Thread.sleep(500)
-        if (i != cluster.self) {
-          (for (
-            _ <- Option(!ring.dropped.contains(i));
-            url <- fetchURL("http://" + cluster.hosts(i) + ":" + (cluster.port + 1) + "/queuestatus")
-          ) yield str(url).toInt).getOrElse(0)
+        if (host.compareTo(cluster.self) != 0) {
+          val quote = fetchURL("http://" + host + ":" + (cluster.port + 1) + "/queuestatus")
+          quote map(new String(_).toInt) getOrElse(0)
         } else
           pool.map(p => p.queue.size + p.getSerialQueueSize()).max
       } map { p =>
@@ -415,13 +381,29 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, val ring: HashRin
   //TODO: Uncomment the following line
   //Do we need a thread pool here
   //queueStatusUpdater.start()
+  */
 
 }
 
 object GT {
-  type Key = Array[Byte]
+
+  // wrap up Array[Byte] with Key since Array[Byte]'s comparison doesn't
+  // compare array's content which is needed in mupd8
+  case class Key(val value: Array[Byte]) {
+
+	override def hashCode() = Arrays.hashCode(value)
+
+    override def equals(other: Any) = other match {
+      case that: Key => Arrays.equals(that.value, value)
+      case _ => false
+    }
+
+    override def toString() = {
+      new String(value)
+    }
+  }
+
   type Event = Array[Byte]
-  type Slate = Array[Byte]
   type Priority = Int
 
   val source: Priority = 96 * 1024
@@ -432,217 +414,10 @@ object GT {
 
 import GT._
 
-trait IoPool extends Logging{
-  def fetch(name: String, key: Key, next: Option[Slate] => Unit)
-  def write(columnName: String, key: Key, slate: Slate): Boolean
-  def pendingCount = 0
-}
-
-class NullPool extends IoPool {
-  def fetch(name: String, key: Key, next: Option[Slate] => Unit) { next(None) }
-  def write(columnName: String, key: Key, slate: Slate): Boolean = true
-}
-
-class CassandraPool(
-  val hosts: Array[String],
-  val port: Int,
-  val keyspace: String,
-  val getCF: String => String,
-  val getTTL: String => Int,
-  val compressionCodec: String) extends IoPool {
-
-  val poolName = keyspace //TODO: Change this
-  val cluster = new Cluster(hosts.reduceLeft(_ + "," + _), port)
-  val cService = CompressionFactory.getService(compressionCodec)
-  info("Use compression codec " + compressionCodec)
-  val dbIsConnected =
-    {
-      for (
-        keySpaceManager <- Option(Pelops.createKeyspaceManager(cluster));
-        _ <- { info("Getting keyspaces from Cassandra Cluster " + hosts.reduceLeft(_ + "," + _) + ":" + port); Some(true) }; 
-        keySpaces <- excToOption(keySpaceManager.getKeyspaceNames.toArray.map(_.asInstanceOf[org.apache.cassandra.thrift.KsDef]));
-        ks <- keySpaces find (_.getName == keyspace)
-      //_ <- {print("[OK]\nChecking for column family " + columnFamily) ; Some(true)} ;
-      //cfs             <- ks.getCf_defs.toArray find {_.asInstanceOf[org.apache.cassandra.thrift.CfDef].getName == columnFamily}
-      ) yield { info("Keyspace " + keyspace + " is found"); true } 
-    } getOrElse { error("Keyspace " + keyspace + " is not found. Terminating Mupd8..."); false } 
-
-  if (!dbIsConnected) java.lang.System.exit(1)
-
-  Pelops.addPool(poolName, cluster, keyspace)
-  val selector = Pelops.createSelector(poolName) // TODO: Should this be per thread?
-  val pool = new java.util.concurrent.ThreadPoolExecutor(10, 50, 5, TimeUnit.SECONDS, new LinkedBlockingQueue[Runnable]) // TODO: We can drop events unless we have a Rejection Handler or LinkedQueue
-
-  def fetch(name: String, key: Key, next: Option[Slate] => Unit) {
-    pool.submit(run {
-      val start = java.lang.System.nanoTime()
-      val col = excToOption(selector.getColumnFromRow(getCF(name), Bytes.fromByteArray(key), Bytes.fromByteArray(name.getBytes), ConsistencyLevel.QUORUM))
-      log("Fetch " + (java.lang.System.nanoTime() - start) / 1000000 + " " + name + " " + str(key))
-      next(col.map { col =>
-        assert(col != null)
-        val ba = Bytes.fromByteBuffer(col.value).toByteArray
-        cService.uncompress(ba)
-      })
-    })
-  }
-
-  def write(columnName: String, key: Key, slate: Slate) = {
-    val compressed = cService.compress(slate)
-    val mutator = Pelops.createMutator(poolName)
-    mutator.writeColumn(
-      getCF(columnName),
-      Bytes.fromByteArray(key),
-      mutator.newColumn(Bytes.fromByteArray(columnName.getBytes), Bytes.fromByteArray(compressed), getTTL(columnName)))
-    excToOptionWithLog { mutator.execute(ConsistencyLevel.QUORUM) } != None
-  }
-
-  override def pendingCount = pool.getQueue.size + pool.getActiveCount
-}
-
-class Node[T](val item: T, var next: Node[T] = null, var prev: Node[T] = null)
-
-class DLList[T] {
-  var front: Node[T] = null
-  var last: Node[T] = null
-  final def add(node: Node[T]) {
-    assert(node.next == null && node.prev == null)
-    if (front != null) front.prev = node
-    node.next = front
-    front = node
-    if (last == null) {
-      last = front
-      assert(front.next == null)
-    }
-  }
-
-  final def remove(node: Node[T]) {
-    if (node.prev == null) {
-      assert(node == front)
-      front = node.next
-    } else {
-      node.prev.next = node.next
-    }
-    if (node.next == null) {
-      assert(node == last)
-      last = node.prev
-    } else {
-      node.next.prev = node.prev
-    }
-    node.prev = null
-    node.next = null
-  }
-}
-
-class SlateValue(val slate: Slate, val keyRef: Node[String], var dirty: Boolean = true)
-
-class SlateCache(val io: IoPool, val usageLimit: Long) {
-  private val lock = new scala.concurrent.Lock
-  private val table = new mutable.HashMap[String, SlateValue]()
-  private val lru = new DLList[String]
-
-  private var currentUsage: Long = 0
-  private val objOverhead: Long = 32
-
-  def buildKey(name: String, key: Key) = name + "~~~" + str(key)
-
-  def getSlate(akey: (String, Key)) = {
-    val skey = buildKey(akey._1, akey._2)
-    lock.acquire()
-    val item = table.get(skey)
-    item map { p =>
-      lru.remove(p.keyRef)
-      lru.add(p.keyRef)
-    }
-    lock.release()
-    item.map(_.slate)
-  }
-
-  def waitForSlate(akey: (String, Key), action: Slate => Unit) {
-    val skey = buildKey(akey._1, akey._2)
-    lock.acquire()
-    val item = table.get(skey)
-    item map { p =>
-      lru.remove(p.keyRef)
-      lru.add(p.keyRef)
-    }
-    lock.release()
-    item map { p =>
-      action(p.slate)
-    } getOrElse {
-      while (io.pendingCount > 200) java.lang.Thread.sleep(100)
-      io.fetch(akey._1, akey._2, p => action(safePut(akey, p.getOrElse("{}" getBytes))))
-    }
-  }
-
-  private def unLockedPut(skey: String, value: Slate, dirty: Boolean = true) = {
-    val newVal = new SlateValue(value, new Node(skey), dirty)
-    lru.add(newVal.keyRef)
-    currentUsage += 2 * skey.length + value.size + 2 * objOverhead
-    val oldVal = table.put(skey, newVal)
-    assert(dirty || oldVal == None)
-    oldVal map { p =>
-      lru.remove(p.keyRef)
-      currentUsage -= 2 * skey.length + p.slate.size + 2 * objOverhead
-    }
-
-    var count = 0
-    while (currentUsage > usageLimit && lru.last != lru.front && count < 10) {
-      //      assert(last != null && lru != null)
-      val item = lru.last.item
-      lru.remove(lru.last)
-      table.get(item) map { p =>
-        if (p.dirty) {
-          // Potential infinite loop here, which is why we are forced to use count
-          lru.add(p.keyRef)
-        } else {
-          currentUsage -= 2 * item.length + p.slate.size + 2 * objOverhead
-          table.remove(item)
-        }
-      } getOrElse {
-        assert(false)
-      }
-      count += 1
-    }
-    newVal
-  }
-
-  // To be used only by replaceSlate
-  def put(akey: (String, Key), value: Slate) {
-    val skey = buildKey(akey._1, akey._2)
-    lock.acquire()
-    unLockedPut(skey, value)
-    lock.release()
-  }
-
-  private def safePut(akey: (String, Key), value: Slate) = {
-    val skey = buildKey(akey._1, akey._2)
-    lock.acquire()
-    val slate = table get (skey) getOrElse unLockedPut(skey, value, false)
-    lock.release()
-    slate.slate
-  }
-
-  def getDirtyItems() = {
-    lock.acquire()
-    val retVal = table.filter(_._2.dirty).toList
-    lock.release()
-    retVal
-  }
-
-  def getAllItems() = {
-    lock.acquire()
-    val retVal = table.toList
-    lock.release()
-    retVal
-  }
-
-}
-
 object Mupd8Type extends Enumeration {
   type Mupd8Type = Value
   val Source, Mapper, Updater = Value
 }
-
 import Mupd8Type._
 
 case class Performer(name: String,
@@ -652,6 +427,7 @@ case class Performer(name: String,
   ptype: Option[String],
   jclass: Option[String],
   wrapperClass: Option[String],
+  slateBuilderClass: Option[String],
   workers: Int,
   cf: Option[String],
   ttl: Int,
@@ -678,6 +454,7 @@ object loadConfig {
         ptype = Option(p._2.get("type").asInstanceOf[String]),
         jclass = Option(p._2.get("class").asInstanceOf[String]),
         wrapperClass = { Option(p._2.get("wrapper_class").asInstanceOf[String]) },
+        slateBuilderClass = Option(p._2.get("slate_builder").asInstanceOf[String]),
         workers = if (p._2.get("workers") == null) 1.toInt else p._2.get("workers").asInstanceOf[Number].intValue(),
         cf = Option(p._2.get("column_family").asInstanceOf[String]),
         ttl = if (p._2.get("slate_ttl") == null) Mutator.NO_TTL else p._2.get("slate_ttl").asInstanceOf[Number].intValue(),
@@ -686,14 +463,38 @@ object loadConfig {
 
 }
 
+// A factory that constructs a SlateUpdater that runs an Updater.
+// The SlateUpdater expects to be accompanied by a ByteArraySlateBuilder as
+// its SlateBuilder so that the slate object indeed stays the raw byte[].
+class UpdaterFactory[U <: binary.Updater](val updaterType : Class[U]) {
+  val updaterConstructor = updaterType.getConstructor(classOf[Config], classOf[String])
+  def construct(config : Config, name : String) : binary.SlateUpdater = {
+    val updater = updaterConstructor.newInstance(config, name)
+    val updaterWrapper = new binary.SlateUpdater() {
+      override def getName() = updater.getName()
+      override def update(util : binary.PerformerUtilities, stream : String, k : Array[Byte], v : Array[Byte], slate : SlateObject) = {
+        updater.update(util, stream, k, v, slate.asInstanceOf[Array[Byte]])
+      }
+      override def getDefaultSlate() : Array[Byte] = Array[Byte]()
+    }
+    updaterWrapper
+  }
+}
+
 class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String], val sysConfig: Option[String], val loadClasses: Boolean, statistics: Boolean, elastic: Boolean) extends Logging {
   assert(appConfig.size == sysConfig.size && appConfig.size != configDir.size)
+  // mac osx return xxx.local which causes problem in many cases
+  val self: String = {val host = InetAddress.getLocalHost.getHostName; if (host.endsWith(".local")) host.substring(0, host.length - ".local".length) else host}
+  info("Host id is " + self)
+
   val config = configDir map { p => new application.Config(new File(p)) } getOrElse new application.Config(sysConfig.get, appConfig.get)
   val performers = loadConfig.convertPerformers(config.workerJSONs)
   val statusPort = Option(config.getScopedValue(Array("mupd8", "mupd8_status", "http_port"))).getOrElse(new Integer(6001)).asInstanceOf[Number].intValue()
   val performerName2ID = Map(performers.map(_.name).zip(0 until performers.size): _*)
+  debug("performerName2ID = " + performerName2ID)
   val edgeName2IDs = performers.map(p => p.subs.map((_, performerName2ID(p.name)))).flatten.groupBy(_._1).mapValues(_.map(_._2))
-  var performerArray: Array[binary.Performer] = new Array(performers.size)
+  debug("edgeName2IDs = " + edgeName2IDs)
+  var performerArray: Array[binary.Performer] = new Array[binary.Performer](performers.size)
 
   val performerFactory: Vector[Option[() => binary.Performer]] = if (loadClasses) (
     0 until performers.size map { i =>
@@ -702,14 +503,45 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
       // the wrapper class that wraps a performer instance
       var wrapperClass: Option[String] = null
       info("Loading ... " + p.name + " " + p.mtype)
-      val classObject = p.mtype match {
-        case Mapper => isMapper = true; wrapperClass = p.wrapperClass; p.jclass.map(Class.forName(_).asInstanceOf[Class[binary.Mapper]])
-        case Updater => isMapper = false; wrapperClass = p.wrapperClass; p.jclass.map(Class.forName(_).asInstanceOf[Class[binary.Updater]])
+      val constructor : Option[() => binary.Performer] = p.mtype match {
+        case Mapper => {
+          isMapper = true; wrapperClass = p.wrapperClass;
+          p.jclass.map(Class.forName(_)).map { m =>
+            if (classOf[binary.Mapper].isAssignableFrom(m)) {
+              val mapperConstructor = m.asSubclass(classOf[binary.Mapper]).getConstructor(config.getClass, "".getClass)
+              () => mapperConstructor.newInstance(config, p.name)
+            } else {
+              val msg = "Mapper "+p.name+" uses class "+m.getName()+" that is not assignable to "+classOf[binary.Mapper].getName()
+              error(msg)
+              throw new ClassCastException(msg)
+            }
+          }
+        }
+        case Updater => {
+          isMapper = false; wrapperClass = p.wrapperClass;
+          p.jclass.map(Class.forName(_)).map { u =>
+            if (classOf[binary.SlateUpdater].isAssignableFrom(u)) {
+              if (p.slateBuilderClass.isEmpty) {
+                val msg = "Updater "+p.name+" uses a SlateUpdater class but does not specify a corresponding slate_builder."
+                error(msg)
+                info("An updater with no slate_builder may use a class Updater but not SlateUpdater.");
+                throw new ClassCastException("Updater "+p.name+" does not define slate_builder but class "+u.getName()+" implements SlateUpdater, not Updater.")
+              }
+              val updaterConstructor = u.asSubclass(classOf[binary.SlateUpdater]).getConstructor(config.getClass, "".getClass)
+              () => updaterConstructor.newInstance(config, p.name)
+            } else if (classOf[binary.Updater].isAssignableFrom(u)) {
+              val updaterFactory = new UpdaterFactory(u.asSubclass(classOf[binary.Updater]))
+              () => updaterFactory.construct(config, p.name)
+            } else {
+              val msg = "Updater "+p.name+" uses class "+u+" that is not assignable to "+classOf[binary.Updater].getName()
+              error(msg)
+              throw new ClassCastException(msg)
+            }
+          }
+        }
         case _ => None
       }
-      classObject.map { x =>
-        val classobject = x.getConstructor(config.getClass, "".getClass)
-        val userProvidedPerformer = classobject.newInstance(config, p.name)
+      constructor.map { performerConstructor =>
         val needToCollectStatistics = statistics | elastic
         val wrappedPerformer =
           if (statistics) {
@@ -720,16 +552,12 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
             var constructor = Class.forName(wrapperClassname).asInstanceOf[Class[com.walmartlabs.mupd8.application.statistics.PrePerformer]].getConstructor("".getClass());
             val prePerformer = constructor.newInstance(p.name)
             if (isMapper) {
-              new MapWrapper(userProvidedPerformer, prePerformer)
+              new MapWrapper(performerConstructor().asInstanceOf[binary.Mapper], prePerformer)
             } else {
-              if (!elastic) {
-                new UpdateWrapper(userProvidedPerformer, prePerformer)
-              } else {
-                new ElasticWrapper(userProvidedPerformer.asInstanceOf[binary.Updater], prePerformer)
-              }
+              new UpdateWrapper(performerConstructor().asInstanceOf[binary.SlateUpdater], prePerformer)
             }
           } else {
-            userProvidedPerformer
+            performerConstructor()
           }
 
         performerArray(i) = wrappedPerformer
@@ -745,15 +573,39 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
     })(breakOut)
   else Vector()
 
+  val slateBuilderFactory: Vector[Option[() => binary.SlateBuilder]] = if (loadClasses) (
+    0 until performers.size map { i =>
+      val p = performers(i)
+      val slateBuilder = p.mtype match {
+        case Updater => {
+          // TODO Keep enough state to detect the error case: SlateUpdater but no SlateBuilder specified.
+          val slateBuilderClass = p.slateBuilderClass.map(Class.forName(_)).getOrElse(classOf[binary.ByteArraySlateBuilder])
+          val castSlateBuilderClass = try {
+            slateBuilderClass.asSubclass(classOf[binary.SlateBuilder])
+          } catch {
+            case e : ClassCastException => {
+              error("SlateBuilder class " + slateBuilderClass.getName() + " for updater " + p.name + " is not an implementation of " + classOf[binary.SlateBuilder].getName()+" as required: ", e)
+              throw e
+            }
+          }
+          val slateBuilderConstructor = castSlateBuilderClass.getConstructor(config.getClass, "".getClass)
+          Some(() => { slateBuilderConstructor.newInstance(config, p.name) })
+        }
+        case _ => None
+      }
+      slateBuilder
+    })(breakOut)
+  else Vector()
+
   val cassPort = config.getScopedValue(Array("mupd8", "slate_store", "port")).asInstanceOf[Number].intValue()
   val cassKeySpace = config.getScopedValue(Array("mupd8", "slate_store", "keyspace")).asInstanceOf[String]
   val cassHosts = config.getScopedValue(Array("mupd8", "slate_store", "hosts")).asInstanceOf[ArrayList[String]].asScala.toArray
   val cassColumnFamily = config.getScopedValue(Array("mupd8", "application")).asInstanceOf[java.util.HashMap[String, java.lang.Object]].asScala.toMap.head._1
   val cassWriteInterval = Option(config.getScopedValue(Array("mupd8", "slate_store", "write_interval"))) map { _.asInstanceOf[Number].intValue() } getOrElse 15
+  val slateCacheCount = Option(config.getScopedValue(Array("mupd8", "slate_store", "slate_cache_count"))) map { _.asInstanceOf[Number].intValue() } getOrElse 1000
   val compressionCodec = Option(config.getScopedValue(Array("mupd8", "slate_store", "compression"))).getOrElse("gzip").asInstanceOf[String].toLowerCase
 
-  var systemHosts = config.getScopedValue(Array("mupd8", "system_hosts")).asInstanceOf[ArrayList[String]].asScala.toArray
-  var plannerHost: String = null
+  var systemHosts: IndexedSeq[String] = null
   val javaClassPath = Option(config.getScopedValue(Array("mupd8", "java_class_path"))).getOrElse("share/java/*").asInstanceOf[String]
   val javaSetting = Option(config.getScopedValue(Array("mupd8", "java_setting"))).getOrElse("-Xmx200M -Xms200M").asInstanceOf[String]
 
@@ -765,85 +617,36 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
   val messageServerPort = Option(config.getScopedValue(Array("mupd8", "messageserver", "port")))
 
   def internalPort = statusPort + 100;
-
-  def isPlannerHost(): Boolean = {
-    isLocalHost(plannerHost)
-  }
-
-  def isElastic(): Boolean = elastic
-
-  /*
-  COMMENT: A method to deterministically elect a planner. It is called during initialization as well as 
-  in the event when an elected Planner node fails. 
-  */
-  def electPlanner(): Unit = synchronized {
-    plannerHost = if (systemHosts.length > 0) {
-      Sorting.quickSort(systemHosts)
-      systemHosts(0)
-    } else {
-      null
-    }
-    info(" Elected planner: " + plannerHost)
-  }
-
-  def getPerformers(): Array[binary.Performer] = {
-    performerArray
-  }
-
-  def removeHost(index: Int): Unit = {
-    systemHosts = systemHosts.zipWithIndex.filter(_._2 != index) map { case (host, index) => host }
-    if(isElastic()){
-      electPlanner()
-    }
-  }
-
-  def getPlannerHost() = synchronized { plannerHost }
-
-  /*
-   COMMENT: This method is called when a HostListMessage is received from the MessageServer, contianing
-   the list of system hosts. 
-  */
-  def setSystemHosts(hosts: Array[String]) = {
-    systemHosts = hosts
-    this.synchronized {
-      this.notify
-    }
-  }
-
-  def getSystemHosts(): Array[String] = {
-    systemHosts
-  }
-
 }
 
 object PerformerPacket {
-  @inline def getKey(pid: Int, key: Key) = pid.toString + "?/%%%>*" + str(key)
+  @inline def getKey(pid: Int, key: Key): (Int, Key) = (pid, key)
 }
 
-case class PerformerPacket(
-  pri: Priority,
-  pid: Int,
-  key: Key,
-  event: Event,
-  stream: String, // This field can be replaced by source performer ID
-  appRun: AppRuntime) extends MapUpdateClass[PerformerPacket] {
-  override def getKey = PerformerPacket.getKey(pid, key)
+case class PerformerPacket(pri: Priority,
+                           pid: Int,
+                           slateKey: Key,
+                           event: Event,
+                           stream: String, // This field can be replaced by source performer ID
+                           appRun: AppRuntime) extends MapUpdateClass[PerformerPacket] with Logging {
+  val ppKey = (pid, slateKey)
+  override def getKey = ppKey
 
   override def compareTo(other: PerformerPacket) = pri.compareTo(other.pri)
 
-  override def toString = "{" + pri + "," + pid + "," + str(key) + "," + str(event) + "," + stream + "}"
+  override def toString = "{" + pri + "," + pid + "," + str(slateKey.value) + "," + str(event) + "," + stream + "}"
 
   // Treat this as a static method, do not touch "this", use msg
   override protected def encode(channelHandlerContext: ChannelHandlerContext, channel: Channel, msg: AnyRef): AnyRef = {
     log("Invoked encoder")
     if (msg.isInstanceOf[PerformerPacket]) {
       val packet = msg.asInstanceOf[PerformerPacket]
-      val size: Int = 4 + 4 + 4 + packet.key.length + 4 + packet.event.length + 4 + packet.stream.length
+      val size: Int = 4 + 4 + 4 + packet.slateKey.value.length + 4 + packet.event.length + 4 + packet.stream.length
       val buffer: ChannelBuffer = ChannelBuffers.buffer(size)
       buffer.writeInt(packet.pri)
       buffer.writeInt(packet.pid)
-      buffer.writeInt(packet.key.length)
-      buffer.writeBytes(packet.key)
+      buffer.writeInt(packet.slateKey.value.length)
+      buffer.writeBytes(packet.slateKey.value)
       buffer.writeInt(packet.event.length)
       buffer.writeBytes(packet.event)
       buffer.writeInt(packet.stream.length)
@@ -858,18 +661,33 @@ case class PerformerPacket(
       val result = excToOptionWithLog(x)
       if (result == None) log("Bad exception Bro")
     }
-    val performer = appRun.app.performers(pid)
+
+    def executeUpdate(tls: TLS, slate: SlateObject) {
+      if (appRun.candidateRing != null
+        && appRun.ring(getKey) == appRun.appStatic.self
+        && appRun.candidateRing(getKey) != appRun.appStatic.self) {
+        // if in ring change process and dest of this slate changes by candidate ring
+        appRun.pool.putLocal(getKey, this)
+      } else if (appRun.candidateRing == null && appRun.ring(getKey) != appRun.appStatic.self) {
+        // if not in ring change process and dest of this slate is not this node
+        appRun.pool.cluster.send(appRun.ring(getKey), this)
+      } else {
+        execute(appRun.getUpdater(pid).update(tls, stream, slateKey.value, event, slate))
+      }
+    }
+
+    val performer = appRun.appStatic.performers(pid)
     val name = performer.name
 
-    val cache = appRun.getTLS(pid, key).slateCache
-    val optSlate = if(performer.mtype == Updater) Some {
-      val s = cache.getSlate((name, key))
+    val cache = appRun.getTLS(pid, slateKey).slateCache
+    val optSlate = if (performer.mtype == Updater) Some {
+      val s = cache.getSlate((name, slateKey))
       s map {
-        p => log("Succeeded for " + name + "," + new String(key) + " " + p)
+        p => trace("Succeeded for " + name + "," + slateKey + " " + p)
       } getOrElse {
-        log("Failed fetch for " + name + "," + new String(key))
+        trace("Failed fetch for " + name + "," + slateKey)
         // Re-introduce self after issuing a read
-        cache.waitForSlate((name, key), _ => appRun.pool.put(new StringOps(this.getKey), this))
+        cache.waitForSlate((name,slateKey),_ => appRun.pool.put(this.getKey, this), appRun.getUpdater(pid, slateKey), appRun.getSlateBuilder(pid))
       }
       s
     } else
@@ -877,32 +695,25 @@ case class PerformerPacket(
 
     if (optSlate != Some(None)) {
       val slate = optSlate.flatMap(p => p)
-
-      slate.map(s =>
-        log("Update now " + "DBG for performer " + name + " Key " + str(key) + " \nEvent " + str(event) + "\nSlate " + str(s)))
-
       val tls = appRun.getTLS
       tls.perfPacket = this
       tls.startTime = java.lang.System.nanoTime()
       (performer.mtype, tls.unifiedUpdaters(pid)) match {
-        case (Updater, true) => execute(appRun.getUnifiedUpdater(pid).update(tls, stream, key, Array(event), Array(slate.get)))
-        case (Updater, false) => execute(appRun.getUpdater(pid).update(tls, stream, key, event, slate.get))
-        case (Mapper, false) => execute(appRun.getMapper(pid).map(tls, stream, key, event))
+        case (Updater, true) => execute(appRun.getUnifiedUpdater(pid).update(tls, stream, slateKey.value, Array(event), Array(slate.get)))
+        case (Updater, false) => executeUpdate(tls, slate.get)
+        case (Mapper, false) => execute(appRun.getMapper(pid).map(tls, stream, slateKey.value, event))
       }
       tls.perfPacket = null
       tls.startTime = 0
-      log("Executed " + performer.mtype.toString + " " + name)
+      trace("Executed " + performer.mtype.toString + " " + name)
     }
   }
 }
 
-import com.walmartlabs.mupd8.network.common.Decoder.DecodingState._
-import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
-
 class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PRIORITY) {
   var pri: Priority = -1
   var pid: Int = -1
-  var key: Key = Array()
+  var key: Key = Key(new Array[Byte](0))
   var event: Event = Array()
   var stream: Array[Byte] = Array()
 
@@ -911,7 +722,7 @@ class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PR
     checkpoint(PRIORITY)
     pri = -1
     pid = -1
-    key = Array()
+    key = Key(new Array[Byte](0))
     event = Array()
     stream = Array()
   }
@@ -934,10 +745,10 @@ class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PR
           if (keyLen < 0) {
             throw new Exception("Invalid key size")
           }
-          key = new Array[Byte](keyLen)
+          key = Key(new Array[Byte](keyLen))
           checkpoint(KEY)
         case KEY =>
-          buffer.readBytes(key, 0, key.length)
+          buffer.readBytes(key.value, 0, key.value.length)
           checkpoint(EVENT_LENGTH)
         case EVENT_LENGTH =>
           val eventLen = buffer.readInt
@@ -970,14 +781,14 @@ class Decoder(val appRun: AppRuntime) extends ReplayingDecoder[DecodingState](PR
   }
 }
 
-class TLS(appRun: AppRuntime) extends binary.PerformerUtilities {
-  val objects = appRun.app.performerFactory.map(_.map(_.apply()))
-  val slateCache = new SlateCache(appRun.storeIo, appRun.slateRAM / appRun.pool.poolsize)
+class TLS(val appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
+  val objects = appRun.appStatic.performerFactory.map(_.map(_.apply()))
+  // val slateCache = new SlateCache(appRun.storeIo, appRun.slateRAM / appRun.pool.poolsize)
+  val slateCache = new SlateCache(appRun.storeIo, appRun.appStatic.slateCacheCount, this)
   val queue = new PriorityBlockingQueue[Runnable]
   var perfPacket: PerformerPacket = null
   var startTime: Long = 0
 
-  def getSlateCache = slateCache
   val unifiedUpdaters: Set[Int] =
     (for (
       (oo, i) <- objects zipWithIndex;
@@ -986,123 +797,59 @@ class TLS(appRun: AppRuntime) extends binary.PerformerUtilities {
     ) yield i)(breakOut)
 
   override def publish(stream: String, key: Array[Byte], event: Array[Byte]) {
-    val app = appRun.app
-    log("Publishing to " + stream + " Key " + str(key) + " event " + str(event))
-    app.edgeName2IDs.get(stream).map(_.foreach(
+    trace("TLS::Publish: Publishing to " + stream + " Key " + str(key) + " event " + str(event))
+    appRun.appStatic.edgeName2IDs.get(stream).map(_.foreach(
       pid => {
-        log("Publishing to " + app.performers(pid).name)
-        val packet = PerformerPacket(normal, pid, key, event, stream, appRun)
-        if (app.performers(pid).mtype == Mapper)
-          appRun.pool.put(packet)
+        trace("TLS::publish: Publishing to " + appRun.appStatic.performers(pid).name)
+        val packet = PerformerPacket(normal, pid, Key(key), event, stream, appRun)
+        if (appRun.appStatic.performers(pid).mtype == Mapper)
+          appRun.pool.put(packet)  // publish to mapper?
         else
-          appRun.pool.put(new StringOps(packet.getKey), packet)
-      })).getOrElse(log("Bad Stream name" + stream))
+          appRun.pool.put(packet.getKey, packet)
+      })).getOrElse(error("publish: Bad Stream name" + stream))
   }
 
   //  import com.walmartlabs.mupd8.application.SlateSizeException
   @throws(classOf[SlateSizeException])
-  override def replaceSlate(slate: Array[Byte]) {
-    if (slate.size >= Misc.SLATE_CAPACITY)
-      throw new SlateSizeException(slate.size, Misc.SLATE_CAPACITY - 1)
+  override def replaceSlate(slate: SlateObject) {
     // TODO: Optimize replace slate to avoid hash table look ups
-    val name = appRun.app.performers(perfPacket.pid).name
-    assert(appRun.app.performers(perfPacket.pid).mtype == Updater)
-    val cache = appRun.getTLS(perfPacket.pid, perfPacket.key).slateCache
-    // log("replaceSlate " + appRun.app.performers(perfPacket.pid).name + "/" + str(perfPacket.key) + " Oldslate " + (cache.getSlate((name,perfPacket.key)).get).length + " Newslate " + slate.length)
-    cache.put((name, perfPacket.key), slate)
+    val name = appRun.appStatic.performers(perfPacket.pid).name
+    assert(appRun.appStatic.performers(perfPacket.pid).mtype == Updater)
+    val cache = appRun.getTLS(perfPacket.pid, perfPacket.slateKey).slateCache
+    trace("replaceSlate " + appRun.appStatic.performers(perfPacket.pid).name + "/" + perfPacket.slateKey + " Oldslate " + (cache.getSlate((name,perfPacket.slateKey)).get).toString() + " Newslate " + slate.toString())
+    cache.put((name, perfPacket.slateKey), slate)
   }
 }
 
 class AppRuntime(appID: Int,
-  poolsize: Int,
-  val app: AppStaticInfo,
-  useNullPool: Boolean = false) extends Logging {
+                 poolsize: Int,
+                 val appStatic: AppStaticInfo,
+                 useNullPool: Boolean = false) extends Logging {
   private val sourceThreads: mutable.ListBuffer[(String, List[java.lang.Thread])] = new mutable.ListBuffer
   val hostUpdateLock = new Object
 
-  def getAppStaticInfo(): AppStaticInfo = app
-  def getMessageHandler(): MessageHandler = new BasicMessageHandler(app)
-  def initMapUpdatePool(poolsize: Int, ring: HashRing, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
-    new MapUpdatePool[PerformerPacket](poolsize, ring, clusterFactory)
-  def getMapUpdatePool() = pool
+  def initMapUpdatePool(poolsize: Int, runtime: AppRuntime, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
+    new MapUpdatePool[PerformerPacket](poolsize, runtime, clusterFactory)
 
-  /* COMMENT:
-   Mup8 runtme has a MessageHandler that handles all messages received from the MessageServer. 
-   If dynamic load balancing is not configured (elastic flag = false), then a BasicMessageHandler implementation 
-   is chosen, else an AdvancedMessageHandler implementation is chosen that supports handling of messages 
-   echanged as part of the two phase load balancing protocol.
-   Please note that if elastic flag is set true, ElasticAppRuntime (a derived class) is chosen with overriden 
-   methods. Please see ElasticAppRuntime for the overriden methods. 
-  */
-
-  val messageHandler = getMessageHandler
-  var msClient: MessageServerClient = null
-  if (app.messageServerHost != None && app.messageServerPort != None) {
-    msClient = new MessageServerClient(messageHandler,
-      app.messageServerHost.get.asInstanceOf[String],
-      app.messageServerPort.get.asInstanceOf[Number].intValue(),
-      1000L)
-    new Thread(msClient, "MessageServerClient").start
+  val msClient: MessageServerClient = if (appStatic.messageServerHost != None && appStatic.messageServerPort != None) {
+    new MessageServerClient(appStatic.messageServerHost.get.asInstanceOf[String], appStatic.messageServerPort.get.asInstanceOf[Number].intValue(), 1000)
+  } else {
+    error("AppRuntime error: message server host name or port is empty")
+    null
   }
 
-  def getMessageServerClient() = msClient
-
-  Thread.sleep(2000)
-  // talk to message server and update system host list
-  // COMMNENT: if Mud8 runtime is configured without a system host list,
-  // (this may happen when a new node needs to join an exisiting Mup8 cluster)
-  // a HostRequestMessage is sent to the MessageServer. The response contains a list of system hosts.
-  if (app.systemHosts.isEmpty) {
-    info("Waiting for hosts ...")
-    msClient.sendMessage(new HostRequestMessage(InetAddress.getLocalHost.getHostAddress))
-    app.synchronized {
-      while (app.systemHosts.isEmpty) {
-        app.wait
-      }
-    }
+  // start local server socket
+  val localMessageServer = if (appStatic.messageServerPort != None) {
+    new Thread(new LocalMessageServer(appStatic.messageServerPort.get.asInstanceOf[Number].intValue() + 1, this), "LocalMessageServer")
+  } else {
+    error("AppRuntime error: local message server port is None")
+    null
   }
-  Thread.sleep(2000)
-  val ring: HashRing = new HashRing(app.systemHosts.length, 0)
-  def getHashRing() : HashRing = ring
-
-  //COMMENT: if dynamic load balancing is configured as true, then 
-  // each mupd8 node deterministically elects a particular planner node
-  if (app.isElastic()) {
-    app.electPlanner()
-  }
-
-  val pool = initMapUpdatePool(poolsize, ring,
-    action => new MUCluster[PerformerPacket](
-      app.systemHosts.map((_, app.internalPort)),
-      app.statusPort + 100,
-      PerformerPacket(0, 0, Array(), Array(), "", this),
-      () => { new Decoder(this) },
-      action,
-      msClient))
-
-  val storeIo = if (useNullPool) new NullPool
-  else new CassandraPool(
-    app.cassHosts,
-    app.cassPort,
-    app.cassKeySpace,
-    p => (app.performers(app.performerName2ID(p)).cf).getOrElse(app.cassColumnFamily),
-    p => app.performers(app.performerName2ID(p)).ttl,
-    app.compressionCodec)
-
-  val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
-  info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
-  private val threadMap: Map[Long, TLS] = pool.pool.map(_.thread.getId -> new TLS(this))(breakOut)
-  private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
-
-  def getSlate(key: (String, Key)) = {
-    assert(pool.getDestinationHost(new StringOps(PerformerPacket.getKey(app.performerName2ID(key._1), key._2))) == pool.cluster.self)
-    val future = new Later[Slate]
-    getTLS(app.performerName2ID(key._1), key._2).slateCache.waitForSlate(key, future.set(_))
-    Option(future.get())
-  }
+  if (localMessageServer != null) localMessageServer.start
+  Thread.sleep(200) // Give local Message Server sometime to start
 
   val maxWorkerCount = 2 * Runtime.getRuntime.availableProcessors
-  val slateURLserver = new HttpServer(app.statusPort, maxWorkerCount, s => {
+  val slateURLserver = new HttpServer(appStatic.statusPort, maxWorkerCount, s => {
     val decoded = java.net.URLDecoder.decode(s, "UTF-8")
     val tok = decoded.split('/')
     if (tok(1) == "favicon.ico") None
@@ -1110,13 +857,13 @@ class AppRuntime(appID: Int,
       excToOptionWithLog {
         Some(threadVect.map { p =>
           val perfPacket = p.perfPacket // Copy to local variable to avoid race condition
-          if (perfPacket != null) app.performers(perfPacket.pid).name + ":" + app.performers(perfPacket.pid).mtype else "Waiting"
+          if (perfPacket != null) appStatic.performers(perfPacket.pid).name + ":" + appStatic.performers(perfPacket.pid).mtype else "Waiting"
         }.
           groupBy(p => p).map(p => (p._1, p._2.size)).toList.
           sortWith(_._2 >= _._2).
           map(x => x._1 + (x._1.length to 50 map (_ => " ")).foldLeft("")(_ + _) + " " + x._2).foldLeft("")(_ + _ + "\n") +
           {
-            val poolsizes = pool.pool.map(p => (p.queue.size, p.getSerialQueueSize())).sortWith { case ((a, b), (c, d)) => a + b < c + d }
+            val poolsizes = pool.threadDataPool.map(p => (p.queue.size, p.getSerialQueueSize())).sortWith { case ((a, b), (c, d)) => a + b < c + d }
             val num = (10 :: poolsizes.size / 2 :: Nil).min
             val currTime = java.lang.System.nanoTime()
             val startTimes = threadVect.map(_.startTime).filter(_ != 0)
@@ -1138,16 +885,17 @@ class AppRuntime(appID: Int,
       if (tok.length != 6) {
         None
       } else {
-        val key: (String, Key) = (tok(4), tok(5).map(_.toByte).toArray)
-        val poolKey = PerformerPacket.getKey(app.performerName2ID(key._1), key._2)
-        val dest = pool.getDestinationHost(new StringOps(poolKey))
-        if (pool.cluster.self == dest)
+        val key: (String, Key) = (tok(4), Key(tok(5).map(_.toByte).toArray))
+        val poolKey = PerformerPacket.getKey(appStatic.performerName2ID(key._1), key._2)
+        val dest = InetAddress.getByName(ring(poolKey)).getHostName
+        if (appStatic.self.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
           getSlate(key)
         else {
-          val slate = fetchURL("http://" + app.systemHosts(dest) + ":" + (app.statusPort + 300) + s)
+          val slate = fetchURL("http://" + dest + ":" + (appStatic.statusPort + 300) + s)
           if (slate == None) {
             // TODO: send remove messageServer
-            warn("Can't reach destination: " + dest)
+            warn("Can't reach dest " + dest + "; going to report " + dest + " missing.")
+            msClient.sendMessage(NodeRemoveMessage(dest))
           }
           slate
         }
@@ -1159,18 +907,75 @@ class AppRuntime(appID: Int,
     }
   })
   slateURLserver.start
+  info("slateURLserver is up on port" + appStatic.statusPort)
+
+  val pool = initMapUpdatePool(poolsize, this,
+    action => new MUCluster[PerformerPacket](appStatic, appStatic.statusPort + 100,
+                                             PerformerPacket(0, 0, Key(new Array[Byte](0)), Array(), "", this),
+                                             () => { new Decoder(this) },
+                                             action, msClient))
+
+  /* generate Hash Ring */
+  private var _ring: HashRing = null
+  def ring = _ring // getter
+  def ring_= (r: HashRing2): Unit = _ring = new HashRing(r.hash) // setter
+  def ring_= (r: HashRing): Unit = _ring = new HashRing(r.hash)
+  def ring_= (hash: IndexedSeq[String]): Unit = _ring = new HashRing(hash)
+
+  // candidate ring and host list from message server
+  var candidateRing: HashRing = null
+  var candidateHostList: IndexedSeq[String] = null
+
+  // Try to Register host to message server and get updated hash ring from message server
+  // even if hash ring is generated from system hosts already
+  while (!msClient.sendMessage(NodeJoinMessage(appStatic.self))) {
+    info("Connecting to message server failed")
+    Thread.sleep(500)
+  }
+
+  while (ring == null) {
+    info("Waiting for hash ring")
+    // TODO: change to a graceful way to wait
+    Thread.sleep(500)
+  }
+  info("Update ring from Message server")
+
+  if (ring == null) error("AppRuntime: No hash ring either from config file or message server")
+
+  val storeIo = if (useNullPool) new NullPool
+                else new CassandraPool(appStatic.cassHosts,
+                                       appStatic.cassPort,
+                                       appStatic.cassKeySpace,
+                                       p => (appStatic.performers(appStatic.performerName2ID(p)).cf).getOrElse(appStatic.cassColumnFamily),
+                                       p => appStatic.performers(appStatic.performerName2ID(p)).ttl,
+                                       appStatic.compressionCodec)
+
+  val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
+  info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
+  val slateBuilders = appStatic.slateBuilderFactory.map(_.map(_.apply()))
+  private val threadMap: Map[Long, TLS] = pool.threadDataPool.map(_.thread.getId -> new TLS(this))(breakOut)
+  private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
+
+  def getSlate(key: (String, Key)) = {
+    val performerId = appStatic.performerName2ID(key._1)
+    val host = ring(PerformerPacket.getKey(performerId, key._2))
+    assert(host.compareTo(appStatic.self) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
+    val future = new Later[SlateObject]
+    getTLS(performerId, key._2).slateCache.waitForSlate(key, future.set(_), getUpdater(performerId, key._2), getSlateBuilder(performerId), false)
+    val bytes = new ByteArrayOutputStream()
+    getSlateBuilder(performerId).toBytes(future.get(), bytes)
+    Option(bytes.toByteArray())
+  }
 
   // We need a separate slate server that does not redirect to prevent deadlocks
-  val slateServer = new HttpServer(app.statusPort + 300, maxWorkerCount, s => {
+  val slateServer = new HttpServer(appStatic.statusPort + 300, maxWorkerCount, s => {
     val tok = java.net.URLDecoder.decode(s, "UTF-8").split('/')
-    getSlate((tok(4), tok(5).map(_.toByte).toArray))
+    getSlate((tok(4), Key(tok(5).map(_.toByte).toArray)))
   })
   slateServer.start
 
   def startSource(sourcePerformer: String, sourceClassName: String, sourceClassParams: java.util.List[String]) = {
-
     def initiateWork(performerID: Int, stream: String, data: Mupd8DataPair) = {
-      log("Posting")
       // TODO: Sleep if the pending IO count is in excess of ????
       // Throttle the Source if we have a hot conductor
       // var exponent = 20;
@@ -1180,12 +985,12 @@ class AppRuntime(appID: Int,
       //   Thread.sleep(sleepTime)
       // }
       if (data._key.size <= 0) {
-        warn("No key/Invalid key in Source Event: " + excToOption(str(data._value)))
+        error("No key/Invalid key in Source Event " + excToOption(str(data._value)))
       } else {
         pool.putSource(PerformerPacket(
           source,
           performerID,
-          data._key.getBytes(),
+          Key(data._key.getBytes()),
           data._value,
           stream,
           this))
@@ -1193,9 +998,8 @@ class AppRuntime(appID: Int,
     }
 
     class SourceThread(sourceClassName: String,
-      sourceParams: java.util.List[String],
-      continuation: Mupd8DataPair => Unit)
-      extends Runnable with Logging {
+                       sourceParams: java.util.List[String],
+                       continuation: Mupd8DataPair => Unit) extends Runnable with Logging {
       override def run() = {
         val cls = Class.forName(sourceClassName)
         val ins = cls.getConstructor(Class.forName("java.util.List")).newInstance(sourceParams).asInstanceOf[com.walmartlabs.mupd8.application.Mupd8Source]
@@ -1205,9 +1009,13 @@ class AppRuntime(appID: Int,
               if (ins.hasNext()) {
                 val data = ins.getNextDataPair();
                 continuation(data)
-              } else break() // end source thread at first no next returns
+              } else {
+                warn("SourceThread: hasNext returns false; stop this source thread")
+                break() // end source thread at first no next returns
+              }
             } catch {
-              case e: Exception => error("SourceThread: hit exception"); e.printStackTrace } // catch everything to keep source running
+              case e: Exception => error("SourceThread: hit exception", e)
+            } // catch everything to keep source running
           }
         }
       }
@@ -1215,10 +1023,10 @@ class AppRuntime(appID: Int,
 
     // TODO : Behavior for multiple performers is most probably wrong!!
     val threads = for (
-      perfID <- app.performerName2ID.get(sourcePerformer).toList;
-      if app.performers(perfID).mtype == Source;
-      edgeName <- app.performers(perfID).pubs;
-      destID <- app.edgeName2IDs(edgeName);
+      perfID <- appStatic.performerName2ID.get(sourcePerformer).toList;
+      if appStatic.performers(perfID).mtype == Source;
+      edgeName <- appStatic.performers(perfID).pubs;
+      destID <- appStatic.edgeName2IDs(edgeName);
       input <- excToOptionWithLog(new SourceThread(sourceClassName, sourceClassParams, initiateWork(destID, edgeName, _)))
     ) yield (new java.lang.Thread(input, "SourceReader:" + sourcePerformer + ":" + (sourceClassParams.asScala mkString ":")))
 
@@ -1232,23 +1040,14 @@ class AppRuntime(appID: Int,
   }
 
   val writerThread = new Thread(run {
-    val interval = app.cassWriteInterval * 1000 / threadVect.size
     while (true) {
-      threadVect foreach { tls =>
-        {
-          val target = java.lang.System.currentTimeMillis + interval
-          val items = tls.slateCache.getDirtyItems
-          // println("num of dirty items " + items.length)
-          items.zipWithIndex.foreach {
-            case ((key, item), i) => {
-              writeSlateToCassandra((key, item))
-              val sleepTime = (target - java.lang.System.currentTimeMillis) / (items.size - i)
-              if (sleepTime > 0) java.lang.Thread.sleep(sleepTime)
-            }
-          }
-          java.lang.Thread.sleep(10)
-        }
-      }
+      val startTime = java.lang.System.currentTimeMillis
+      debug("writeThread: start to flush dirty slates")
+      flushDirtySlateToCassandra()
+      debug("writeThread: flush dirty slates is done")
+      val runTime = java.lang.System.currentTimeMillis - startTime
+      if (runTime > 0)
+        Thread.sleep(appStatic.cassWriteInterval * 1000 - runTime)
     }
   }, "writerThread")
   writerThread.start()
@@ -1257,29 +1056,62 @@ class AppRuntime(appID: Int,
   // to avoid exposing the JVM to external input before it is ready
   pool.init()
 
-
-  //COMMMENT:  A utility method to write slate to cassandra. 
-  def writeSlateToCassandra(item: (String, SlateValue)) = {
-    val key = item._1
-    val slateVal = item._2
-    val colname = key.take(key.indexOf("~~~"))
-    // TODO: .getBytes may not work the way you want it to!! Encoding issues!
-    val suc = storeIo.write(colname, key.drop(colname.length + 3).getBytes, slateVal.slate)
-    if (suc) {
-      slateVal.dirty = false
-      log("Wrote record for " + colname + " " + key)
-    } else {
-      slateVal.dirty = true
-      log("Failed to write record for " + colname + " " + key)
+  def flushDirtySlateToCassandra() {
+    if (threadVect != null) { // flush only when node is initted
+      storeIo.initBatchWrite
+      var dirtySlateList: List[((String, Key), SlateValue)] = List.empty
+      threadVect foreach { tls => {
+        val items: List[((String, Key), SlateValue)] = tls.slateCache.getDirtyItems
+        dirtySlateList = dirtySlateList ++: items
+        items.foreach (writeSlateToCassandra(_))
+      }}
+      if (storeIo.flushBatchWrite)
+        dirtySlateList foreach ( _._2.dirty = false )
+      storeIo.closeBatchWrite
     }
   }
 
+  // During ring change process, flush dirty and dest changed slate into cassandra
+  def flushFilteredDirtySlateToCassandra() {
+    if (threadVect != null) { // flush only when node is initted
+      info("flushFilteredDirtySlateToCassandra: starts to flush slates")
+      storeIo.initBatchWrite
+      var dirtySlateList: List[((String, Key), SlateValue)] = List.empty
+      threadVect foreach { tls => {
+        val items = tls.slateCache.getFilteredDirtyItems
+        dirtySlateList ++:= items
+        items.foreach (writeSlateToCassandra(_))
+      }}
+      if (storeIo.flushBatchWrite)
+        dirtySlateList foreach ( _._2.dirty = false )
+      storeIo.closeBatchWrite
+      info("flushFilteredDirtySlateToCassandra: flush slates is done")
+    }
+  }
+
+  // A utility method to write slate to cassandra.
+  def writeSlateToCassandra(item: ((String, Key), SlateValue)) = {
+    val key = item._1
+    val slateVal = item._2
+    val slateByteStream = new ByteArrayOutputStream()
+    getSlateBuilder(appStatic.performerName2ID(key._1)).toBytes(slateVal.slate, slateByteStream)
+    // TODO: .getBytes may not work the way you want it to!! Encoding issues!
+    storeIo.batchWrite(key._1, key._2, slateByteStream.toByteArray())
+  }
+
+  def getSlateBuilder(pid: Int) = slateBuilders(pid).get
+
+  // The getTLS method, and therefore the getFoo(pid) methods that depend on it,
+  // succeed only for threads in threadMap (namely, MapUpdatePool threads).
+  // Other threads need to use the getFoo(pid, key) form instead to "borrow" a
+  // Foo from one of the threadMap threads (chosen by key).
+  //
   def getTLS = threadMap(Thread.currentThread().getId)
 
   def getMapper(pid: Int) = getTLS.objects(pid).get.asInstanceOf[binary.Mapper]
 
-  def getUpdater(pid: Int) = getTLS.objects(pid).get.asInstanceOf[binary.Updater]
-
+  def getUpdater(pid: Int) = getTLS.objects(pid).get.asInstanceOf[binary.SlateUpdater]
+  def getUpdater(pid: Int, key: Key) = getTLS(pid, key).objects(pid).get.asInstanceOf[binary.SlateUpdater]
   def getUnifiedUpdater(pid: Int) = getTLS.objects(pid).get.asInstanceOf[binary.UnifiedUpdater]
 
   // This hash function must be the same as the MapUpdatePool and different from SlateCache
@@ -1361,8 +1193,8 @@ object Mupd8Main extends Logging {
         threads <- excToOption(p.get("-threads").map(_.head.toInt).getOrElse(5))
         val launcher = p.get("-pidFile") == None
         /*
-        COMMENT: Obtain the 'statistics' and 'elastic' flag from the configuration. These flags determine if monitoring and 
-                dyanmic load balancing is enabled, respectively.  
+        COMMENT: Obtain the 'statistics' and 'elastic' flag from the configuration. These flags determine if monitoring and
+                dyanmic load balancing is enabled, respectively.
         */
         val collectStatistics = if (p.get("-statistics") != None) { p.get("-statistics").get(0).equalsIgnoreCase("true") } else { false }
         val elastic = if (p.get("-elastic") != None) { p.get("-elastic").get(0).equalsIgnoreCase("true") } else { false }
@@ -1373,24 +1205,29 @@ object Mupd8Main extends Logging {
           new MasterNode(args, app, shutdown)
         } else {
           p.get("-pidFile").map(x => writePID(x.head))
-          val api = RuntimeProvider.getMupd8Runtime(0, threads, app, collectStatistics, elastic)
-          if (app.sources.size > 0) {
-            fetchFromSources(app, api)
+          val runtime = new AppRuntime(0, threads, app)
+          if (runtime.ring != null) {
+            if (app.sources.size > 0) {
+              fetchFromSources(app, runtime)
+            } else if (p.contains("-to") && p.contains("-sc")) {
+              info("start source from cmdLine")
+              runtime.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
+            }
           } else {
-            info("Starting source from command line")
-            api.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
+            error("Mupd8Main: no hash ring found, exiting...")
           }
-          info("Goodbye")
+          info("Init is done")
         }
       }
     } getOrElse {
-      error("Command Syntax error. Syntax is\n" + syntax.map(p => p._1 + " " + p._2._2 + "\n").reduceLeft(_ + _))
+      error("Command Syntax error")
+      error("Syntax is\n" + syntax.map(p => p._1 + " " + p._2._2 + "\n").reduceLeft(_ + _))
     }
   }
 
-  def fetchFromSources(app: AppStaticInfo, api: AppRuntime): Unit = {
+  def fetchFromSources(app: AppStaticInfo, runtime: AppRuntime): Unit = {
     val ssources = app.sources.asScala
-    info("Starting source from config file(s)")
+    info("start source from sys cfg")
     object O {
       def unapply(a: Any): Option[org.json.simple.JSONObject] =
         if (a.isInstanceOf[org.json.simple.JSONObject])
@@ -1401,7 +1238,7 @@ object Mupd8Main extends Logging {
       case O(obj) => {
         if (isLocalHost(obj.get("host").asInstanceOf[String])) {
           val params = obj.get("parameters").asInstanceOf[java.util.List[String]]
-          api.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
+          runtime.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
         }
       }
       case _ => { error("Wrong source format") }

@@ -1,18 +1,18 @@
 /**
  * Copyright 2011-2012 @WalmartLabs, a division of Wal-Mart Stores, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * 
+ *
  */
 
 package com.walmartlabs.mupd8
@@ -41,7 +41,7 @@ class TestAppTest extends FunSuite {
   val key = "k1"
   val paras = "-host localhost -pidFile " + cfgDir + "/testapp.pid" + " -key k1 -from file:" + cfgDir + "/T10.data -to T10Source -threads 6 -d " + cfgDir
   val appStaticInfo = new AppStaticInfo(Some(cfgDir), None, None, false, false, false)
-  val keyCombo : (String, Key) = ("K1Updater", "1".map(_.toByte).toArray)
+  val keyCombo : (String, Key) = ("K1Updater", Key("1".map(_.toByte).toArray))
   val httpStatus = "http://localhost:" + appStaticInfo.statusPort + "/app/status"
   val k1Slate = "http://localhost:" + appStaticInfo.statusPort  + "/app/slate/TestApp/K1Updater/1"
 
@@ -68,10 +68,10 @@ class TestAppTest extends FunSuite {
     println("TestApp with cassandra in the same jvm")
 
     EmbeddedCassandraServer.start(appStaticInfo.cassKeySpace, appStaticInfo.cassColumnFamily)
-  
+
     assert(appStaticInfo.cassPort == 19170)
     Thread.sleep(5000)
-    
+
     val appRuntime = new AppRuntime(0, numThreads, appStaticInfo, false)
     // start the source
     appRuntime.startSource(to, sc, JavaConversions.seqAsJavaList(sp.split(',')))
@@ -83,4 +83,3 @@ class TestAppTest extends FunSuite {
   }
 
 }
-

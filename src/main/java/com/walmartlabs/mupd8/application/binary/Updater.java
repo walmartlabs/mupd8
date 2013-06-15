@@ -14,14 +14,11 @@
  * limitations under the License.
  * 
  */
-
 package com.walmartlabs.mupd8.application.binary;
-
 
 /** An Updater component of an application.
  * 
  * Applications should implement Mapper and Updater interfaces as needed.
- * @todo TODO Distinguish different states of an updater.
  */
 public interface Updater extends Performer {
 	public void update(PerformerUtilities submitter, String stream, byte[] key, byte[] event, byte[] slate);
