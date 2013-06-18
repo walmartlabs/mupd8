@@ -24,6 +24,7 @@ import java.io.BufferedReader
 import java.net.Socket
 import java.io.InputStreamReader
 import java.io.FileReader
+import java.io.IOException
 import java.lang.Exception
 import org.codehaus.jackson._
 import org.codehaus.jackson.map.ObjectMapper
@@ -43,9 +44,10 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
   val sourceStr = args.get(0)
   val keyStr = args.get(1)
   val sourceArr = sourceStr.split(":")
-  private var _reader = constructReader
-  private val _random = new Random(System.currentTimeMillis());
-  private val _reconnectOnEof = sourceArr(0) match {
+
+  var _reader = constructReader
+  val _random = randomGenerator
+  val _reconnectOnEof = sourceArr(0) match {
     case "file" => false
     case _      => true
   }
@@ -53,30 +55,50 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
   private var _currentLine : Option[String] = None
   private val objMapper = new ObjectMapper
 
-  def constructReader : Option[BufferedReader] = {
+  def constructReader : BufferedReader = {
     sourceArr(0) match {
       case "file" => fileReader
-      case _      => socketReader
+      case _      => _ensureSocketReaderCreated()
     }
   }
 
-  def fileReader : Option[BufferedReader] = {
-    try {
-      Some(new BufferedReader(new FileReader(sourceArr(1))))
-    } catch {
-      case e: Exception => {error("JSONSource: fileReader hit exception", e)
-                            None}
-    }
+  def fileReader : BufferedReader = {
+    new BufferedReader(new FileReader(sourceArr(1)))
   }
 
-  def socketReader : Option[BufferedReader] = {
-    try {
-      info("JSONSource: connecting to "+sourceArr(0)+" port "+sourceArr(1))
-      val socket = new Socket(sourceArr(0), sourceArr(1).toInt)
-      Some(new BufferedReader(new InputStreamReader(socket.getInputStream())))
+  def socketReader : BufferedReader = {
+    val socket = new Socket(sourceArr(0), sourceArr(1).toInt)
+    new BufferedReader(new InputStreamReader(socket.getInputStream()))
+  }
+
+  def randomGenerator: Random = {
+    new Random(System.currentTimeMillis())
+  }
+
+  /**
+   * Ensure to return a concrete socket reader. 
+   * 
+   * @note This method implements exponential backoff until successfully return a socket reader.
+   */
+  @tailrec
+  final def _ensureSocketReaderCreated(retryCount: Int = 0): BufferedReader = {
+    //info("Connecting to "+sourceArr(0)+" port "+sourceArr(1))
+    val result: Option[BufferedReader] = try {
+      Option(socketReader)
     } catch {
-      case e: Exception => {error("JSONSource: socketReader hit exception", e)
-                            None}
+      case e: Exception => {
+        //warn("Failed to connect to "+sourceArr(0)+" port "+sourceArr(1)+". Retrying...")
+        None
+      }
+    }
+    result match {
+      case Some(x) => x
+      case None => {
+        // Sleep exponential time, upper bounded
+        val maxSleepTime = 1 << (10 + (if (retryCount > 6) 6 else retryCount))
+        Thread.sleep(_random.nextInt(maxSleepTime))
+        _ensureSocketReaderCreated()
+      }
     }
   }
 
@@ -92,11 +114,11 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
   override def hasNext() : Boolean = {
     _currentLine = _currentLine.orElse({
       try {
-        readLine()
+        _readLine()
       } catch {
         case e : Exception =>
           error("JSONSource: reader readLine failed", e)
-          destroyReader
+          _ensureReaderClosed
           None
       }
     })
@@ -104,29 +126,41 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
   }
 
   @tailrec
-  private final def readLine(retryCount : Int = 0) : Option[String] = {
-    Option(_reader.get.readLine) match {
+  final def _readLine(retryCount : Int = 0) : Option[String] = {
+    val result: Option[String] = try {
+      Option(_reader.readLine)
+    } catch {
+      case e: Exception => {
+        _reconnectOnEof match {
+          case true => warn("ReadLine error, reconnecting...")
+          case false => throw new IOException("ReadLine error, disconnecting...", e)
+        }
+        None
+      }
+    }
+    result match {
       case Some(x) => Some(x)
       case None => {
-        destroyReader
-        if (! _reconnectOnEof) {
-          None
-        } else {
-          // Sleep exponential time, upper bounded
-          val maxSleepTime = 1 << (10 + (if (retryCount > 6) 6 else retryCount))
-          Thread.sleep(_random.nextInt(maxSleepTime))
-          // Reconstruct reader and read
-          _reader = constructReader
-          readLine(retryCount + 1)
+        _ensureReaderClosed
+        _reconnectOnEof match {
+          case false => None
+          case true => {
+            // Reconstruct reader and read
+            _reader = _ensureSocketReaderCreated()
+            _readLine(retryCount + 1)
+          }
         }
       }
     }
   }
-
-  private def destroyReader : Unit = {
-    if (_reader isDefined) {
-      _reader.get.close;
-      _reader = None
+    
+  def _ensureReaderClosed: Unit = {
+    try {
+      _reader.close;
+    } catch {
+      case e: IOException => {
+        error("JSONSource: error in closing reader.")
+      }
     }
   }
 
