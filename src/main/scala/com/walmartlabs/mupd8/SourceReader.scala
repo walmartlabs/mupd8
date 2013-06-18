@@ -82,12 +82,12 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
    */
   @tailrec
   final def _ensureSocketReaderCreated(retryCount: Int = 0): BufferedReader = {
-    //info("Connecting to "+sourceArr(0)+" port "+sourceArr(1))
+    info("Connecting to "+sourceArr(0)+" port "+sourceArr(1))
     val result: Option[BufferedReader] = try {
       Option(socketReader)
     } catch {
       case e: Exception => {
-        //warn("Failed to connect to "+sourceArr(0)+" port "+sourceArr(1)+". Retrying...")
+        warn("Failed to connect to "+sourceArr(0)+" port "+sourceArr(1)+". Retrying...")
         None
       }
     }
