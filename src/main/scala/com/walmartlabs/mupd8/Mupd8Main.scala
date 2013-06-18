@@ -1001,9 +1001,10 @@ class AppRuntime(appID: Int,
                        sourceParams: java.util.List[String],
                        continuation: Mupd8DataPair => Unit) extends Runnable with Logging {
       override def run() = {
-        val cls = Class.forName(sourceClassName)
-        val ins = cls.getConstructor(Class.forName("java.util.List")).newInstance(sourceParams).asInstanceOf[com.walmartlabs.mupd8.application.Mupd8Source]
         breakable {
+          val cls = Class.forName(sourceClassName)
+          // For socket-type sources, construct a SourceReader by unlmited reattempts.
+          val ins = cls.getConstructor(Class.forName("java.util.List")).newInstance(sourceParams).asInstanceOf[com.walmartlabs.mupd8.application.Mupd8Source]
           while (true) {
             try {
               if (ins.hasNext()) {
