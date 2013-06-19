@@ -70,7 +70,7 @@ object miscM extends Logging {
   // A SlateUpdater receives a SlateValue.slate of type SlateObject.
   type SlateObject = Object
 
-  def log(s: => { def toString: String }) = {} //println("[" + Thread.currentThread().getName() + "]" + s.toString)
+  //def log(s: => { def toString: String }) = {} //println("[" + Thread.currentThread().getName() + "]" + s.toString)
 
   def str(a: Array[Byte]) = new String(a)
 
@@ -178,7 +178,7 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   def send(dest: String, obj: T) {
     if (!client.send(dest, obj)) {
       error("Failed to send slate to destination " + dest)
-      if (msClient != null) msClient.sendMessage(NodeRemoveMessage(dest))
+      if (msClient != null) msClient.sendMessage(NodeRemoveMessage(Host(dest, app.systemHosts(dest))))
     }
   }
 }
@@ -564,7 +564,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 
         if (p.copy) {
           //        if ((p.name == "fbEntityProcessor")||(p.name == "interestStatsFetcher")) {
-          () => { log("Building object " + p.name); wrappedPerformer }
+          () => { debug("Building object " + p.name); wrappedPerformer }
         } else {
           val obj = wrappedPerformer
           () => obj
@@ -658,7 +658,6 @@ case class PerformerPacket(pri: Priority,
 
   // Treat this as a static method, do not touch "this", use msg
   override protected def encode(channelHandlerContext: ChannelHandlerContext, channel: Channel, msg: AnyRef): AnyRef = {
-    log("Invoked encoder")
     if (msg.isInstanceOf[PerformerPacket]) {
       val packet = msg.asInstanceOf[PerformerPacket]
       val size: Int = 4 + 4 + 4 + packet.slateKey.value.length + 4 + packet.event.length + 4 + packet.stream.length
@@ -679,7 +678,7 @@ case class PerformerPacket(pri: Priority,
   def run() {
     def execute(x: => Unit) {
       val result = excToOptionWithLog(x)
-      if (result == None) log("Bad exception Bro")
+      if (result == None) error("Bad exception Bro")
     }
 
     def executeUpdate(tls: TLS, slate: SlateObject) {
@@ -915,7 +914,7 @@ class AppRuntime(appID: Int,
           if (slate == None) {
             // TODO: send remove messageServer
             warn("Can't reach dest " + dest + "; going to report " + dest + " missing.")
-            msClient.sendMessage(NodeRemoveMessage(dest))
+            msClient.sendMessage(NodeRemoveMessage(Host(dest, appStatic.systemHosts(dest))))
           }
           slate
         }

@@ -20,7 +20,7 @@ abstract class Message extends Serializable
 abstract class MessageWOACK extends Message // message needs NO ACK
 abstract class MessageWACK extends Message // message needs ACK
 // To message server
-case class NodeRemoveMessage(node: String) extends MessageWACK  // node: ip
+case class NodeRemoveMessage(node: Host) extends MessageWACK  // node: Host(ip, hostname)
 case class NodeJoinMessage(node: Host) extends MessageWACK      // node: Host(ip, hostname)
 case class ACKPrepareAddHostMessage(cmdID: Int, hostToAdd: String) extends MessageWOACK         // hostToAdd: ip
 case class ACKPrepareRemoveHostMessage(cmdID: Int, hostToRemove: String) extends MessageWOACK   // hostToRemove: ip
@@ -36,15 +36,15 @@ case class IPCHECKDONE() extends MessageWOACK
 // iPsInNewRing: all ip addresses in new ring
 // iPHostMap: ip address to host name map
 case class PrepareAddHostMessage(cmdID: Int, addedHost: Host, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
-  override def toString() = "AddHostMessage(" + cmdID + ", " + addedHost + ", " + iP2HostMap + ")"
+  override def toString() = "PrepareAddHostMessage(" + cmdID + ", " + addedHost.hostname + ")"
 }
 // cmdID
 // removedIP: ip of node to be removed
 // hashInNewRing: ip address array used as hashtable in new hash ring
 // iPsInNewRing: all ip addresses in new ring
 // iPHostMap: ip address to host name map
-case class PrepareRemoveHostMessage(cmdID: Int, removedIP: String, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
-  override def toString() = "RemoveHostMessage(" + cmdID + ", " + removedIP + ", " + iP2HostMap + ")"
+case class PrepareRemoveHostMessage(cmdID: Int, removedHost: Host, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
+  override def toString() = "PrepareRemoveHostMessage(" + cmdID + ", " + removedHost + ")"
 }
 case class UpdateRing(cmdID: Int) extends MessageWACK
 

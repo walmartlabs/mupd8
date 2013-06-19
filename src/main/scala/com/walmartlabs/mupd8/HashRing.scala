@@ -76,7 +76,7 @@ object HashRing2 {
 // hash: real hash table, inited with hostlist(0). map each ip to a slot
 // ipHostMap: map ip address to hostname
 // hostCountMap: (ip -> slot # of ip); stat map for add and remove's convenience
-class HashRing2 private (val iPs: IndexedSeq[String], val hash: IndexedSeq[String], val ipHostMap: Map[String, String], hostCountMap: Map[String, Int]) extends Serializable with Logging {
+class HashRing2 private (val iPs: IndexedSeq[String], val hash: IndexedSeq[String], val ipHostMap: Map[String, String], val hostCountMap: Map[String, Int]) extends Serializable with Logging {
 
   /**
    * Remove a target [0, numTargets) (so apply will never return it again).
@@ -145,7 +145,7 @@ class HashRing2 private (val iPs: IndexedSeq[String], val hash: IndexedSeq[Strin
 
   def size = iPs.size
 
-  override def toString(): String = hostCountMap.toString
+  override def toString(): String = hostCountMap.map(p => (ipHostMap(p._1) -> p._2)).toString
 
   // equals and hashCode are for unit test
   override def equals(that: Any) : Boolean =
