@@ -124,6 +124,8 @@ object miscM extends Logging {
 
 }
 
+case class Host(ip: String, hostname: String)
+
 import miscM._
 
 trait MapUpdateClass[T] extends OneToOneEncoder with Runnable with Comparable[T] with java.io.Serializable {
@@ -164,11 +166,12 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
 
   def init() {
     server.start()
-    hosts.filter(_.compareTo(app.self) != 0).foreach (host => client.addEndpoint(host, port))
+    hosts.filterKeys(_.compareTo(app.self.ip) != 0).foreach (host => client.addEndpoint(host._1, port))
   }
 
   // Add host to connection map
-  def addHost(host: String): Unit = if (host.compareTo(app.self) != 0) client.addEndpoint(host, port)
+  def addHost(host: String): Unit = if (host.compareTo(app.self.ip) != 0) client.addEndpoint(host, port)
+
   // Remove host from connection map
   def removeHost(host: String): Unit = client.removeEndpoint(host)
 
@@ -341,10 +344,10 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntim
 
   def put(key: Any, x: T) {
     val dest = appRun.ring(key)
-    if (dest == appRun.appStatic.self
+    if (appRun.appStatic.self.ip.compareTo(dest) == 0
         ||
         // during ring chagne process, if dest is going to be removed from cluster
-        (appRun.candidateHostList != null && !appRun.candidateHostList.contains(dest)))
+        (appRun.candidateHostList != null && !appRun.candidateHostList._2.contains(dest)))
       putLocal(key, x)
     else
       cluster.send(dest, x)
@@ -483,9 +486,6 @@ class UpdaterFactory[U <: binary.Updater](val updaterType : Class[U]) {
 
 class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String], val sysConfig: Option[String], val loadClasses: Boolean, statistics: Boolean, elastic: Boolean) extends Logging {
   assert(appConfig.size == sysConfig.size && appConfig.size != configDir.size)
-  // mac osx return xxx.local which causes problem in many cases
-  val self: String = {val host = InetAddress.getLocalHost.getHostName; if (host.endsWith(".local")) host.substring(0, host.length - ".local".length) else host}
-  info("Host id is " + self)
 
   val config = configDir map { p => new application.Config(new File(p)) } getOrElse new application.Config(sysConfig.get, appConfig.get)
   val performers = loadConfig.convertPerformers(config.workerJSONs)
@@ -605,7 +605,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
   val slateCacheCount = Option(config.getScopedValue(Array("mupd8", "slate_store", "slate_cache_count"))) map { _.asInstanceOf[Number].intValue() } getOrElse 1000
   val compressionCodec = Option(config.getScopedValue(Array("mupd8", "slate_store", "compression"))).getOrElse("gzip").asInstanceOf[String].toLowerCase
 
-  var systemHosts: IndexedSeq[String] = null
+  var systemHosts: Map[String, String] = null
   val javaClassPath = Option(config.getScopedValue(Array("mupd8", "java_class_path"))).getOrElse("share/java/*").asInstanceOf[String]
   val javaSetting = Option(config.getScopedValue(Array("mupd8", "java_setting"))).getOrElse("-Xmx200M -Xms200M").asInstanceOf[String]
 
@@ -615,6 +615,26 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 
   val messageServerHost = Option(config.getScopedValue(Array("mupd8", "messageserver", "host")))
   val messageServerPort = Option(config.getScopedValue(Array("mupd8", "messageserver", "port")))
+
+  // Try to detect node's hostname and ipaddress by connecting to message server
+  private def getHostName(retryCount: Int): Host = {
+    if (retryCount > 10 || messageServerHost == None || messageServerPort == None) {
+      Host(InetAddress.getLocalHost.getHostAddress, InetAddress.getLocalHost.getHostName)
+    } else {
+      try {
+    	val s = new java.net.Socket(messageServerHost.get.asInstanceOf[String], messageServerPort.get.asInstanceOf[Long].toInt)
+    	val host = Host(s.getLocalAddress.getHostAddress, s.getLocalAddress.getHostName)
+    	s.close
+    	host
+      } catch {
+        case e: Exception => warn("getHostName: Connect to message server failed, retry", e); getHostName(retryCount + 1)
+      }
+    }
+  }
+  info("Connect to message server " + (messageServerHost, messageServerPort) + " to decide hostname")
+  val self: Host = getHostName(0)
+  
+  info("Host id is " + self)
 
   def internalPort = statusPort + 100;
 }
@@ -664,11 +684,11 @@ case class PerformerPacket(pri: Priority,
 
     def executeUpdate(tls: TLS, slate: SlateObject) {
       if (appRun.candidateRing != null
-        && appRun.ring(getKey) == appRun.appStatic.self
-        && appRun.candidateRing(getKey) != appRun.appStatic.self) {
+        && appRun.ring(getKey) == appRun.appStatic.self.ip
+        && appRun.candidateRing(getKey) != appRun.appStatic.self.ip) {
         // if in ring change process and dest of this slate changes by candidate ring
         appRun.pool.putLocal(getKey, this)
-      } else if (appRun.candidateRing == null && appRun.ring(getKey) != appRun.appStatic.self) {
+      } else if (appRun.candidateRing == null && appRun.ring(getKey) != appRun.appStatic.self.ip) {
         // if not in ring change process and dest of this slate is not this node
         appRun.pool.cluster.send(appRun.ring(getKey), this)
       } else {
@@ -888,7 +908,7 @@ class AppRuntime(appID: Int,
         val key: (String, Key) = (tok(4), Key(tok(5).map(_.toByte).toArray))
         val poolKey = PerformerPacket.getKey(appStatic.performerName2ID(key._1), key._2)
         val dest = InetAddress.getByName(ring(poolKey)).getHostName
-        if (appStatic.self.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
+        if (appStatic.self.ip.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
           getSlate(key)
         else {
           val slate = fetchURL("http://" + dest + ":" + (appStatic.statusPort + 300) + s)
@@ -924,7 +944,8 @@ class AppRuntime(appID: Int,
 
   // candidate ring and host list from message server
   var candidateRing: HashRing = null
-  var candidateHostList: IndexedSeq[String] = null
+  // (ip addresses, ip to hostname map)
+  var candidateHostList: (IndexedSeq[String], Map[String, String]) = null
 
   // Try to Register host to message server and get updated hash ring from message server
   // even if hash ring is generated from system hosts already
@@ -959,7 +980,7 @@ class AppRuntime(appID: Int,
   def getSlate(key: (String, Key)) = {
     val performerId = appStatic.performerName2ID(key._1)
     val host = ring(PerformerPacket.getKey(performerId, key._2))
-    assert(host.compareTo(appStatic.self) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
+    assert(host.compareTo(appStatic.self.ip) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
     val future = new Later[SlateObject]
     getTLS(performerId, key._2).slateCache.waitForSlate(key, future.set(_), getUpdater(performerId, key._2), getSlateBuilder(performerId), false)
     val bytes = new ByteArrayOutputStream()
@@ -1120,7 +1141,7 @@ class AppRuntime(appID: Int,
 }
 
 class MasterNode(args: Array[String], config: AppStaticInfo, shutdown: Boolean) extends Logging {
-  val targetNodes = config.systemHosts
+  val targetNodes = config.systemHosts.keys
   info("Target nodes are " + targetNodes.reduceLeft(_ + "," + _))
 
   val machine = "$machine"

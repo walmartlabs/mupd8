@@ -126,9 +126,9 @@ public class Config {
 		return getScopedValue((JSONObject) object.get(key), Arrays.copyOfRange(path, 1, path.length));
 	}
 
-  public Object getScopedValue(String[] path) {
-    return getScopedValue(this.configuration, path);
-  }
+    public Object getScopedValue(String[] path) {
+        return getScopedValue(this.configuration, path);
+    }
 
 	private static HashMap<String, JSONObject> extractWorkerJSONs(JSONObject configuration) {
 		HashMap<String, JSONObject> performers = new HashMap<String, JSONObject>();
