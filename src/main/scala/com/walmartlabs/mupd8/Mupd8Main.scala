@@ -632,7 +632,10 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
     }
   }
   info("Connect to message server " + (messageServerHost, messageServerPort) + " to decide hostname")
-  val self: Host = getHostName(0)
+  val self: Host = if (messageServerHost == None || messageServerPort == None) 
+                     Host(InetAddress.getLocalHost.getHostAddress, InetAddress.getLocalHost.getHostName)
+                   else 
+                     new MessageServerClient(messageServerHost.get.asInstanceOf[String], messageServerPort.get.asInstanceOf[Long].toInt).checkIP
   
   info("Host id is " + self)
 

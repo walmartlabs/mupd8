@@ -29,7 +29,7 @@ import java.io.ObjectOutputStream
 import grizzled.slf4j.Logging
 
 class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 2000) extends Logging {
-
+  
   def sendMessage(msg: Message): Boolean = synchronized {
     try {
       debug("MessageServerClient: send " + msg + " to Message Server: " + serverHost + ", " + serverPort)
@@ -54,6 +54,28 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 20
       case e: Exception => error("MessageServerClient sendMessage exception. MSG = " + msg.toString, e)
       false
     }
+  }
+
+  // check host ip address and hostname by connecting message server
+  def checkIP(): Host = {
+    def getHostName(retryCount: Int): Host = {
+      if (retryCount > 10) {
+        Host(InetAddress.getLocalHost.getHostAddress, InetAddress.getLocalHost.getHostName)
+      } else {
+        try {
+          val s = new java.net.Socket(serverHost, serverPort)
+          val host = Host(s.getLocalAddress.getHostAddress, s.getLocalAddress.getHostName)
+          val out = new ObjectOutputStream(s.getOutputStream)
+          out.writeObject(IPCHECKDONE)
+          s.close
+          host
+        } catch {
+          case e: Exception => warn("MessageServerClient::checkIP - Connect to message server failed, retry", e); getHostName(retryCount + 1)
+        }
+      }
+    }
+
+    getHostName(0)
   }
 
 }
