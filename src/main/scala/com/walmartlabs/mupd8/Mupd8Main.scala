@@ -1015,7 +1015,7 @@ class AppRuntime(appID: Int,
                 break() // end source thread at first no next returns
               }
             } catch {
-              case e: Exception => error("SourceThread: hit exception", e)
+              case e: Exception => error("SourceThread: exception during reads. Swallowed to continue next read.", e)
             } // catch everything to keep source running
           }
         }
@@ -1023,7 +1023,7 @@ class AppRuntime(appID: Int,
     }
 
     // TODO : Behavior for multiple performers is most probably wrong!!
-    val threads = for (
+    val threads: List[Thread] = for (
       perfID <- appStatic.performerName2ID.get(sourcePerformer).toList;
       if appStatic.performers(perfID).mtype == Source;
       edgeName <- appStatic.performers(perfID).pubs;
@@ -1036,7 +1036,14 @@ class AppRuntime(appID: Int,
     else
       error("Unable to set up source for " + sourcePerformer + " server class " + sourceClassName + " with params: " + sourceClassParams)
 
-    threads foreach { _.start() }
+    threads.foreach((t: Thread) => {
+      t.setUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+        override def uncaughtException(t: Thread, e: Throwable): Unit = {
+          error("SourceThread: hit exception... Swallowed to let main thread continue.", e)
+        }
+      })
+      t.start() 
+    })
     !threads.isEmpty
   }
 

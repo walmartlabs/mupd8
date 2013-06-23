@@ -19,15 +19,17 @@ class SocketSourceTest extends FunSuite with BeforeAndAfterEach with MockitoSuga
   val sourceMock = mock[JSONSource]
   val readerMock = mock[BufferedReader]
 
+  val Config = "dummy_host:9999"
   val Line = "foo"
 
   override def beforeEach() {
-    when(sourceMock._reconnectOnEof).thenReturn(true)
     when(sourceMock._random).thenReturn(new Random(0))
     when(sourceMock._reader).thenReturn(readerMock)
+    when(sourceMock.sourceArr).thenReturn(Config.split(":"))
   }
 
   test("Should connect to socket during initialization, retry until success") {
+    when(sourceMock._reconnectOnEof).thenReturn(true)
     when(sourceMock.socketReader).thenThrow(new RuntimeException()).thenReturn(readerMock)
     
     val expected = readerMock
@@ -37,6 +39,7 @@ class SocketSourceTest extends FunSuite with BeforeAndAfterEach with MockitoSuga
   }
 
   test("Should reconnect to socket if there was any I/O exception during reads") {
+    when(sourceMock._reconnectOnEof).thenReturn(true)
     when(readerMock.readLine).thenThrow(new RuntimeException()).thenReturn(Line)
     when(sourceMock._ensureSocketReaderCreated()).thenReturn(readerMock)
     doNothing.when(sourceMock)._ensureReaderClosed

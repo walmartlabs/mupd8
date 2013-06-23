@@ -47,11 +47,7 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
 
   var _reader = constructReader
   val _random = randomGenerator
-  val _reconnectOnEof = sourceArr(0) match {
-    case "file" => false
-    case _      => true
-  }
-
+  val _reconnectOnEof = reconnectable(sourceArr(0))
   private var _currentLine : Option[String] = None
   private val objMapper = new ObjectMapper
 
@@ -69,6 +65,13 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
   def socketReader : BufferedReader = {
     val socket = new Socket(sourceArr(0), sourceArr(1).toInt)
     new BufferedReader(new InputStreamReader(socket.getInputStream()))
+  }
+
+  def reconnectable(sourceType: String): Boolean = {
+    sourceType match {
+        case "file" => false
+        case _      => true
+      }
   }
 
   def randomGenerator: Random = {
@@ -146,7 +149,7 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
           case false => None
           case true => {
             // Reconstruct reader and read
-            _reader = _ensureSocketReaderCreated()
+            _reader = constructReader
             _readLine(retryCount + 1)
           }
         }
