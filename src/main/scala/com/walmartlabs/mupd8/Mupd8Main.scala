@@ -1024,9 +1024,10 @@ class AppRuntime(appID: Int,
                        sourceParams: java.util.List[String],
                        continuation: Mupd8DataPair => Unit) extends Runnable with Logging {
       override def run() = {
-        val cls = Class.forName(sourceClassName)
-        val ins = cls.getConstructor(Class.forName("java.util.List")).newInstance(sourceParams).asInstanceOf[com.walmartlabs.mupd8.application.Mupd8Source]
         breakable {
+          val cls = Class.forName(sourceClassName)
+          // For socket-type sources, construct a SourceReader by unlmited reattempts.
+          val ins = cls.getConstructor(Class.forName("java.util.List")).newInstance(sourceParams).asInstanceOf[com.walmartlabs.mupd8.application.Mupd8Source]
           while (true) {
             try {
               if (ins.hasNext()) {
@@ -1037,7 +1038,7 @@ class AppRuntime(appID: Int,
                 break() // end source thread at first no next returns
               }
             } catch {
-              case e: Exception => error("SourceThread: hit exception", e)
+              case e: Exception => error("SourceThread: exception during reads. Swallowed to continue next read.", e)
             } // catch everything to keep source running
           }
         }
@@ -1045,7 +1046,7 @@ class AppRuntime(appID: Int,
     }
 
     // TODO : Behavior for multiple performers is most probably wrong!!
-    val threads = for (
+    val threads: List[Thread] = for (
       perfID <- appStatic.performerName2ID.get(sourcePerformer).toList;
       if appStatic.performers(perfID).mtype == Source;
       edgeName <- appStatic.performers(perfID).pubs;
@@ -1058,7 +1059,14 @@ class AppRuntime(appID: Int,
     else
       error("Unable to set up source for " + sourcePerformer + " server class " + sourceClassName + " with params: " + sourceClassParams)
 
-    threads foreach { _.start() }
+    threads.foreach((t: Thread) => {
+      t.setUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+        override def uncaughtException(t: Thread, e: Throwable): Unit = {
+          error("SourceThread: hit exception... Swallowed to let main thread continue.", e)
+        }
+      })
+      t.start() 
+    })
     !threads.isEmpty
   }
 
