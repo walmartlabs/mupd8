@@ -267,7 +267,12 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
           // PrepareAddHostMessage: accept new ring from message server and prepare for switching
           case PrepareAddHostMessage(cmdID, addedHost, hashInNewRing, iPsInNewRing, iP2HostMap) =>
             if (cmdID > lastCmdID) {
+              // set candidate ring
               setCandidateRingAndHostList(hashInNewRing, (iPsInNewRing, iP2HostMap))
+              // wait until current performer job is done
+              debug("Checking current performer job")
+              runtime.waitPerformerJobsDone
+              // flush dirty slates
               debug("PrepareAddHostMessage - going to flush cassandra")
               runtime.flushFilteredDirtySlateToCassandra
               if (runtime.pool != null) {
@@ -284,7 +289,12 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
 
           case PrepareRemoveHostMessage(cmdID, removedHost, hashInNewRing, iPsInNewRing, iP2HostMap) =>
             if (cmdID > lastCmdID) {
+              // set candidate ring
               setCandidateRingAndHostList(hashInNewRing, (iPsInNewRing, iP2HostMap))
+              // wait until current performer job is done
+              debug("Checking current performer job")
+              runtime.waitPerformerJobsDone
+              // flush dirty slates
               debug("PrepareRemoveHostMessage - going to flush cassandra")
               runtime.flushFilteredDirtySlateToCassandra
               if (runtime.pool != null) {
@@ -306,6 +316,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               runtime.appStatic.systemHosts = runtime.candidateHostList._2
               runtime.candidateRing = null
               runtime.candidateHostList = null
+              runtime.flushSlatesInBufferToQueue
               info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
             } else {
               warn("UpdateRing: candidate ring is null in UpdateRing")

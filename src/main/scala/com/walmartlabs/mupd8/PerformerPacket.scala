@@ -1,0 +1,109 @@
+package com.walmartlabs.mupd8
+
+import com.walmartlabs.mupd8.GT._
+import com.walmartlabs.mupd8.miscM._
+import com.walmartlabs.mupd8.Misc._
+import com.walmartlabs.mupd8.Mupd8Type._
+import grizzled.slf4j.Logging
+import org.jboss.netty.channel.ChannelHandlerContext
+import org.jboss.netty.channel.Channel
+import org.jboss.netty.buffer.ChannelBuffer
+import org.jboss.netty.buffer.ChannelBuffers
+import org.jboss.netty.handler.codec.oneone.OneToOneEncoder
+
+
+trait MapUpdateClass[T] extends OneToOneEncoder with Runnable with Comparable[T] with java.io.Serializable {
+  def getKey: Any
+}
+
+object PerformerPacket {
+  @inline def getKey(pid: Int, key: Key): (Int, Key) = (pid, key)
+}
+
+// TODO: create PerformerPacketKey class
+case class PerformerPacket(pri: Priority,
+                           pid: Int,
+                           slateKey: Key,
+                           event: Event,
+                           stream: String, // This field can be replaced by source performer ID
+                           appRun: AppRuntime) extends MapUpdateClass[PerformerPacket] with Logging {
+  val ppKey = (pid, slateKey)
+  override def getKey = ppKey
+
+  override def compareTo(other: PerformerPacket) = pri.compareTo(other.pri)
+
+  override def toString = "{" + pri + "," + pid + "," + str(slateKey.value) + "," + str(event) + "," + stream + "}"
+
+  // Treat this as a static method, do not touch "this", use msg
+  override protected def encode(channelHandlerContext: ChannelHandlerContext, channel: Channel, msg: AnyRef): AnyRef = {
+    if (msg.isInstanceOf[PerformerPacket]) {
+      val packet = msg.asInstanceOf[PerformerPacket]
+      val size: Int = 4 + 4 + 4 + packet.slateKey.value.length + 4 + packet.event.length + 4 + packet.stream.length
+      val buffer: ChannelBuffer = ChannelBuffers.buffer(size)
+      buffer.writeInt(packet.pri)
+      buffer.writeInt(packet.pid)
+      buffer.writeInt(packet.slateKey.value.length)
+      buffer.writeBytes(packet.slateKey.value)
+      buffer.writeInt(packet.event.length)
+      buffer.writeBytes(packet.event)
+      buffer.writeInt(packet.stream.length)
+      buffer.writeBytes(packet.stream.getBytes) // TODO: Stream name encoding assumption
+      buffer
+    } else
+      msg
+  }
+
+  def run() {
+    def execute(x: => Unit) {
+      val result = excToOptionWithLog(x)
+      if (result == None) error("Bad exception Bro")
+    }
+
+    def executeUpdate(tls: TLS, slate: SlateObject) {
+      if (appRun.candidateRing != null
+        && appRun.ring(getKey) == appRun.appStatic.self.ip
+        && appRun.candidateRing(getKey) != appRun.appStatic.self.ip) {
+        // if in ring change process and dest of this slate changes by candidate ring
+        //appRun.pool.putLocal(getKey, this)
+        appRun.eventBufferForRingChange.offer(this)
+      } else if (appRun.candidateRing == null && appRun.ring(getKey) != appRun.appStatic.self.ip) {
+        // if not in ring change process and dest of this slate is not this node
+        appRun.pool.cluster.send(appRun.ring(getKey), this)
+      } else {
+        execute(appRun.getUpdater(pid).update(tls, stream, slateKey.value, event, slate))
+      }
+    }
+
+    val performer = appRun.appStatic.performers(pid)
+    val name = performer.name
+
+    val cache = appRun.getTLS(pid, slateKey).slateCache
+    val optSlate = if (performer.mtype == Updater) Some {
+      val s = cache.getSlate((name, slateKey))
+      s map {
+        p => trace("Succeeded for " + name + "," + slateKey + " " + p)
+      } getOrElse {
+        trace("Failed fetch for " + name + "," + slateKey)
+        // Re-introduce self after issuing a read
+        cache.waitForSlate((name,slateKey),_ => appRun.pool.put(this.getKey, this), appRun.getUpdater(pid, slateKey), appRun.getSlateBuilder(pid))
+      }
+      s
+    } else
+      None
+
+    if (optSlate != Some(None)) {
+      val slate = optSlate.flatMap(p => p)
+      val tls = appRun.getTLS
+      tls.perfPacket = this
+      tls.startTime = java.lang.System.nanoTime()
+      (performer.mtype, tls.unifiedUpdaters(pid)) match {
+        case (Updater, true) => execute(appRun.getUnifiedUpdater(pid).update(tls, stream, slateKey.value, Array(event), Array(slate.get)))
+        case (Updater, false) => executeUpdate(tls, slate.get)
+        case (Mapper, false) => execute(appRun.getMapper(pid).map(tls, stream, slateKey.value, event))
+      }
+      tls.perfPacket = null
+      tls.startTime = 0
+      trace("Executed " + performer.mtype.toString + " " + name)
+    }
+  }
+}
