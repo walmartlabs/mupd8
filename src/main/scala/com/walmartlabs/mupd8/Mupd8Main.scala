@@ -133,7 +133,6 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
                                         decoderFactory: () => ReplayingDecoder[network.common.Decoder.DecodingState],
                                         onReceipt: T => Unit,
                                         msClient: MessageServerClient = null) extends Logging {
-
   private val callableFactory = new Callable[ReplayingDecoder[network.common.Decoder.DecodingState]] {
     override def call() = decoderFactory()
   }
@@ -173,7 +172,9 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   def send(dest: String, obj: T) {
     if (!client.send(dest, obj)) {
       error("Failed to send slate to destination " + dest)
-      if (msClient != null) msClient.sendMessage(NodeRemoveMessage(Host(dest, app.systemHosts(dest))))
+      if (msClient != null) {
+        msClient.sendMessage(NodeRemoveMessage(Host(dest, app.systemHosts(dest))))
+      }
     }
   }
 }
@@ -636,19 +637,39 @@ class AppRuntime(appID: Int,
 
   // Try to Register host to message server and get updated hash ring from message server
   // even if hash ring is generated from system hosts already
-  while (!msClient.sendMessage(NodeJoinMessage(appStatic.self))) {
-    info("Connecting to message server failed")
-    Thread.sleep(500)
+  def trySendNodeJoinMessageToMessageServer(time: Int) {
+    if (time <= 0) {
+      error("Failed to send join message to message server, exiting...")
+      System.exit(-1)
+    } else {
+      if (!msClient.sendMessage(NodeJoinMessage(appStatic.self))) {
+        warn("Connecting to message server failed")
+        Thread.sleep(500)
+        trySendNodeJoinMessageToMessageServer(time - 500)
+      }
+    }
   }
+  trySendNodeJoinMessageToMessageServer(10000) // try to send join message to message server for 10 sec
+  info("Send node join message to message server")
 
-  while (ring == null) {
-    info("Waiting for hash ring")
-    // TODO: change to a graceful way to wait
-    Thread.sleep(500)
+  def waitHashRing(time: Int) {
+    if (time <= 0) {
+      error("Failed to update hash ring from message server, exiting...")
+      System.exit(-1)
+    } else {
+      if (ring == null) {
+        Thread.sleep(500)
+        waitHashRing(time - 500)
+      }
+    }
   }
+  waitHashRing(5000) // wait hash ring from message server for 5 sec
   info("Update ring from Message server")
 
-  if (ring == null) error("AppRuntime: No hash ring either from config file or message server")
+  if (ring == null) {
+    error("AppRuntime: No hash ring either from config file or message server")
+    System.exit(-1)
+  }
 
   val storeIo = if (useNullPool) new NullPool
                 else new CassandraPool(appStatic.cassHosts,

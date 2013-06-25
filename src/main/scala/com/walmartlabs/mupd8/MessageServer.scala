@@ -73,7 +73,8 @@ object MessageServer extends Logging {
                 out.writeObject(ACKNodeRemove(hostToRemove.ip))
                 // update hash ring
                 val newHostList: IndexedSeq[String] = ring2.iPs filter (host => host.compareTo(hostToRemove.ip) != 0)
-                ring2 = ring2.remove(newHostList, hostToRemove.ip)
+                ring2 = if (!ring2.iPs.contains(hostToRemove.ip)) ring2 // if ring2 doesn't contain this node, do nothing
+                        else ring2.remove(newHostList, hostToRemove.ip)
                 if (!isTest) {
                   // if it is unit test, don't send new ring to all nodes
                   // Local message server's port is always port + 1
@@ -90,17 +91,19 @@ object MessageServer extends Logging {
                 }
               }
 
-            case NodeJoinMessage(node) =>
+            case NodeJoinMessage(hostToAdd) =>
               info("MessageServer: Received node join message: " + msg)
               lastCmdID += 1
               lastRingUpdateCmdID = lastCmdID
               // send ACK to reported
-              out.writeObject(ACKNodeJoin(node.ip))
+              out.writeObject(ACKNodeJoin(hostToAdd.ip))
               // update hash ring
-              ring2 = if (ring2 == null) HashRing2.initFromHost(node)
-                      else {
-                        val newHostList = ring2.iPs :+ node.ip
-                        ring2.add(newHostList, node)
+              ring2 = if (ring2 == null) HashRing2.initFromHost(hostToAdd)
+                      else if (ring2.iPs.contains(hostToAdd.ip)) {
+                        ring2 // if ring2 already contains this node, do nothing
+                      } else {
+                        val newHostList = ring2.iPs :+ hostToAdd.ip
+                        ring2.add(newHostList, hostToAdd)
                       }
               // TODO: replace isTest with new SendNewRing
               if (!isTest) {
@@ -114,7 +117,7 @@ object MessageServer extends Logging {
                 AckedNodeCounter ! StartCounter(lastCmdID, ring2.iPs, "localhost", port)
 
                 // Send prepare ring update message
-                SendNewRing ! SendMessageToNode(lastCmdID, ring2.iPs, port + 1, PrepareAddHostMessage(lastCmdID, node, ring2.hash, ring2.iPs, ring2.ipHostMap), port)
+                SendNewRing ! SendMessageToNode(lastCmdID, ring2.iPs, port + 1, PrepareAddHostMessage(lastCmdID, hostToAdd, ring2.hash, ring2.iPs, ring2.ipHostMap), port)
               }
 
             case ACKPrepareAddHostMessage(cmdID, host) =>
