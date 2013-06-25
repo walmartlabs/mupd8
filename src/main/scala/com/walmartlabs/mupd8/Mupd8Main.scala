@@ -534,6 +534,9 @@ class AppRuntime(appID: Int,
                  useNullPool: Boolean = false) extends Logging {
   private val sourceThreads: mutable.ListBuffer[(String, List[java.lang.Thread])] = new mutable.ListBuffer
   val hostUpdateLock = new Object
+  // Buffer for slates dest of which according to candidateRing is not current node anymore 
+  // put definition here prevent null pointer exception when it is called at _ring init 
+  val eventBufferForRingChange: ConcurrentLinkedQueue[PerformerPacket] = new ConcurrentLinkedQueue[PerformerPacket]();
 
   def initMapUpdatePool(poolsize: Int, runtime: AppRuntime, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
     new MapUpdatePool[PerformerPacket](poolsize, runtime, clusterFactory)
@@ -878,8 +881,6 @@ class AppRuntime(appID: Int,
   def getTLS(pid: Int, key: Key) =
     threadVect(pool.getPreferredPoolIndex(PerformerPacket.getKey(pid, key)))
 
-  // Buffer for slates dest of which according to candidateRing is not current node anymore 
-  val eventBufferForRingChange: ConcurrentLinkedQueue[PerformerPacket] = new ConcurrentLinkedQueue[PerformerPacket]();
 }
 
 class MasterNode(args: Array[String], config: AppStaticInfo, shutdown: Boolean) extends Logging {
