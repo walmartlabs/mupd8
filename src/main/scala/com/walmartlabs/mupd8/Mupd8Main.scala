@@ -21,7 +21,7 @@ import scala.collection.immutable
 import scala.collection.mutable
 import scala.collection.breakOut
 import scala.collection.JavaConverters._
-import scala.collection.JavaConversions
+import scala.collection.JavaConversions._
 import scala.util.Sorting
 import scala.util.parsing.json.JSON
 import util.control.Breaks._
@@ -56,7 +56,6 @@ import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
 import com.walmartlabs.mupd8.network.client._
 import com.walmartlabs.mupd8.network.server._
 import com.walmartlabs.mupd8.network.common._
-import scala.collection.JavaConversions._
 import grizzled.slf4j.Logging
 import com.walmartlabs.mupd8.network.common.Decoder.DecodingState._
 import java.nio.ByteBuffer
@@ -842,8 +841,13 @@ class AppRuntime(appID: Int,
 
   // When ring change is done, flush events in buffer into local queue and process/dispatch them
   def flushSlatesInBufferToQueue() {
-    eventBufferForRingChange.foreach(e => pool.putLocal(e.getKey, e))
-    eventBufferForRingChange.clear
+	info("Putting slates in buffer to pool")
+	// Check buf size before call foreach on it
+	// since foreach on empty buf sometime causes exception
+    if (!eventBufferForRingChange.isEmpty) {
+      eventBufferForRingChange.foreach(e => pool.putLocal(e.getKey, e))
+      eventBufferForRingChange.clear
+    }
   }
   
   // Wait current running performer jobs done for prepare ring change  
@@ -970,7 +974,7 @@ object Mupd8Main extends Logging {
               fetchFromSources(app, runtime)
             } else if (p.contains("-to") && p.contains("-sc")) {
               info("start source from cmdLine")
-              runtime.startSource(p("-to").head, p("-sc").head, JavaConversions.seqAsJavaList(p("-sp").head.split(',')))
+              runtime.startSource(p("-to").head, p("-sc").head, seqAsJavaList(p("-sp").head.split(',')))
             }
           } else {
             error("Mupd8Main: no hash ring found, exiting...")
