@@ -14,6 +14,7 @@
  * limitations under the License.
  *
  */
+
 package com.walmartlabs.mupd8
 
 abstract class Message extends Serializable

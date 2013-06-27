@@ -14,9 +14,9 @@
  * limitations under the License.
  *
  */
+
 package com.walmartlabs.mupd8
 import com.walmartlabs.mupd8.Misc._
-
 
 object Mupd8Utils {
 
