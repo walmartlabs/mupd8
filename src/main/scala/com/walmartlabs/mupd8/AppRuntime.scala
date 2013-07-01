@@ -23,6 +23,7 @@ import scala.collection.breakOut
 import scala.collection.JavaConverters._
 import scala.collection.JavaConversions._
 import scala.util.control.Breaks._
+import scala.util.Random
 import grizzled.slf4j.Logging
 import java.net.InetAddress
 import java.util.concurrent._
@@ -37,6 +38,7 @@ class AppRuntime(appID: Int,
                  poolsize: Int,
                  val appStatic: AppStaticInfo,
                  useNullPool: Boolean = false) extends Logging {
+  val rand = new Random(System.currentTimeMillis())
   private val sourceThreads: mutable.ListBuffer[(String, List[java.lang.Thread])] = new mutable.ListBuffer
   val hostUpdateLock = new Object
   // Buffer for slates dest of which according to candidateRing is not current node anymore 
@@ -290,7 +292,8 @@ class AppRuntime(appID: Int,
       flushDirtySlateToCassandra()
       debug("writeThread: flush dirty slates is done")
       val exeuteTime = java.lang.System.currentTimeMillis - startTime
-      val sleepTime = appStatic.cassWriteInterval * 1000 - exeuteTime
+      // add around 2 seconds random sleep time
+      val sleepTime = appStatic.cassWriteInterval * 1000 - exeuteTime + (if (rand.nextBoolean) -(rand.nextInt & 0x7ff) else rand.nextInt & 0x7ff)
       try {
     	if (sleepTime > 0) Thread.sleep(sleepTime)
       } catch {
