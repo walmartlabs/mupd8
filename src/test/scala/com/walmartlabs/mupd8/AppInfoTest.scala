@@ -29,7 +29,7 @@ import com.walmartlabs.mupd8.Mupd8Main._
 @RunWith(classOf[JUnitRunner])
 class AppInfoTest extends FunSuite {
   val cfgDir = this.getClass().getClassLoader().getResource("testapp").getPath()
-  val appInfo = new AppStaticInfo(Some(cfgDir), None, None, false, false, false)
+  val appInfo = new AppStaticInfo(Some(cfgDir), None, None, false, false)
   
   test("test ttl extraction") {
     val k3 = "K3Updater"

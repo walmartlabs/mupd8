@@ -29,7 +29,7 @@ import com.walmartlabs.mupd8.application.statistics.MapWrapper
 import com.walmartlabs.mupd8.application.statistics.UpdateWrapper
 import java.net.InetAddress
 
-class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String], val sysConfig: Option[String], val loadClasses: Boolean, statistics: Boolean, elastic: Boolean) extends Logging {
+class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String], val sysConfig: Option[String], val loadClasses: Boolean, statistics: Boolean) extends Logging {
   assert(appConfig.size == sysConfig.size && appConfig.size != configDir.size)
 
   val config = configDir map { p => new application.Config(new File(p)) } getOrElse new application.Config(sysConfig.get, appConfig.get)
@@ -87,7 +87,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
         case _ => None
       }
       constructor.map { performerConstructor =>
-        val needToCollectStatistics = statistics | elastic
+        val needToCollectStatistics = statistics
         val wrappedPerformer =
           if (statistics) {
             val wrapperClassname = wrapperClass match {
@@ -177,11 +177,11 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
     }
   }
   info("Connect to message server " + (messageServerHost, messageServerPort) + " to decide hostname")
-  val self: Host = if (messageServerHost == None || messageServerPort == None) 
+  val self: Host = if (messageServerHost == None || messageServerPort == None)
                      Host(InetAddress.getLocalHost.getHostAddress, InetAddress.getLocalHost.getHostName)
-                   else 
+                   else
                      new MessageServerClient(messageServerHost.get.asInstanceOf[String], messageServerPort.get.asInstanceOf[Long].toInt).checkIP
-  
+
   info("Host id is " + self)
 
   def internalPort = statusPort + 100;

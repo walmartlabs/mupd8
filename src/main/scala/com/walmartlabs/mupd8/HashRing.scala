@@ -39,7 +39,7 @@ class HashRing(val hash: IndexedSeq[String]) extends Logging {
 }
 
 object HashRing2 {
-  private val N = 2000
+  private val N = 5000
   private val random = new Random(System.currentTimeMillis)
 
   def initFromHosts(hosts: IndexedSeq[Host]): HashRing2 = {

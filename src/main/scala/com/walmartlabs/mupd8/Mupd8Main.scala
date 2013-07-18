@@ -191,7 +191,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntim
     // flags used in ring change
     // started: a job from queue is started
     var started = false;
-    // noticedCandidateRing: a candidate ring from message server is set 
+    // noticedCandidateRing: a candidate ring from message server is set
     // before job from queue is started
     var noticedCandidateRing = false;
 
@@ -605,26 +605,25 @@ object Mupd8Main extends Logging {
                 dyanmic load balancing is enabled, respectively.
         */
         val collectStatistics = if (p.get("-statistics") != None) { p.get("-statistics").get(0).equalsIgnoreCase("true") } else { false }
-        val elastic = if (p.get("-elastic") != None) { p.get("-elastic").get(0).equalsIgnoreCase("true") } else { false }
       } yield {
         //Misc.configureLoggerFromXML("log4j.xml")
-        val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head), !launcher, collectStatistics, elastic)
+        val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head), !launcher, collectStatistics)
         if (launcher) {
           new MasterNode(args, app, shutdown)
         } else {
-          p.get("-pidFile").map(x => writePID(x.head))
-          val runtime = new AppRuntime(0, threads, app)
-          if (runtime.ring != null) {
-            if (app.sources.size > 0) {
-              fetchFromSources(app, runtime)
-            } else if (p.contains("-to") && p.contains("-sc")) {
-              info("start source from cmdLine")
-              runtime.startSource(p("-to").head, p("-sc").head, seqAsJavaList(p("-sp").head.split(',')))
-            }
-          } else {
-            error("Mupd8Main: no hash ring found, exiting...")
-          }
-          info("Init is done")
+	        p.get("-pidFile").map(x => writePID(x.head))
+	        val runtime = new AppRuntime(0, threads, app)
+	        if (runtime.ring != null) {
+	          if (app.sources.size > 0) {
+	            fetchFromSources(app, runtime)
+	          } else if (p.contains("-to") && p.contains("-sc")) {
+	            info("start source from cmdLine")
+	            runtime.startSource(p("-to").head, p("-sc").head, seqAsJavaList(p("-sp").head.split(',')))
+	          }
+	        } else {
+	          error("Mupd8Main: no hash ring found, exiting...")
+	        }
+	        info("Init is done")
         }
       }
     } getOrElse {
