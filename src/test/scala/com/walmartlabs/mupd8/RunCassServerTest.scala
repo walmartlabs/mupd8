@@ -27,8 +27,8 @@ class RunCassServerTest extends FunSuite {
   EmbeddedCassandraServer.start("Keyspace1", "TestApp")
 
   test( "server up") {
-    assert(EmbeddedCassandraServer.cassandraDaemon != None)
-    assert(EmbeddedCassandraServer.cassThread != None)
+    assert(EmbeddedCassandraServer.cassandraDaemon != null)
+    assert(EmbeddedCassandraServer.cassThread != null)
   }
   
   Thread.sleep(30000)

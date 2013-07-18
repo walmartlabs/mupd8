@@ -56,7 +56,7 @@ class JSONObjectBuilder(config : Config, val name : String) extends SlateBuilder
       os.write(s.json.toString().getBytes("utf-8"))
       true
     } catch {
-      case _ => false
+      case _: Throwable => false
     }
   }
 }

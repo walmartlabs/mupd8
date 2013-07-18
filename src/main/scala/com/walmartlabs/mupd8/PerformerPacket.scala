@@ -117,6 +117,7 @@ case class PerformerPacket(pri: Priority,
         case (Updater, true) => execute(appRun.getUnifiedUpdater(pid).update(tls, stream, slateKey.value, Array(event), Array(slate.get)))
         case (Updater, false) => executeUpdate(tls, slate.get)
         case (Mapper, false) => execute(appRun.getMapper(pid).map(tls, stream, slateKey.value, event))
+        case (x, y) => error("PerformerPacket: Wrong pair - " + (x, y))
       }
       tls.perfPacket = null
       tls.startTime = 0

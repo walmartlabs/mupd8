@@ -593,19 +593,20 @@ object Mupd8Main extends Logging {
       val argMap = argParser(syntax, args)
       for {
         p <- argMap
-        val shutdown = p.get("-shutdown") != None
         //            if shutdown || p.size == p.get("-threads").size + p.get("-pidFile").size + p.get("-a").size +
         //                                     p.get("-s").size + p.get("-d").size + syntax.size - 6
         if p.get("-s").size == p.get("-a").size
         if p.get("-s").size != p.get("-d").size
         threads <- excToOption(p.get("-threads").map(_.head.toInt).getOrElse(5))
+      } yield {
+        val shutdown = p.get("-shutdown") != None
         val launcher = p.get("-pidFile") == None
         /*
         COMMENT: Obtain the 'statistics' and 'elastic' flag from the configuration. These flags determine if monitoring and
                 dyanmic load balancing is enabled, respectively.
         */
         val collectStatistics = if (p.get("-statistics") != None) { p.get("-statistics").get(0).equalsIgnoreCase("true") } else { false }
-      } yield {
+
         //Misc.configureLoggerFromXML("log4j.xml")
         val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head), !launcher, collectStatistics)
         if (launcher) {
