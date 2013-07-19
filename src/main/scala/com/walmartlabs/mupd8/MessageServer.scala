@@ -206,7 +206,7 @@ object MessageServer extends Logging {
   var keepRunning = true
   var currentThread: Thread = null // save thread handle for interrupt
 
-  AckedNodeCounter start
+  AckedNodeCounter.start
 
   def main(args: Array[String]) {
     val parser = new OptionParser

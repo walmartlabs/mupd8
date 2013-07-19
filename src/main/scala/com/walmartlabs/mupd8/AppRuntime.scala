@@ -89,7 +89,7 @@ class AppRuntime(appID: Int,
               (currTime - startTimes.sum / startTimes.size) / 500000 // expected exec time is twice the current exec time
             else
               0
-            "\nAvg Queue size: " + poolsizes.map { case (a, b) => a + b }.sum.toFloat / poolsizes.size +
+              "\nAvg Queue size: " + poolsizes.map { case (a, b) => a + b }.sum.toFloat / poolsizes.size +
               "\nAvg Queue size w/o hot conductor: " + (if (nonHotThreads.isEmpty) "0.0" else nonHotThreads.sum / nonHotThreads.size) +
               "\nMin size: " + poolsizes.take(num) +
               "\nMax size: " + poolsizes.reverse.take(num) +
@@ -225,13 +225,13 @@ class AppRuntime(appID: Int,
       if (data._key.size <= 0) {
         error("No key/Invalid key in Source Event " + excToOption(str(data._value)))
       } else {
-        pool.putSource(PerformerPacket(
-          source,
-          performerID,
-          Key(data._key.getBytes()),
-          data._value,
-          stream,
-          this))
+        val packet = PerformerPacket(source,
+                                     performerID,
+                                     Key(data._key.getBytes()),
+                                     data._value,
+                                     stream,
+                                     this)
+        pool.putSource(packet)
       }
     }
 

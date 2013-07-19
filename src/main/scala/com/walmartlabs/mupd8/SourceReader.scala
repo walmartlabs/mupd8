@@ -125,7 +125,7 @@ class JSONSource (args : java.util.List[String]) extends Mupd8Source with Loggin
           None
       }
     })
-    _currentLine isDefined
+    _currentLine.isDefined
   }
 
   @tailrec

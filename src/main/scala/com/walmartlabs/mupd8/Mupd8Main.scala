@@ -497,7 +497,7 @@ class TLS(val appRun: AppRuntime) extends binary.PerformerUtilities with Logging
 
   val unifiedUpdaters: Set[Int] =
     (for (
-      (oo, i) <- objects zipWithIndex;
+      (oo, i) <- objects.zipWithIndex;
       o <- oo;
       if excToOption(o.asInstanceOf[binary.UnifiedUpdater]) != None
     ) yield i)(breakOut)
