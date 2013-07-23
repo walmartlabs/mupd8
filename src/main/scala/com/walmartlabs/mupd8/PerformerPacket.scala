@@ -28,14 +28,15 @@ import org.jboss.netty.buffer.ChannelBuffer
 import org.jboss.netty.buffer.ChannelBuffers
 import org.jboss.netty.handler.codec.oneone.OneToOneEncoder
 
-
 trait MapUpdateClass[T] extends OneToOneEncoder with Runnable with Comparable[T] with java.io.Serializable {
-  def getKey: Any
+  def getKey: PerformerPacketKey
 }
 
 object PerformerPacket {
-  @inline def getKey(pid: Int, key: Key): (Int, Key) = (pid, key)
+  @inline def getKey(pid: Int, key: Key): PerformerPacketKey = new PerformerPacketKey(pid, key)
 }
+
+case class PerformerPacketKey(val pid: Int, val slateKey: Key)
 
 // TODO: create PerformerPacketKey class
 case class PerformerPacket(pri: Priority,
@@ -44,8 +45,7 @@ case class PerformerPacket(pri: Priority,
                            event: Event,
                            stream: String, // This field can be replaced by source performer ID
                            appRun: AppRuntime) extends MapUpdateClass[PerformerPacket] with Logging {
-  val ppKey = (pid, slateKey)
-  override def getKey = ppKey
+  override def getKey = new PerformerPacketKey(pid, slateKey)
 
   override def compareTo(other: PerformerPacket) = pri.compareTo(other.pri)
 

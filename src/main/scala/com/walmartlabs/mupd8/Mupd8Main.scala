@@ -178,7 +178,7 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
 }
 
 class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntime, clusterFactory: (T => Unit) => MUCluster[T]) extends Logging {
-  case class innerCompare(job: T, key: Any) extends Comparable[innerCompare] {
+  case class innerCompare(job: T, key: PerformerPacketKey) extends Comparable[innerCompare] {
     override def compareTo(other: innerCompare) = job.compareTo(other.job)
   }
   val ring = appRun.ring
@@ -331,7 +331,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntim
     threadDataPool(a).queue.put(innerCompare(x, null))
   }
 
-  def putLocal(key: Any, x: T) { // TODO : Fix key : Any??
+  def putLocal(key: PerformerPacketKey, x: T) { // TODO : Fix key : Any??
     val (i1, i2) = getPoolIndices(key)
     lock(i1, i2)
 
@@ -345,7 +345,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntim
     unlock(i1, i2)
   }
 
-  def put(key: Any, x: T) {
+  def put(key: PerformerPacketKey, x: T) {
     val dest = appRun.ring(key)
     if (appRun.appStatic.self.ip.compareTo(dest) == 0
         ||
