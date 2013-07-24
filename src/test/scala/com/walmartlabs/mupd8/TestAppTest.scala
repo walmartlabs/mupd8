@@ -57,7 +57,7 @@ class TestAppTest extends FunSuite {
     // useNullPool == true
     val appRuntime = new AppRuntime(0, numThreads, appStaticInfo, true)
     // start the source
-    appRuntime.startSource(to, sc, JavaConversions.seqAsJavaList(sp.split(',')))
+    appRuntime.startSource("testsource", to, sc, JavaConversions.seqAsJavaList(sp.split(',')))
     Thread.sleep(5000)
     val slate = getURL(k1Slate)
     assert(JSONValue.parse(slate).asInstanceOf[JSONObject].get("counter") == 1000)
@@ -74,7 +74,7 @@ class TestAppTest extends FunSuite {
 
     val appRuntime = new AppRuntime(0, numThreads, appStaticInfo, false)
     // start the source
-    appRuntime.startSource(to, sc, JavaConversions.seqAsJavaList(sp.split(',')))
+    appRuntime.startSource("testsource", to, sc, JavaConversions.seqAsJavaList(sp.split(',')))
     Thread.sleep(30000)
     val slate = getURL(k1Slate)
     assert(JSONValue.parse(slate).asInstanceOf[JSONObject].get("counter") == 1000)

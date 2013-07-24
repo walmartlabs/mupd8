@@ -41,8 +41,8 @@ class AppRuntime(appID: Int,
   val rand = new Random(System.currentTimeMillis())
   private val sourceThreads: mutable.ListBuffer[(String, List[java.lang.Thread])] = new mutable.ListBuffer
   val hostUpdateLock = new Object
-  // Buffer for slates dest of which according to candidateRing is not current node anymore 
-  // put definition here prevent null pointer exception when it is called at _ring init 
+  // Buffer for slates dest of which according to candidateRing is not current node anymore
+  // put definition here prevent null pointer exception when it is called at _ring init
   val eventBufferForRingChange: ConcurrentLinkedQueue[PerformerPacket] = new ConcurrentLinkedQueue[PerformerPacket]();
 
   def initMapUpdatePool(poolsize: Int, runtime: AppRuntime, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
@@ -212,7 +212,9 @@ class AppRuntime(appID: Int,
   })
   slateServer.start
 
-  def startSource(sourcePerformer: String, sourceClassName: String, sourceClassParams: java.util.List[String]) = {
+  // sources started on this node
+  var startedSources: Set[String] = immutable.Set.empty
+  def startSource(sourceName: String, sourcePerformer: String, sourceClassName: String, sourceClassParams: java.util.List[String]) = {
     def initiateWork(performerID: Int, stream: String, data: Mupd8DataPair) = {
       // TODO: Sleep if the pending IO count is in excess of ????
       // Throttle the Source if we have a hot conductor
@@ -280,7 +282,9 @@ class AppRuntime(appID: Int,
           error("SourceThread: hit exception... Swallowed to let main thread continue.", e)
         }
       })
-      t.start() 
+      t.start()
+      // record started source
+      startedSources = startedSources + sourceName
     })
     !threads.isEmpty
   }
@@ -360,8 +364,8 @@ class AppRuntime(appID: Int,
       eventBufferForRingChange.clear
     }
   }
-  
-  // Wait current running performer jobs done for prepare ring change  
+
+  // Wait current running performer jobs done for prepare ring change
   def waitPerformerJobsDone() {
     if (threadVect != null)
       while (pool.threadDataPool.filter(t => t.started && !t.noticedCandidateRing).size > 0) {

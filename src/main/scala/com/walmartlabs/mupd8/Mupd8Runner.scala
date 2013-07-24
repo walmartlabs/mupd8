@@ -20,8 +20,9 @@ package com.walmartlabs.mupd8
 import joptsimple._
 import Misc._
 import scala.collection.JavaConversions
+import grizzled.slf4j.Logging
 
-object Mupd8Runner {
+object Mupd8Runner extends Logging {
   def main(args : Array[String]) {
     val parser = new OptionParser
     val folderOpt  = parser.accepts("d", "REQUIRED: config file folder containing sys and app configs")
@@ -78,28 +79,24 @@ object Mupd8Runner {
     val app = new AppRuntime(0, options.valueOf(threadsOpt), appInfo)
 
     // start the source
-    object O {
-      def unapply(a: Any): Option[org.json.simple.JSONObject] =
-        if (a.isInstanceOf[org.json.simple.JSONObject])
-          Some(a.asInstanceOf[org.json.simple.JSONObject])
-        else None
-    }
     if (appInfo.sources.size > 0) {
       val ssources = JavaConversions.asScalaBuffer(appInfo.sources)
       System.out.println("start source from sys cfg")
-			ssources.foreach {
-        case O(obj) => {
-          if (isLocalHost(obj.get("host").asInstanceOf[String])) {
-            val params = obj.get("parameters").asInstanceOf[java.util.List[String]]
-            app.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
-          }
+      ssources.foreach { source =>
+        if (isLocalHost(source.get("host").asInstanceOf[String])) {
+          val sourceName = source.get("name").asInstanceOf[String]
+          val sourcePerformer = source.get("performer").asInstanceOf[String]
+          val sourceClass = source.get("source").asInstanceOf[String]
+          val params = source.get("parameters").asInstanceOf[java.util.List[String]]
+          app.startSource(sourceName, sourcePerformer, sourceClass, params)
+        } else {
+          error("startSources: error source format - " + source)
         }
-        case _ => {println("Wrong source format")}
       }
-    }
-    else {
+    } else {
       System.out.println("start source from cmdLine")
-      app.startSource(options.valueOf(toOpt),
+      app.startSource("cmdLineSource",
+                      options.valueOf(toOpt),
                       options.valueOf(scOpt),
                       JavaConversions.seqAsJavaList(options.valueOf(spOpt).split(',')))
     }

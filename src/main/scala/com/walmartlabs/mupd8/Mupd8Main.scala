@@ -504,7 +504,7 @@ object Mupd8Main extends Logging {
 	            startSources(app, runtime)
 	          } else if (p.contains("-to") && p.contains("-sc")) {
 	            info("start source from cmdLine")
-	            runtime.startSource(p("-to").head, p("-sc").head, seqAsJavaList(p("-sp").head.split(',')))
+	            runtime.startSource("cmdLineSource", p("-to").head, p("-sc").head, seqAsJavaList(p("-sp").head.split(',')))
 	          }
 	        } else {
 	          error("Mupd8Main: no hash ring found, exiting...")
@@ -523,8 +523,11 @@ object Mupd8Main extends Logging {
     info("start source from sys cfg")
     ssources.foreach { source =>
       if (isLocalHost(source.get("host").asInstanceOf[String])) {
+        val sourceName = source.get("name").asInstanceOf[String]
+        val sourcePerformer = source.get("performer").asInstanceOf[String] 
+        val sourceClass = source.get("source").asInstanceOf[String]
         val params = source.get("parameters").asInstanceOf[java.util.List[String]]
-        runtime.startSource(source.get("performer").asInstanceOf[String], source.get("source").asInstanceOf[String], params)
+        runtime.startSource(sourceName, sourcePerformer, sourceClass, params)
       } else {
         error("startSources: error source format - " + source)
       }

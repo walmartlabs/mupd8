@@ -33,6 +33,7 @@ import java.io.ObjectOutputStream
 import grizzled.slf4j.Logging
 import scala.actors.Actor
 import scala.actors.Actor._
+import scala.collection._
 import java.net.ServerSocket
 
 /* Message Server for whole cluster */
@@ -202,9 +203,12 @@ object MessageServer extends Logging {
   // there may message not requiring no new ring update
   var lastCmdID = -1
   var lastRingUpdateCmdID = -1
-  var ring2: HashRing2 = null // TODO: find a way to init hash ring2
+  var ring2: HashRing2 = null
   var keepRunning = true
   var currentThread: Thread = null // save thread handle for interrupt
+  
+  // save source readers (hostname -> source reader host) 
+  var sources: Map[String, Host] = immutable.Map.empty
 
   AckedNodeCounter.start
 
@@ -251,7 +255,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
   private var lastCmdID = -1;
 
   override def run() {
-    def setCandidateRingAndHostList(hash: IndexedSeq[String], hosts: (IndexedSeq[String], Map[String, String])) {
+    def setCandidateRingAndHostList(hash: IndexedSeq[String], hosts: (IndexedSeq[String], immutable.Map[String, String])) {
       runtime.candidateRing = new HashRing(hash)
       runtime.candidateHostList = hosts
     }
