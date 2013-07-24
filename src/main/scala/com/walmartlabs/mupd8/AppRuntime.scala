@@ -30,7 +30,7 @@ import java.util.concurrent._
 import java.io.ByteArrayOutputStream
 import com.walmartlabs.mupd8.Misc._
 import com.walmartlabs.mupd8.GT._
-import com.walmartlabs.mupd8.miscM._
+import com.walmartlabs.mupd8.Misc._
 import com.walmartlabs.mupd8.Mupd8Type._
 import com.walmartlabs.mupd8.application._
 

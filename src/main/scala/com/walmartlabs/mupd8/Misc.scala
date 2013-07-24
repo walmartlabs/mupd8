@@ -21,9 +21,9 @@ import java.io.InputStream
 import java.net.InetAddress
 import java.net.Inet4Address
 import java.net.NetworkInterface
-
 import scala.collection.JavaConverters._
 import grizzled.slf4j.Logging
+import java.util.concurrent.Semaphore
 
 object Misc extends Logging {
 
@@ -100,10 +100,65 @@ object Misc extends Logging {
     yield iaddr.getHostAddress
   }
 
-  def getIPAddress(hostName : String) : String = { InetAddress.getByName(hostName).getHostAddress() }
-
   def isLocalHost(hostName : String) = {
-    val address = getIPAddress(hostName)
+    val address = InetAddress.getByName(hostName).getHostAddress()
     localIPAddresses.exists(_ == address)
   }
+  
+  val INTMAX: Long = Int.MaxValue.toLong
+  val HASH_BASE: Long = Int.MaxValue.toLong - Int.MinValue.toLong
+
+  // A SlateUpdater receives a SlateValue.slate of type SlateObject.
+  type SlateObject = Object
+
+  def str(a: Array[Byte]) = new String(a)
+
+  def argParser(syntax: Map[String, (Int, String)], args: Array[String]): Option[Map[String, List[String]]] = {
+    var parseSuccess = true
+
+    def next(i: Int): Option[((String, List[String]), Int)] =
+      if (i >= args.length)
+        None
+      else
+        syntax.get(args(i)).filter(i + _._1 < args.length).map { p =>
+          ((args(i), (i + 1 to i + p._1).toList.map(args(_))), i + p._1 + 1)
+        }.orElse { parseSuccess = false; None }
+
+    val result = unfold(0, next).sortWith(_._1 < _._1)
+
+    parseSuccess = parseSuccess && !result.isEmpty && !(result zip result.tail).exists(p => p._1._1 == p._2._1)
+    if (parseSuccess)
+      Some(Map.empty ++ result)
+    else
+      None
+  }
+
+  class Later[T] {
+    var obj: Option[T] = None
+    val sem = new Semaphore(0)
+    def get(): T = { sem.acquire(); obj.get }
+    def set(x: T) { obj = Option(x); sem.release() }
+  }
+
+  def fetchURL(urlStr: String): Option[Array[Byte]] = {
+    excToOptionWithLog {
+      // XXX: URL class doesn't {en,de}code any url string by itself
+      val url = new java.net.URL(urlStr)
+      val urlConn = url.openConnection
+      urlConn.setRequestProperty("connection", "Keep-Alive")
+      urlConn.connect
+      val is: InputStream = urlConn.getInputStream
+      // XXX: as long as we enforce SLATE_CAPACITY, buffer will not overflow
+      val buffer = new java.io.ByteArrayOutputStream(Misc.SLATE_CAPACITY)
+      val bbuf = new Array[Byte](8192)
+      var c = is.read(bbuf, 0, 8192)
+      while (c >= 0) {
+        buffer.write(bbuf, 0, c)
+        c = is.read(bbuf, 0, 8192)
+      }
+      is.close
+      buffer.toByteArray()
+    }
+  }
+
 }

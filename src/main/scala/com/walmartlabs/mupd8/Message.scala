@@ -52,3 +52,15 @@ case class UpdateRing(cmdID: Int) extends MessageWACK
 // To MessageServerClient
 case class ACKNodeJoin(node: String) extends MessageWACK   // node: ip
 case class ACKNodeRemove(node: String) extends MessageWACK // node: ip
+
+//
+// Start source readers
+// 2 cases:
+// 1. Performer node according to config file asks message server if  it can start certain source
+// 2. Message server dictate to performer node to start certain source
+//
+// To message server
+case class AskPermitToStartSourceMessage(name: String) extends MessageWACK
+
+// To performer node
+case class StartSourceMessage(name: String) extends MessageWACK

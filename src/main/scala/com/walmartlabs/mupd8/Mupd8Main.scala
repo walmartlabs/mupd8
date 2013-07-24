@@ -60,122 +60,7 @@ import com.walmartlabs.mupd8.network.common.Decoder.DecodingState._
 import java.nio.ByteBuffer
 import java.io.ByteArrayOutputStream
 
-object miscM extends Logging {
-
-  val SLATE_CAPACITY = 1048576 // 1M size
-  val INTMAX: Long = Int.MaxValue.toLong
-  val HASH_BASE: Long = Int.MaxValue.toLong - Int.MinValue.toLong
-
-  // A SlateUpdater receives a SlateValue.slate of type SlateObject.
-  type SlateObject = Object
-
-  def str(a: Array[Byte]) = new String(a)
-
-  def argParser(syntax: Map[String, (Int, String)], args: Array[String]): Option[Map[String, List[String]]] = {
-    var parseSuccess = true
-
-    def next(i: Int): Option[((String, List[String]), Int)] =
-      if (i >= args.length)
-        None
-      else
-        syntax.get(args(i)).filter(i + _._1 < args.length).map { p =>
-          ((args(i), (i + 1 to i + p._1).toList.map(args(_))), i + p._1 + 1)
-        }.orElse { parseSuccess = false; None }
-
-    val result = unfold(0, next).sortWith(_._1 < _._1)
-
-    parseSuccess = parseSuccess && !result.isEmpty && !(result zip result.tail).exists(p => p._1._1 == p._2._1)
-    if (parseSuccess)
-      Some(Map.empty ++ result)
-    else
-      None
-  }
-
-  class Later[T] {
-    var obj: Option[T] = None
-    val sem = new Semaphore(0)
-    def get(): T = { sem.acquire(); obj.get }
-    def set(x: T) { obj = Option(x); sem.release() }
-  }
-
-  def fetchURL(urlStr: String): Option[Array[Byte]] = {
-    excToOptionWithLog {
-      // XXX: URL class doesn't {en,de}code any url string by itself
-      val url = new java.net.URL(urlStr)
-      val urlConn = url.openConnection
-      urlConn.setRequestProperty("connection", "Keep-Alive")
-      urlConn.connect
-      val is: InputStream = urlConn.getInputStream
-      // XXX: as long as we enforce SLATE_CAPACITY, buffer will not overflow
-      val buffer = new java.io.ByteArrayOutputStream(Misc.SLATE_CAPACITY)
-      val bbuf = new Array[Byte](8192)
-      var c = is.read(bbuf, 0, 8192)
-      while (c >= 0) {
-        buffer.write(bbuf, 0, c)
-        c = is.read(bbuf, 0, 8192)
-      }
-      is.close
-      buffer.toByteArray()
-    }
-  }
-
-}
-
 case class Host(ip: String, hostname: String)
-
-import miscM._
-
-class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
-                                        val port: Int,
-                                        encoder: OneToOneEncoder,
-                                        decoderFactory: () => ReplayingDecoder[network.common.Decoder.DecodingState],
-                                        onReceipt: T => Unit,
-                                        msClient: MessageServerClient = null) extends Logging {
-  private val callableFactory = new Callable[ReplayingDecoder[network.common.Decoder.DecodingState]] {
-    override def call() = decoderFactory()
-  }
-
-  // hosts can be updated at runtime
-  def hosts = app.systemHosts
-
-  val server = new Server(port, new Listener() {
-    override def messageReceived(packet: AnyRef): Boolean = {
-      val destObj = packet.asInstanceOf[T]
-      trace("Server receives: " + destObj)
-      onReceipt(destObj)
-      true
-    }
-  }, encoder, callableFactory)
-
-  val client = new Client(new Listener() {
-    override def messageReceived(packet: AnyRef): Boolean = {
-      error("Client should not receive messages")
-      assert(false)
-      true
-    }
-  }, encoder, callableFactory)
-  client.init()
-
-  def init() {
-    server.start()
-    hosts.filterKeys(_.compareTo(app.self.ip) != 0).foreach (host => client.addEndpoint(host._1, port))
-  }
-
-  // Add host to connection map
-  def addHost(host: String): Unit = if (host.compareTo(app.self.ip) != 0) client.addEndpoint(host, port)
-
-  // Remove host from connection map
-  def removeHost(host: String): Unit = client.removeEndpoint(host)
-
-  def send(dest: String, obj: T) {
-    if (!client.send(dest, obj)) {
-      error("Failed to send slate to destination " + dest)
-      if (msClient != null) {
-        msClient.sendMessage(NodeRemoveMessage(Host(dest, app.systemHosts(dest))))
-      }
-    }
-  }
-}
 
 class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntime, clusterFactory: (T => Unit) => MUCluster[T]) extends Logging {
   case class innerCompare(job: T, key: PerformerPacketKey) extends Comparable[innerCompare] {
@@ -616,7 +501,7 @@ object Mupd8Main extends Logging {
 	        val runtime = new AppRuntime(0, threads, app)
 	        if (runtime.ring != null) {
 	          if (app.sources.size > 0) {
-	            fetchFromSources(app, runtime)
+	            startSources(app, runtime)
 	          } else if (p.contains("-to") && p.contains("-sc")) {
 	            info("start source from cmdLine")
 	            runtime.startSource(p("-to").head, p("-sc").head, seqAsJavaList(p("-sp").head.split(',')))
@@ -633,23 +518,16 @@ object Mupd8Main extends Logging {
     }
   }
 
-  def fetchFromSources(app: AppStaticInfo, runtime: AppRuntime): Unit = {
+  def startSources(app: AppStaticInfo, runtime: AppRuntime): Unit = {
     val ssources = app.sources.asScala
     info("start source from sys cfg")
-    object O {
-      def unapply(a: Any): Option[org.json.simple.JSONObject] =
-        if (a.isInstanceOf[org.json.simple.JSONObject])
-          Some(a.asInstanceOf[org.json.simple.JSONObject])
-        else None
-    }
-    ssources.foreach {
-      case O(obj) => {
-        if (isLocalHost(obj.get("host").asInstanceOf[String])) {
-          val params = obj.get("parameters").asInstanceOf[java.util.List[String]]
-          runtime.startSource(obj.get("performer").asInstanceOf[String], obj.get("source").asInstanceOf[String], params)
-        }
+    ssources.foreach { source =>
+      if (isLocalHost(source.get("host").asInstanceOf[String])) {
+        val params = source.get("parameters").asInstanceOf[java.util.List[String]]
+        runtime.startSource(source.get("performer").asInstanceOf[String], source.get("source").asInstanceOf[String], params)
+      } else {
+        error("startSources: error source format - " + source)
       }
-      case _ => { error("Wrong source format") }
     }
   }
 

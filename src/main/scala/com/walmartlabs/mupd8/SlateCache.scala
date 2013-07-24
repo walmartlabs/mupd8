@@ -17,7 +17,7 @@
 
 package com.walmartlabs.mupd8
 
-import com.walmartlabs.mupd8.miscM._
+import com.walmartlabs.mupd8.Misc._
 import com.walmartlabs.mupd8.GT._
 import com.walmartlabs.mupd8.application.binary
 import grizzled.slf4j.Logging

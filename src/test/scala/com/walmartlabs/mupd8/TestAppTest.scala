@@ -23,7 +23,7 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest.FunSuite
 import org.json.simple._
 import com.walmartlabs.mupd8.Mupd8Main._
-import com.walmartlabs.mupd8.miscM._
+import com.walmartlabs.mupd8.Misc._
 import com.walmartlabs.mupd8.GT._
 import java.util.ArrayList
 import java.util.Arrays

@@ -26,7 +26,7 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest.FunSuite
 import org.xerial.snappy.Snappy
 
-import com.walmartlabs.mupd8.miscM._
+import com.walmartlabs.mupd8.Misc._
 import com.walmartlabs.mupd8.Misc._
 import com.walmartlabs.mupd8.compression.CompressionFactory
 import com.walmartlabs.mupd8.compression.CompressionService

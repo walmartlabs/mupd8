@@ -22,7 +22,7 @@ import com.walmartlabs.mupd8.network.common.Decoder.DecodingState._
 import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
 import com.walmartlabs.mupd8.network.common._
 import com.walmartlabs.mupd8.GT._
-import com.walmartlabs.mupd8.miscM._
+import com.walmartlabs.mupd8.Misc._
 import org.jboss.netty.channel.ChannelHandlerContext
 import org.jboss.netty.channel.Channel
 import org.jboss.netty.buffer.ChannelBuffer
