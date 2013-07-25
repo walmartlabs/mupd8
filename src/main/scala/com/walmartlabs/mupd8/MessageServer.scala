@@ -34,6 +34,7 @@ import grizzled.slf4j.Logging
 import scala.actors.Actor
 import scala.actors.Actor._
 import scala.collection._
+import scala.collection.JavaConverters._
 import java.net.ServerSocket
 
 /* Message Server for whole cluster */
@@ -133,7 +134,7 @@ object MessageServer extends Logging {
               info("MessageServer: AllNodesACKedPrepareMessage received, cmdID = " + cmdID)
               // send update ring message to Nodes
               SendNewRing ! SendMessageToNode(cmdID, ring2.iPs, port + 1, UpdateRing(cmdID), port)
-              
+
             case IPCHECKDONE =>
               info("MessageServer: IP CHECK received")
 
@@ -206,9 +207,10 @@ object MessageServer extends Logging {
   var ring2: HashRing2 = null
   var keepRunning = true
   var currentThread: Thread = null // save thread handle for interrupt
-  
-  // save source readers (hostname -> source reader host) 
-  var sources: Map[String, Host] = immutable.Map.empty
+
+  // save source readers
+  var allSources: Map[String, Source] = Map.empty // (source name -> source)
+  var startedSources: Map[String, Host] = null // (source name -> started host)
 
   AckedNodeCounter.start
 
@@ -218,7 +220,7 @@ object MessageServer extends Logging {
     val sysOpt     = parser.accepts("s", "DEPRECATED: sys config file").withRequiredArg().ofType(classOf[String])
     val appOpt     = parser.accepts("a", "DEPRECATED: app config file").withRequiredArg().ofType(classOf[String])
     val pidOpt     = parser.accepts("pidFile", "mupd8 process PID file").withRequiredArg().ofType(classOf[String]).defaultsTo("messageserver.pid")
-    val options = parser.parse(args : _*)
+    val options    = parser.parse(args : _*)
 
     var config : application.Config = null
     if (options.has(folderOpt)) {
@@ -236,10 +238,23 @@ object MessageServer extends Logging {
     }
     val host = Option(config.getScopedValue(Array("mupd8", "messageserver", "host")))
     val port = Option(config.getScopedValue(Array("mupd8", "messageserver", "port")))
+    val sources = Option(config.getScopedValue(Array("mupd8", "sources"))).map {
+      x => x.asInstanceOf[java.util.List[org.json.simple.JSONObject]]
+    }.getOrElse(new java.util.ArrayList[org.json.simple.JSONObject]()).asScala
 
     if (options.has(pidOpt)) Misc.writePID(options.valueOf(pidOpt))
 
     if (Misc.isLocalHost(host.get.asInstanceOf[String])) {
+      // save all listed sources
+      sources.foreach { source =>
+        val sourceName = source.get("name").asInstanceOf[String]
+        val sourcePerformer = source.get("performer").asInstanceOf[String]
+        val sourceClass = source.get("source").asInstanceOf[String]
+        val params = source.get("parameters").asInstanceOf[java.util.List[String]].asScala.toList
+        allSources += (sourceName -> new Source(sourceName, sourceClass, sourcePerformer, params))
+      }
+
+      // start server thread
       val server = new MessageServerThread(port.get.asInstanceOf[Number].intValue())
       server.daemonize
       server.run
