@@ -87,9 +87,18 @@ class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Int
       info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
       val socket = new Socket(serverHost, serverPort)
       val out = new ObjectOutputStream(socket.getOutputStream)
+      val in = new ObjectInputStream(socket.getInputStream)
       socket.setSoTimeout(timeout)
       info("LocalMessageServerClient: connected")
       out.writeObject(msg)
+      msg match {
+        case m: MessageWOACK =>
+
+        case m: MessageWACK =>
+          val ack = in.readObject
+          info("LocalMessageServerClient: received " + ack)
+      }
+      in.close
       out.close
       socket.close
       true

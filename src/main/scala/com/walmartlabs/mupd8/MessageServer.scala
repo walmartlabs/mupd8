@@ -151,6 +151,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
             info("MessageServer: IP CHECK received")
 
           case AskPermitToStartSourceMessage(sourceName, host) =>
+            out.writeObject(ACKMessage)
             if (!startedSources.contains(sourceName)) {
               // if source is not started, send start message
               // Connect source with hostToStart. If source is not accessible from
@@ -232,7 +233,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
   var ring2: HashRing2 = null
   var keepRunning = true
   // save started source readers
-  var startedSources: Map[String, String] = null // (source name -> source host machine ip)
+  var startedSources: Map[String, String] = Map.empty // (source name -> source host machine ip)
 
   AckedNodeCounter.start
 }
@@ -262,11 +263,11 @@ object MessageServer extends Logging {
       System.exit(1)
     }
     val host = Option(config.getScopedValue(Array("mupd8", "messageserver", "host"))).getOrElse("").asInstanceOf[String]
-    val port = Option(config.getScopedValue(Array("mupd8", "messageserver", "port"))).getOrElse("").asInstanceOf[String]
+    val port = Option(config.getScopedValue(Array("mupd8", "messageserver", "port"))).getOrElse(-1).asInstanceOf[Long].toInt
     val sources = Option(config.getScopedValue(Array("mupd8", "sources"))).map {
       x => x.asInstanceOf[java.util.List[org.json.simple.JSONObject]]
     }.getOrElse(new java.util.ArrayList[org.json.simple.JSONObject]()).asScala
-    if (host.isEmpty || port.isEmpty) {
+    if (host.isEmpty || port < 0) {
       error("MessageServer: host or port is None - " + (host, port))
       System.exit(-1)
     }
@@ -313,6 +314,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
       try {
         val channel = serverSocketChannel.accept()
         val in = new ObjectInputStream(Channels.newInputStream(channel))
+        val out = new ObjectOutputStream(Channels.newOutputStream(channel))
         val msg = in.readObject
         info("LocalMessageServer: Received " + msg)
         msg match {
@@ -375,11 +377,13 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             }
 
           case StartSourceMessage(sourceName) =>
+            out.writeObject(ACKMessage)
             runtime.startSource(sourceName)
 
           case _ => error("LocalMessageServer: Not a valid msg, " + msg.toString)
         }
         in.close
+        out.close
         channel.close
       } catch {
         case e : Exception => error("LocalMessageServer exception", e)

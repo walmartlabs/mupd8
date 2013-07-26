@@ -61,8 +61,7 @@ case class ACKNodeRemove(node: String) extends MessageWACK // node: ip
 //
 // To message server
 case class AskPermitToStartSourceMessage(name: String, host: Host) extends MessageWACK
-case class ACKStartSourceMessage(name: String) extends MessageWOACK
+case class ACKMessage() extends MessageWOACK
 
 // To performer node
 case class StartSourceMessage(name: String) extends MessageWACK
-case class ACKAskPermitToStartSourceMessage(name: String) extends MessageWOACK

@@ -49,8 +49,5 @@ class MessageServerTest extends FunSuite {
     println("MessageServer Test is done")
   }
 
-  // test("LocalMessageServer/Client") {
-  // }
-
 }
 

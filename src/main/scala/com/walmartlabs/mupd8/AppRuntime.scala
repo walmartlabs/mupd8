@@ -215,7 +215,7 @@ class AppRuntime(appID: Int,
   // name set of sources started on this node
   var startedSources: Set[String] = immutable.Set.empty
   def startSource(sourceName: String): Boolean = {
-    val source = appStatic.sources.asScala.find(s => isLocalHost(s.get("name").asInstanceOf[String]))
+    val source = appStatic.sources.asScala.toList.find(s => sourceName.compareTo(s.get("name").asInstanceOf[String]) == 0 && isLocalHost(s.get("host").asInstanceOf[String]))
     source match {
       case Some(source: org.json.simple.JSONObject) =>
         val sourcePerformer = source.get("performer").asInstanceOf[String]
