@@ -29,11 +29,11 @@ import java.io.ObjectOutputStream
 import grizzled.slf4j.Logging
 
 class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 2000) extends Logging {
-  
+
   def sendMessage(msg: Message): Boolean = synchronized {
     try {
       debug("MessageServerClient: send " + msg + " to Message Server: " + serverHost + ", " + serverPort)
-      val socket = new Socket(serverHost, serverPort)
+      val socket = new Socket(serverHost, serverPort) // TODO: replace socket with channel apis
       val out = new ObjectOutputStream(socket.getOutputStream)
       val in = new ObjectInputStream(socket.getInputStream)
       socket.setSoTimeout(timeout)

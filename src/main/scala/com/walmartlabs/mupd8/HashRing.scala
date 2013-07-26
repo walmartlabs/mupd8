@@ -78,6 +78,11 @@ object HashRing2 {
 // hostCountMap: (ip -> slot # of ip); stat map for add and remove's convenience
 class HashRing2 private (val iPs: IndexedSeq[String], val hash: IndexedSeq[String], val ipHostMap: Map[String, String], val hostCountMap: Map[String, Int]) extends Serializable with Logging {
 
+  // pick up hosts
+  def apply(key : Any): String = {
+    hash(((key.hashCode * 997 + Int.MaxValue.toLong) % HashRing2.N).toInt)
+  }
+
   /**
    * Remove a target [0, numTargets) (so apply will never return it again).
    * Algo: Find all slots maps to hostToRemove, assign those slots to rest

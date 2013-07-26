@@ -50,11 +50,11 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   // Remove host from connection map
   def removeHost(host: String): Unit = client.removeEndpoint(host)
 
-  def send(dest: String, obj: T) {
-    if (!client.send(dest, obj)) {
-      error("Failed to send slate to destination " + dest)
+  def send(destip: String, obj: T) {
+    if (!client.send(destip, obj)) {
+      error("Failed to send slate to destination " + destip)
       if (msClient != null) {
-        msClient.sendMessage(NodeRemoveMessage(Host(dest, app.systemHosts(dest))))
+        msClient.sendMessage(NodeRemoveMessage(destip))
       }
     }
   }

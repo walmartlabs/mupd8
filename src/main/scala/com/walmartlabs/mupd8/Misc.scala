@@ -24,6 +24,7 @@ import java.net.NetworkInterface
 import scala.collection.JavaConverters._
 import grizzled.slf4j.Logging
 import java.util.concurrent.Semaphore
+import java.util.Arrays
 
 object Misc extends Logging {
 
@@ -104,7 +105,7 @@ object Misc extends Logging {
     val address = InetAddress.getByName(hostName).getHostAddress()
     localIPAddresses.exists(_ == address)
   }
-  
+
   val INTMAX: Long = Int.MaxValue.toLong
   val HASH_BASE: Long = Int.MaxValue.toLong - Int.MinValue.toLong
 
@@ -160,5 +161,38 @@ object Misc extends Logging {
       buffer.toByteArray()
     }
   }
-
 }
+
+object Mupd8Type extends Enumeration {
+  type Mupd8Type = Value
+  val Source, Mapper, Updater = Value
+}
+
+
+object GT {
+
+  // wrap up Array[Byte] with Key since Array[Byte]'s comparison doesn't
+  // compare array's content which is needed in mupd8
+  case class Key(val value: Array[Byte]) {
+
+  override def hashCode() = Arrays.hashCode(value)
+
+    override def equals(other: Any) = other match {
+      case that: Key => Arrays.equals(that.value, value)
+      case _ => false
+    }
+
+    override def toString() = {
+      new String(value)
+    }
+  }
+
+  type Event = Array[Byte]
+  type Priority = Int
+
+  val SOURCE_PRIORITY: Priority = 96 * 1024
+  val NORMAL_PRIORITY: Priority = 64 * 1024
+  val SYSTEM_PRIORITY: Priority = 0
+  type TypeSig = (Int, Int) // AppID, PerformerID
+}
+

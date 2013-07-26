@@ -150,7 +150,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
   val slateCacheCount = Option(config.getScopedValue(Array("mupd8", "slate_store", "slate_cache_count"))) map { _.asInstanceOf[Number].intValue() } getOrElse 1000
   val compressionCodec = Option(config.getScopedValue(Array("mupd8", "slate_store", "compression"))).getOrElse("gzip").asInstanceOf[String].toLowerCase
 
-  var systemHosts: scala.collection.immutable.Map[String, String] = null
+  var systemHosts: scala.collection.immutable.Map[String, String] = null // Map[ip -> hostname]
   val javaClassPath = Option(config.getScopedValue(Array("mupd8", "java_class_path"))).getOrElse("share/java/*").asInstanceOf[String]
   val javaSetting = Option(config.getScopedValue(Array("mupd8", "java_setting"))).getOrElse("-Xmx200M -Xms200M").asInstanceOf[String]
 

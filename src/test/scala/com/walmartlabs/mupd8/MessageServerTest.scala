@@ -30,9 +30,8 @@ class MessageServerTest extends FunSuite {
   test("MessageServer/Client add/remove") {
     val random = new Random(System.currentTimeMillis)
 
-    val server = new MessageServer.MessageServerThread(4568, true)
-    val sThread = new Thread(server, "Message Server Thread")
-    sThread.start
+    val server = new MessageServer(4568, Map.empty, true)
+    server.start
     Thread.sleep(500)
 
     val client = new MessageServerClient("localhost", 4568, 50)
@@ -40,12 +39,12 @@ class MessageServerTest extends FunSuite {
     val nodes = Vector.range(0, 5) map (i => Host("192.168.1." + i.toString, "machine" + (random.nextInt(10) + i * 10) + ".example.com"))
     for (node <- nodes) client.sendMessage(NodeJoinMessage(node))
     Thread.sleep(1000)
-    assert(MessageServer.ring2.size == 5)
-    for (node <- nodes) client.sendMessage(NodeRemoveMessage(node))
+    assert(server.ring2.size == 5)
+    for (node <- nodes) client.sendMessage(NodeRemoveMessage(node.ip))
     Thread.sleep(1000)
-    assert(MessageServer.ring2 == null)
-    assert(MessageServer.lastCmdID == 9)
-    assert(MessageServer.lastCmdID != 11)
+    assert(server.ring2 == null)
+    assert(server.lastCmdID == 9)
+    assert(server.lastCmdID != 11)
     server.shutdown
     println("MessageServer Test is done")
   }

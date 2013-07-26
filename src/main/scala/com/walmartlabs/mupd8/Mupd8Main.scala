@@ -59,6 +59,9 @@ import grizzled.slf4j.Logging
 import com.walmartlabs.mupd8.network.common.Decoder.DecodingState._
 import java.nio.ByteBuffer
 import java.io.ByteArrayOutputStream
+import GT._
+import scala.actors.Actor
+import Mupd8Type._
 
 case class Host(ip: String, hostname: String)
 
@@ -276,41 +279,6 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntim
 
 }
 
-object GT {
-
-  // wrap up Array[Byte] with Key since Array[Byte]'s comparison doesn't
-  // compare array's content which is needed in mupd8
-  case class Key(val value: Array[Byte]) {
-
-	override def hashCode() = Arrays.hashCode(value)
-
-    override def equals(other: Any) = other match {
-      case that: Key => Arrays.equals(that.value, value)
-      case _ => false
-    }
-
-    override def toString() = {
-      new String(value)
-    }
-  }
-
-  type Event = Array[Byte]
-  type Priority = Int
-
-  val source: Priority = 96 * 1024
-  val normal: Priority = 64 * 1024
-  val system: Priority = 0
-  type TypeSig = (Int, Int) // AppID, PerformerID
-}
-
-import GT._
-
-object Mupd8Type extends Enumeration {
-  type Mupd8Type = Value
-  val Source, Mapper, Updater = Value
-}
-import Mupd8Type._
-
 case class Performer(name: String,
   pubs: Vector[String],
   subs: Vector[String],
@@ -392,7 +360,7 @@ class TLS(val appRun: AppRuntime) extends binary.PerformerUtilities with Logging
     appRun.appStatic.edgeName2IDs.get(stream).map(_.foreach(
       pid => {
         trace("TLS::publish: Publishing to " + appRun.appStatic.performers(pid).name)
-        val packet = PerformerPacket(normal, pid, Key(key), event, stream, appRun)
+        val packet = PerformerPacket(NORMAL_PRIORITY, pid, Key(key), event, stream, appRun)
         if (appRun.appStatic.performers(pid).mtype == Mapper)
           appRun.pool.put(packet)  // publish to mapper?
         else
@@ -518,18 +486,26 @@ object Mupd8Main extends Logging {
     }
   }
 
-  def startSources(app: AppStaticInfo, runtime: AppRuntime): Unit = {
+  def startSources(app: AppStaticInfo, runtime: AppRuntime) {
+    class AskPermit(sourceName: String) extends Actor {
+      def act() {
+        if (!app.messageServerHost.isDefined || !app.messageServerPort.isDefined) {
+          error("startSource: Host or Port is None, " + (app.messageServerHost, app.messageServerPort))
+          exit()
+        }
+
+        val client: MessageServerClient = new MessageServerClient(app.messageServerHost.get.asInstanceOf[String], app.messageServerPort.get.asInstanceOf[Number].intValue(), 1000)
+        client.sendMessage(AskPermitToStartSourceMessage(sourceName, app.self))
+      }
+    }
+
     val ssources = app.sources.asScala
     info("start source from sys cfg")
     ssources.foreach { source =>
       if (isLocalHost(source.get("host").asInstanceOf[String])) {
         val sourceName = source.get("name").asInstanceOf[String]
-        val sourcePerformer = source.get("performer").asInstanceOf[String] 
-        val sourceClass = source.get("source").asInstanceOf[String]
-        val params = source.get("parameters").asInstanceOf[java.util.List[String]]
-        runtime.startSource(sourceName, sourcePerformer, sourceClass, params)
-      } else {
-        error("startSources: error source format - " + source)
+        val askPermit = new AskPermit(sourceName)
+        askPermit.start
       }
     }
   }

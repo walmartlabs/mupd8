@@ -112,7 +112,7 @@ class AppRuntime(appID: Int,
           if (slate == None) {
             // TODO: send remove messageServer
             warn("Can't reach dest " + dest + "; going to report " + dest + " missing.")
-            msClient.sendMessage(NodeRemoveMessage(Host(dest, appStatic.systemHosts(dest))))
+            msClient.sendMessage(NodeRemoveMessage(dest))
           }
           slate
         }
@@ -212,9 +212,23 @@ class AppRuntime(appID: Int,
   })
   slateServer.start
 
-  // sources started on this node
+  // name set of sources started on this node
   var startedSources: Set[String] = immutable.Set.empty
-  def startSource(sourceName: String, sourcePerformer: String, sourceClassName: String, sourceClassParams: java.util.List[String]) = {
+  def startSource(sourceName: String): Boolean = {
+    val source = appStatic.sources.asScala.find(s => isLocalHost(s.get("name").asInstanceOf[String]))
+    source match {
+      case Some(source: org.json.simple.JSONObject) =>
+        val sourcePerformer = source.get("performer").asInstanceOf[String]
+        val sourceClass = source.get("source").asInstanceOf[String]
+        val params = source.get("parameters").asInstanceOf[java.util.List[String]]
+        startSource(sourceName, sourcePerformer, sourceClass, params)
+      case _ =>
+        error("Source(" + sourceName + ") doesn't exist")
+        false
+    }
+  }
+
+  def startSource(sourceName: String, sourcePerformer: String, sourceClassName: String, sourceClassParams: java.util.List[String]): Boolean = {
     def initiateWork(performerID: Int, stream: String, data: Mupd8DataPair) = {
       // TODO: Sleep if the pending IO count is in excess of ????
       // Throttle the Source if we have a hot conductor
@@ -227,19 +241,19 @@ class AppRuntime(appID: Int,
       if (data._key.size <= 0) {
         error("No key/Invalid key in Source Event " + excToOption(str(data._value)))
       } else {
-        val packet = PerformerPacket(source,
-                                     performerID,
-                                     Key(data._key.getBytes()),
-                                     data._value,
-                                     stream,
-                                     this)
+        val packet = PerformerPacket(SOURCE_PRIORITY,
+          performerID,
+          Key(data._key.getBytes()),
+          data._value,
+          stream,
+          this)
         pool.putSource(packet)
       }
     }
 
     class SourceThread(sourceClassName: String,
-                       sourceParams: java.util.List[String],
-                       continuation: Mupd8DataPair => Unit) extends Runnable with Logging {
+      sourceParams: java.util.List[String],
+      continuation: Mupd8DataPair => Unit) extends Runnable with Logging {
       override def run() = {
         breakable {
           val cls = Class.forName(sourceClassName)
@@ -272,7 +286,7 @@ class AppRuntime(appID: Int,
     ) yield (new java.lang.Thread(input, "SourceReader:" + sourcePerformer + ":" + (sourceClassParams.asScala mkString ":")))
 
     if (!threads.isEmpty)
-      sourceThreads += ((sourcePerformer, threads))
+      sourceThreads += (sourcePerformer -> threads)
     else
       error("Unable to set up source for " + sourcePerformer + " server class " + sourceClassName + " with params: " + sourceClassParams)
 
