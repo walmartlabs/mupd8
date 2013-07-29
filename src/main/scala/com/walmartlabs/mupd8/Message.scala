@@ -44,8 +44,8 @@ case class PrepareAddHostMessage(cmdID: Int, addedHost: Host, hashInNewRing: Ind
 // hashInNewRing: ip address array used as hashtable in new hash ring
 // iPsInNewRing: all ip addresses in new ring
 // iPHostMap: ip address to host name map
-case class PrepareRemoveHostMessage(cmdID: Int, removedHost: Host, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
-  override def toString() = "PrepareRemoveHostMessage(" + cmdID + ", " + removedHost + ")"
+case class PrepareRemoveHostMessage(cmdID: Int, removedIP: String, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
+  override def toString() = "PrepareRemoveHostMessage(" + cmdID + ", " + removedIP + ")"
 }
 case class UpdateRing(cmdID: Int) extends MessageWACK
 

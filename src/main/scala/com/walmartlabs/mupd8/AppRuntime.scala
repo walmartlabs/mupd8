@@ -104,14 +104,14 @@ class AppRuntime(appID: Int,
       } else {
         val key: (String, Key) = (tok(4), Key(tok(5).map(_.toByte).toArray))
         val poolKey = PerformerPacket.getKey(appStatic.performerName2ID(key._1), key._2)
-        val dest = InetAddress.getByName(ring(poolKey)).getHostName
+        val dest = ring(poolKey)
         if (appStatic.self.ip.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
           getSlate(key)
         else {
           val slate = fetchURL("http://" + dest + ":" + (appStatic.statusPort + 300) + s)
           if (slate == None) {
             // TODO: send remove messageServer
-            warn("Can't reach dest " + dest + "; going to report " + dest + " missing.")
+            warn("Can't reach dest(" + dest + "); going to report " + dest + " fails.")
             msClient.sendMessage(NodeRemoveMessage(dest))
           }
           slate
@@ -215,7 +215,7 @@ class AppRuntime(appID: Int,
   // name set of sources started on this node
   var startedSources: Set[String] = immutable.Set.empty
   def startSource(sourceName: String): Boolean = {
-    val source = appStatic.sources.asScala.toList.find(s => sourceName.compareTo(s.get("name").asInstanceOf[String]) == 0 && isLocalHost(s.get("host").asInstanceOf[String]))
+    val source = appStatic.sources.asScala.toList.find(s => sourceName.compareTo(s.get("name").asInstanceOf[String]) == 0)
     source match {
       case Some(source: org.json.simple.JSONObject) =>
         val sourcePerformer = source.get("performer").asInstanceOf[String]

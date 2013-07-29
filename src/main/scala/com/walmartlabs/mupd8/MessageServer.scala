@@ -62,15 +62,25 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
             info("MessageServer: received node remove message: " + msg)
             // check if node is already removed
             if (!ring2.iPs.contains(ipToRemove)) {
-              info("MessageServer: NodeRemoveMessage - " + ring2(ipToRemove) + " is already removed in message server")
+              info("MessageServer: NodeRemoveMessage - " + ipToRemove + " is already removed in message server")
               out.writeObject(ACKNodeRemove(ipToRemove))
             } else {
+              lastCmdID += 1
+              lastRingUpdateCmdID = lastCmdID
+              // send ACK to reported
+              out.writeObject(ACKNodeRemove(ipToRemove))
+              // update hash ring
+              val newHostList: IndexedSeq[String] = ring2.iPs filter (host => host.compareTo(ipToRemove) != 0)
+              ring2 = ring2.remove(newHostList, ipToRemove)
+
+              // update source
               // check if hostToRemove has source on it
               startedSources.foreach { source =>
                 if (source._2.compareTo(ipToRemove) == 0) {
                   val sourceName = source._1
                   // pick another host from ring to start source on
                   val ipToStart = ring2(sourceName)
+                  info("NodeRemoveMessage: pick " + ring2.ipHostMap(ipToStart) + " to start source" + (sourceName))
 
                   // if source is not started, send start message
                   // Connect source with hostToStart. If source is not accessible from
@@ -81,14 +91,6 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
                 }
               }
 
-              lastCmdID += 1
-              lastRingUpdateCmdID = lastCmdID
-              // send ACK to reported
-              out.writeObject(ACKNodeRemove(ipToRemove))
-              // update hash ring
-              val newHostList: IndexedSeq[String] = ring2.iPs filter (host => host.compareTo(ipToRemove) != 0)
-              ring2 = if (!ring2.iPs.contains(ipToRemove)) ring2 // if ring2 doesn't contain this node, do nothing
-              else ring2.remove(newHostList, ipToRemove)
               if (!isTest) {
                 // if it is unit test, don't send new ring to all nodes
                 // Local message server's port is always port + 1
@@ -101,7 +103,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
                 AckedNodeCounter ! StartCounter(lastCmdID, ring2.iPs, "localhost", port)
 
                 // Send prepare ring update message
-                SendNewRing ! SendMessageToNode(lastCmdID, ring2.iPs, (port + 1), PrepareRemoveHostMessage(lastCmdID, Host(ipToRemove, ring2.ipHostMap(ipToRemove)), ring2.hash, ring2.iPs, ring2.ipHostMap), port)
+                SendNewRing ! SendMessageToNode(lastCmdID, ring2.iPs, (port + 1), PrepareRemoveHostMessage(lastCmdID, ipToRemove, ring2.hash, ring2.iPs, ring2.ipHostMap), port)
               }
             }
 
@@ -151,6 +153,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
             info("MessageServer: IP CHECK received")
 
           case AskPermitToStartSourceMessage(sourceName, host) =>
+            info("MessageServer: Received AskPermitToStartSourceMessage" + (sourceName, host))
             out.writeObject(ACKMessage)
             if (!startedSources.contains(sourceName)) {
               // if source is not started, send start message
@@ -217,6 +220,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
   class SendStartSource(sourceName: String, ipToStart: String) extends Actor {
     def act() {
       val client = new LocalMessageServerClient(ipToStart, port + 1)
+      info("SendStartSource: sending StartSourceMessage " + (sourceName) + " to " + (ipToStart, port + 1))
       if (!client.sendMessage(StartSourceMessage(sourceName))) {
         // report host fails if any exception happens
         error("SendStartSource: report " + ipToStart + " fails")
@@ -341,7 +345,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             }  else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
 
-          case PrepareRemoveHostMessage(cmdID, removedHost, hashInNewRing, iPsInNewRing, iP2HostMap) =>
+          case PrepareRemoveHostMessage(cmdID, removedIP, hashInNewRing, iPsInNewRing, iP2HostMap) =>
             if (cmdID > lastCmdID) {
               // set candidate ring
               setCandidateRingAndHostList(hashInNewRing, (iPsInNewRing, iP2HostMap))
@@ -353,8 +357,8 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               runtime.flushFilteredDirtySlateToCassandra
               if (runtime.pool != null) {
                 // update mucluster if node is up already
-                info("LocalMessageServer: PrepareRemoveHostMessage - cmdID " + cmdID + ", remove host " + removedHost + " from mucluster")
-                runtime.pool.cluster.removeHost(removedHost.ip)
+                info("LocalMessageServer: PrepareRemoveHostMessage - cmdID " + cmdID + ", remove host " + removedIP + " from mucluster")
+                runtime.pool.cluster.removeHost(removedIP)
               }
               lastCmdID = cmdID
               runtime.msClient.sendMessage(ACKPrepareRemoveHostMessage(cmdID, runtime.appStatic.self.ip))
@@ -366,6 +370,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             debug("Received UpdateRing")
 
             if (runtime.candidateRing != null) {
+              out.writeObject(ACKMessage)
               runtime.ring = runtime.candidateRing
               runtime.appStatic.systemHosts = runtime.candidateHostList._2
               runtime.candidateRing = null
