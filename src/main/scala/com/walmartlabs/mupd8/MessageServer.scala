@@ -163,6 +163,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
               val localMSClient = new SendStartSource(sourceName, host.ip)
               localMSClient.start
             }
+
           case _ => error("MessageServerThread: Not a valid msg: " + msg)
         }
         out.close; in.close; channel.close
@@ -191,7 +192,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
   object SendNewRing extends Actor {
     private val stop = false
 
-    def act() {
+    override def act() {
       react {
         // msport: port of message server
         case SendMessageToNode(cmdID, iPs, port, msg, msport) =>
@@ -218,7 +219,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
   SendNewRing.start
 
   class SendStartSource(sourceName: String, ipToStart: String) extends Actor {
-    def act() {
+    override def act() {
       val client = new LocalMessageServerClient(ipToStart, port + 1)
       info("SendStartSource: sending StartSourceMessage " + (sourceName) + " to " + (ipToStart, port + 1))
       if (!client.sendMessage(StartSourceMessage(sourceName))) {
@@ -240,6 +241,25 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
   var startedSources: Map[String, String] = Map.empty // (source name -> source host machine ip)
 
   AckedNodeCounter.start
+
+  object PingCheck extends Actor {
+    override def act() {
+      while (keepRunning) {
+        startedSources.foreach{source =>
+          // send ping message
+          val lmsClient = new LocalMessageServerClient(source._2, port + 1)
+          if (!lmsClient.sendMessage(PING())) {
+            // report host fails if any exception happens
+            error("SendStartSource: report " + source._2 + " fails")
+            val msClient = new MessageServerClient("localhost", port)
+            msClient.sendMessage(NodeRemoveMessage(source._2))
+          }
+        }
+        Thread.sleep(2000)
+      }
+    }
+  }
+  PingCheck.start
 }
 
 object MessageServer extends Logging {
@@ -320,10 +340,10 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
         val in = new ObjectInputStream(Channels.newInputStream(channel))
         val out = new ObjectOutputStream(Channels.newOutputStream(channel))
         val msg = in.readObject
-        info("LocalMessageServer: Received " + msg)
         msg match {
           // PrepareAddHostMessage: accept new ring from message server and prepare for switching
           case PrepareAddHostMessage(cmdID, addedHost, hashInNewRing, iPsInNewRing, iP2HostMap) =>
+            info("LocalMessageServer: Received " + msg)
             if (cmdID > lastCmdID) {
               // set candidate ring
               setCandidateRingAndHostList(hashInNewRing, (iPsInNewRing, iP2HostMap))
@@ -346,6 +366,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
 
           case PrepareRemoveHostMessage(cmdID, removedIP, hashInNewRing, iPsInNewRing, iP2HostMap) =>
+            info("LocalMessageServer: Received " + msg)
             if (cmdID > lastCmdID) {
               // set candidate ring
               setCandidateRingAndHostList(hashInNewRing, (iPsInNewRing, iP2HostMap))
@@ -367,6 +388,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
 
           case UpdateRing(cmdID) =>
+            info("LocalMessageServer: Received " + msg)
             debug("Received UpdateRing")
 
             if (runtime.candidateRing != null) {
@@ -382,8 +404,12 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             }
 
           case StartSourceMessage(sourceName) =>
+            info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
             runtime.startSource(sourceName)
+
+          case PING() =>
+            trace("Received PRING")
 
           case _ => error("LocalMessageServer: Not a valid msg, " + msg.toString)
         }

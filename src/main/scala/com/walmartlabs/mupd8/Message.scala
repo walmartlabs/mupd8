@@ -65,3 +65,6 @@ case class ACKMessage() extends MessageWOACK
 
 // To performer node
 case class StartSourceMessage(name: String) extends MessageWACK
+
+// PING check
+case class PING() extends MessageWOACK

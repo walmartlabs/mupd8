@@ -89,7 +89,7 @@ class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Int
       val out = new ObjectOutputStream(socket.getOutputStream)
       val in = new ObjectInputStream(socket.getInputStream)
       socket.setSoTimeout(timeout)
-      info("LocalMessageServerClient: connected")
+      debug("LocalMessageServerClient: connected")
       out.writeObject(msg)
       msg match {
         case m: MessageWOACK =>
