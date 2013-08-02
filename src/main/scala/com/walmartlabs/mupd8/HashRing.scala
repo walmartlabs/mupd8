@@ -115,6 +115,19 @@ class HashRing2 private (val iPs: IndexedSeq[String], val hash: IndexedSeq[Strin
     }
   }
 
+  def remove(newIPList: IndexedSeq[String], iPSetToRemove: Set[String]): HashRing2 = synchronized {
+    def _remove(iPSetToRemove: Set[String], ring: HashRing2): HashRing2 = {
+        if (iPSetToRemove.isEmpty) ring
+        else {
+          val head = iPSetToRemove.head
+          val ring1 = remove(newIPList, head)
+          _remove(iPSetToRemove.tail, ring1)
+        }
+    }
+
+    _remove(iPSetToRemove, this);
+  }
+
   /**
    * Add a new host, hostToAdd.
    * Algo: Randomly pick totalSlots/len_of_new_host_list slots

@@ -62,10 +62,9 @@ object TimerActor extends Actor with Logging {
 abstract class AckedNodeCounterMessage
 case class StartCounter(cmdID: Int, hosts: IndexedSeq[String], _mshost: String, _msport: Int) extends AckedNodeCounterMessage
 case class CountPrepareACK(cmdID: Int, host: String) extends AckedNodeCounterMessage
-case class CountUpdateACK(cmdID: Int, host: String) extends AckedNodeCounterMessage
 object AckedNodeCounter extends Actor with Logging {
   private var currentCmdID = -1
-  private val nodesNotAcked = scala.collection.mutable.Set[String]()
+  var nodesNotAcked = scala.collection.immutable.Set[String]()
   private var mshost: String = null
   private var msport: Int = -1
 
@@ -78,8 +77,8 @@ object AckedNodeCounter extends Actor with Logging {
         else {
           info("AckedNodeCounter: Start counter for cmdID, " + cmdID)
           currentCmdID = cmdID
-          nodesNotAcked.clear
-          nodesNotAcked ++= hosts
+          nodesNotAcked = null
+          nodesNotAcked = hosts.toSet
           mshost = _mshost
           msport = _msport
         }
@@ -93,7 +92,7 @@ object AckedNodeCounter extends Actor with Logging {
           warn("AckedNodeCounter: cmdID, " + cmdID + ", hasn't been started")
         else {
           // clear host
-          nodesNotAcked -= host
+          nodesNotAcked = nodesNotAcked - host
           info("AckedNodeCounter: CountPrepareACK - updated nodesNotAcked = " + nodesNotAcked)
 
           // if all nodes acked cmdID, pin message server
@@ -105,24 +104,6 @@ object AckedNodeCounter extends Actor with Logging {
             // pin message server
             val msClient = new MessageServerClient(mshost, msport)
             msClient.sendMessage(AllNodesACKedPrepareMessage(cmdID))
-            currentCmdID = -1
-          }
-        }
-        act
-
-      // count acked node
-      case CountUpdateACK(cmdID, host) =>
-        if (cmdID < currentCmdID)
-          error("AckedNodeCounter: cmdID, " + cmdID + ", expired 1; current cmdID = " + currentCmdID)
-        else if (cmdID > currentCmdID)
-          warn("AckedNodeCounter: cmdID, " + cmdID + ", hasn't been started 1")
-        else {
-          // clear host
-          nodesNotAcked -= host
-          debug("AckedNodeCounter: CountUpdateACK - updated nodesNotAcked = " + nodesNotAcked)
-
-          // TODO: if all nodes acked cmdID, pin message server
-          if (nodesNotAcked.isEmpty) {
             currentCmdID = -1
           }
         }

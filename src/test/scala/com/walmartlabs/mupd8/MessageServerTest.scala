@@ -40,7 +40,7 @@ class MessageServerTest extends FunSuite {
     for (node <- nodes) client.sendMessage(NodeJoinMessage(node))
     Thread.sleep(1000)
     assert(server.ring2.size == 5)
-    for (node <- nodes) client.sendMessage(NodeRemoveMessage(node.ip))
+    for (node <- nodes) client.sendMessage(NodeRemoveMessage(Set(node.ip)))
     Thread.sleep(1000)
     assert(server.ring2 == null)
     assert(server.lastCmdID == 9)

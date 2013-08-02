@@ -45,16 +45,24 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   }
 
   // Add host to connection map
-  def addHost(host: String): Unit = if (host.compareTo(app.self.ip) != 0) client.addEndpoint(host, port)
+  def addHost(host: String) {
+    if (host.compareTo(app.self.ip) != 0) client.addEndpoint(host, port)
+  }
 
   // Remove host from connection map
-  def removeHost(host: String): Unit = client.removeEndpoint(host)
+  def removeHost(host: String) {
+    client.removeEndpoint(host)
+  }
+
+  def removeHosts(hosts: Set[String]) {
+    hosts.foreach(removeHost(_))
+  }
 
   def send(destip: String, obj: T) {
     if (!client.send(destip, obj)) {
       error("Failed to send slate to destination " + destip)
       if (msClient != null) {
-        msClient.sendMessage(NodeRemoveMessage(destip))
+        msClient.sendMessage(NodeRemoveMessage(Set(destip)))
       }
     }
   }

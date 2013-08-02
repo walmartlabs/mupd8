@@ -20,8 +20,10 @@ package com.walmartlabs.mupd8
 abstract class Message extends Serializable
 abstract class MessageWOACK extends Message // message needs NO ACK
 abstract class MessageWACK extends Message // message needs ACK
+case class ACKMessage() extends MessageWOACK
+
 // To message server
-case class NodeRemoveMessage(ip: String) extends MessageWACK  // node: Host(ip, hostname)
+case class NodeRemoveMessage(ips: Set[String]) extends MessageWACK  // node: Host(ip, hostname)
 case class NodeJoinMessage(node: Host) extends MessageWACK      // node: Host(ip, hostname)
 case class ACKPrepareAddHostMessage(cmdID: Int, hostToAdd: String) extends MessageWOACK         // hostToAdd: ip
 case class ACKPrepareRemoveHostMessage(cmdID: Int, hostToRemove: String) extends MessageWOACK   // hostToRemove: ip
@@ -40,12 +42,12 @@ case class PrepareAddHostMessage(cmdID: Int, addedHost: Host, hashInNewRing: Ind
   override def toString() = "PrepareAddHostMessage(" + cmdID + ", " + addedHost.hostname + ")"
 }
 // cmdID
-// removedIP: ip of node to be removed
+// removedIPSet: IPs of nodes to be removed
 // hashInNewRing: ip address array used as hashtable in new hash ring
 // iPsInNewRing: all ip addresses in new ring
 // iPHostMap: ip address to host name map
-case class PrepareRemoveHostMessage(cmdID: Int, removedIP: String, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
-  override def toString() = "PrepareRemoveHostMessage(" + cmdID + ", " + removedIP + ")"
+case class PrepareRemoveHostMessage(cmdID: Int, removedIPSet: Set[String], hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
+  override def toString() = "PrepareRemoveHostMessage(" + cmdID + ", " + removedIPSet + ")"
 }
 case class UpdateRing(cmdID: Int) extends MessageWACK
 
@@ -61,7 +63,6 @@ case class ACKNodeRemove(node: String) extends MessageWACK // node: ip
 //
 // To message server
 case class AskPermitToStartSourceMessage(name: String, host: Host) extends MessageWACK
-case class ACKMessage() extends MessageWOACK
 
 // To performer node
 case class StartSourceMessage(name: String) extends MessageWACK

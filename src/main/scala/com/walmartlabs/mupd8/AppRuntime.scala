@@ -112,7 +112,7 @@ class AppRuntime(appID: Int,
           if (slate == None) {
             // TODO: send remove messageServer
             warn("Can't reach dest(" + dest + "); going to report " + dest + " fails.")
-            msClient.sendMessage(NodeRemoveMessage(dest))
+            msClient.sendMessage(NodeRemoveMessage(Set(dest)))
           }
           slate
         }
