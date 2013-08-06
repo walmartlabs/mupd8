@@ -38,8 +38,8 @@ case class IPCHECKDONE() extends MessageWOACK
 // hashInNewRing: ip address array used as hashtable in new hash ring
 // iPsInNewRing: all ip addresses in new ring
 // iPHostMap: ip address to host name map
-case class PrepareAddHostMessage(cmdID: Int, addedHost: Host, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
-  override def toString() = "PrepareAddHostMessage(" + cmdID + ", " + addedHost.hostname + ")"
+case class PrepareAddHostMessage(cmdID: Int, addedHostSet: Set[Host], hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
+  override def toString() = "PrepareAddHostMessage(" + cmdID + ", " + addedHostSet + ")"
 }
 // cmdID
 // removedIPSet: IPs of nodes to be removed

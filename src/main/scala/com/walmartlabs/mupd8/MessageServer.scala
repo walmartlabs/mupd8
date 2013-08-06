@@ -36,6 +36,7 @@ import scala.actors.Actor._
 import scala.collection._
 import scala.collection.JavaConverters._
 import java.net.ServerSocket
+import annotation.tailrec
 
 /* Message Server for whole cluster */
 class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest: Boolean = false) extends Thread with Logging {
@@ -116,7 +117,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
               }
             }
 
-          case NodeJoinMessage(hostToAdd) =>
+          case NodeJoinMessage(hostToAdd: Host) =>
             info("MessageServer: Received node join message: " + msg)
             lastCmdID += 1
             lastRingUpdateCmdID = lastCmdID
@@ -148,7 +149,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
               AckedNodeCounter ! StartCounter(lastCmdID, ring2.iPs, "localhost", port)
 
               // Send prepare ring update message
-              SendNewRing ! SendMessageToNode(lastCmdID, ring2.iPs, port + 1, PrepareAddHostMessage(lastCmdID, hostToAdd, ring2.hash, ring2.iPs, ring2.ipHostMap), port)
+              SendNewRing ! SendMessageToNode(lastCmdID, ring2.iPs, port + 1, PrepareAddHostMessage(lastCmdID, immutable.Set(hostToAdd), ring2.hash, ring2.iPs, ring2.ipHostMap), port)
             }
 
           case ACKPrepareAddHostMessage(cmdID, host) =>
@@ -361,7 +362,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
         val msg = in.readObject
         msg match {
           // PrepareAddHostMessage: accept new ring from message server and prepare for switching
-          case PrepareAddHostMessage(cmdID, addedHost, hashInNewRing, iPsInNewRing, iP2HostMap) =>
+          case PrepareAddHostMessage(cmdID, addedHostSet, hashInNewRing, iPsInNewRing, iP2HostMap) =>
             info("LocalMessageServer: Received " + msg)
             if (cmdID > lastCmdID) {
               // set candidate ring
@@ -372,11 +373,11 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               // flush dirty slates
               debug("PrepareAddHostMessage - going to flush cassandra")
               runtime.flushFilteredDirtySlateToCassandra
-              if (runtime.pool != null) {
-                // update mucluster if node is up already
-                info("LocalMessageServer: cmdID " + cmdID + ", Addhost " + addedHost + " to mucluster")
-                runtime.pool.cluster.addHost(addedHost.ip)
-              }
+//              if (runtime.pool != null) {
+//                // update mucluster if node is up already
+//                info("LocalMessageServer: cmdID " + cmdID + ", Addhost " + addedHostSet + " to mucluster")
+//                runtime.pool.cluster.addHosts(addedHostSet.map(_.ip))
+//              }
               lastCmdID = cmdID
               debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + iP2HostMap)
               runtime.msClient.sendMessage(ACKPrepareAddHostMessage(cmdID, runtime.appStatic.self.ip))
@@ -395,11 +396,11 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               // flush dirty slates
               debug("PrepareRemoveHostMessage - going to flush cassandra")
               runtime.flushFilteredDirtySlateToCassandra
-              if (runtime.pool != null) {
-                // update mucluster if node is up already
-                info("LocalMessageServer: PrepareRemoveHostMessage - cmdID " + cmdID + ", remove host " + removedIPSet + " from mucluster")
-                runtime.pool.cluster.removeHosts(removedIPSet)
-              }
+//              if (runtime.pool != null) {
+//                // update mucluster if node is up already
+//                info("LocalMessageServer: PrepareRemoveHostMessage - cmdID " + cmdID + ", remove host " + removedIPSet + " from mucluster")
+//                runtime.pool.cluster.removeHosts(removedIPSet)
+//              }
               lastCmdID = cmdID
               runtime.msClient.sendMessage(ACKPrepareRemoveHostMessage(cmdID, runtime.appStatic.self.ip))
               info("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareRemoveHostMessage to message server")
@@ -407,15 +408,34 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
 
           case UpdateRing(cmdID) =>
+            @tailrec
+            def setAminusSetB(setA: Set[String], setB: Set[String], rlt: immutable.Set[String]): immutable.Set[String] = {
+              if (setA.isEmpty) rlt
+              else {
+                if (setB.contains(setA.head))
+                  setAminusSetB(setA.tail, setB, rlt)
+                else
+                  setAminusSetB(setA.tail, setB, rlt + setA.head)
+              }
+            }
+            
             info("LocalMessageServer: Received " + msg)
-            debug("Received UpdateRing")
+            out.writeObject(ACKMessage)
 
             if (runtime.candidateRing != null) {
-              out.writeObject(ACKMessage)
+              val newIPs: Set[String] = runtime.candidateHostList._1.toSet
+              val oldIPs: Set[String] = if (runtime.appStatic.systemHosts == null) Set.empty else runtime.appStatic.systemHosts.keySet
+              val addedIPs = setAminusSetB(newIPs, oldIPs, immutable.Set.empty)
+              val removedIPs = setAminusSetB(oldIPs, newIPs, immutable.Set.empty)
+              
               runtime.ring = runtime.candidateRing
               runtime.appStatic.systemHosts = runtime.candidateHostList._2
               runtime.candidateRing = null
               runtime.candidateHostList = null
+              if (runtime.pool != null) {
+                runtime.pool.cluster.addHosts(addedIPs)
+                runtime.pool.cluster.removeHosts(removedIPs)
+              }
               runtime.flushSlatesInBufferToQueue
               info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
             } else {

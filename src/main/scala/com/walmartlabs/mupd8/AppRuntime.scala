@@ -101,6 +101,9 @@ class AppRuntime(appID: Int,
     } else if (tok(2) == "slate") {
       if (tok.length != 6) {
         None
+      } else if (ring == null) {
+        info("Query request before node is up")
+        None
       } else {
         val key: (String, Key) = (tok(4), Key(tok(5).map(_.toByte).toArray))
         val poolKey = PerformerPacket.getKey(appStatic.performerName2ID(key._1), key._2)
@@ -176,7 +179,7 @@ class AppRuntime(appID: Int,
   info("Update ring from Message server")
 
   if (ring == null) {
-    error("AppRuntime: No hash ring either from config file or message server")
+    error("AppRuntime: No hash ring either from c¬onfig file or message server")
     System.exit(-1)
   }
 

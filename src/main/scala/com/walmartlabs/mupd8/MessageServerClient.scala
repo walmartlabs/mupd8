@@ -67,6 +67,7 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 20
           val host = Host(s.getLocalAddress.getHostAddress, s.getLocalAddress.getHostName)
           val out = new ObjectOutputStream(s.getOutputStream)
           out.writeObject(IPCHECKDONE)
+          out.close
           s.close
           host
         } catch {
@@ -84,7 +85,10 @@ class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Int
 
   def sendMessage(msg: Message): Boolean = synchronized {
     try {
-      info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
+      msg match {
+        case PING() => debug("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
+        case _ => info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort) 
+      }
       val socket = new Socket(serverHost, serverPort)
       val out = new ObjectOutputStream(socket.getOutputStream)
       val in = new ObjectInputStream(socket.getInputStream)
