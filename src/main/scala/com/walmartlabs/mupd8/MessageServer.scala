@@ -113,7 +113,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
                 AckedNodeCounter ! StartCounter(lastCmdID, ring2.iPs, "localhost", port)
 
                 // Send prepare ring update message
-                SendNewRing ! SendMessageToNode(lastCmdID, ring2.iPs, (port + 1), PrepareRemoveHostMessage(lastCmdID, ipSetToRemove, ring2.hash, ring2.iPs, ring2.ipHostMap), port)
+                SendNewRing ! SendMessageToNode(lastCmdID, ring2.iPs, (port + 1), PrepareRemoveHostMessage(lastCmdID, ring2.hash, ring2.iPs, ring2.ipHostMap), port)
               }
             }
 
@@ -122,7 +122,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
             lastCmdID += 1
             lastRingUpdateCmdID = lastCmdID
             // send ACK to reported
-            out.writeObject(ACKNodeJoin(hostToAdd.ip))
+            out.writeObject(ACKMessage)
             // update hash ring
             ring2 = if (ring2 == null) HashRing2.initFromHost(hostToAdd)
             else if (ring2.iPs.contains(hostToAdd.ip)) {
@@ -149,7 +149,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
               AckedNodeCounter ! StartCounter(lastCmdID, ring2.iPs, "localhost", port)
 
               // Send prepare ring update message
-              SendNewRing ! SendMessageToNode(lastCmdID, ring2.iPs, port + 1, PrepareAddHostMessage(lastCmdID, immutable.Set(hostToAdd), ring2.hash, ring2.iPs, ring2.ipHostMap), port)
+              SendNewRing ! SendMessageToNode(lastCmdID, ring2.iPs, port + 1, PrepareAddHostMessage(lastCmdID, ring2.hash, ring2.iPs, ring2.ipHostMap), port)
             }
 
           case ACKPrepareAddHostMessage(cmdID, host) =>
@@ -362,7 +362,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
         val msg = in.readObject
         msg match {
           // PrepareAddHostMessage: accept new ring from message server and prepare for switching
-          case PrepareAddHostMessage(cmdID, addedHostSet, hashInNewRing, iPsInNewRing, iP2HostMap) =>
+          case PrepareAddHostMessage(cmdID, hashInNewRing, iPsInNewRing, iP2HostMap) =>
             info("LocalMessageServer: Received " + msg)
             if (cmdID > lastCmdID) {
               // set candidate ring
@@ -373,11 +373,6 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               // flush dirty slates
               debug("PrepareAddHostMessage - going to flush cassandra")
               runtime.flushFilteredDirtySlateToCassandra
-//              if (runtime.pool != null) {
-//                // update mucluster if node is up already
-//                info("LocalMessageServer: cmdID " + cmdID + ", Addhost " + addedHostSet + " to mucluster")
-//                runtime.pool.cluster.addHosts(addedHostSet.map(_.ip))
-//              }
               lastCmdID = cmdID
               debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + iP2HostMap)
               runtime.msClient.sendMessage(ACKPrepareAddHostMessage(cmdID, runtime.appStatic.self.ip))
@@ -385,7 +380,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             }  else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
 
-          case PrepareRemoveHostMessage(cmdID, removedIPSet, hashInNewRing, iPsInNewRing, iP2HostMap) =>
+          case PrepareRemoveHostMessage(cmdID, hashInNewRing, iPsInNewRing, iP2HostMap) =>
             info("LocalMessageServer: Received " + msg)
             if (cmdID > lastCmdID) {
               // set candidate ring
@@ -396,11 +391,6 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               // flush dirty slates
               debug("PrepareRemoveHostMessage - going to flush cassandra")
               runtime.flushFilteredDirtySlateToCassandra
-//              if (runtime.pool != null) {
-//                // update mucluster if node is up already
-//                info("LocalMessageServer: PrepareRemoveHostMessage - cmdID " + cmdID + ", remove host " + removedIPSet + " from mucluster")
-//                runtime.pool.cluster.removeHosts(removedIPSet)
-//              }
               lastCmdID = cmdID
               runtime.msClient.sendMessage(ACKPrepareRemoveHostMessage(cmdID, runtime.appStatic.self.ip))
               info("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareRemoveHostMessage to message server")

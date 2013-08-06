@@ -38,22 +38,22 @@ case class IPCHECKDONE() extends MessageWOACK
 // hashInNewRing: ip address array used as hashtable in new hash ring
 // iPsInNewRing: all ip addresses in new ring
 // iPHostMap: ip address to host name map
-case class PrepareAddHostMessage(cmdID: Int, addedHostSet: Set[Host], hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
-  override def toString() = "PrepareAddHostMessage(" + cmdID + ", " + addedHostSet + ")"
+case class PrepareAddHostMessage(cmdID: Int, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
+  override def toString() = "PrepareAddHostMessage(" + cmdID + ", " + iP2HostMap + ")"
 }
 // cmdID
 // removedIPSet: IPs of nodes to be removed
 // hashInNewRing: ip address array used as hashtable in new hash ring
 // iPsInNewRing: all ip addresses in new ring
 // iPHostMap: ip address to host name map
-case class PrepareRemoveHostMessage(cmdID: Int, removedIPSet: Set[String], hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
-  override def toString() = "PrepareRemoveHostMessage(" + cmdID + ", " + removedIPSet + ")"
+case class PrepareRemoveHostMessage(cmdID: Int, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
+  override def toString() = "PrepareRemoveHostMessage(" + cmdID + ", " + iP2HostMap + ")"
 }
 case class UpdateRing(cmdID: Int) extends MessageWACK
 
-// To MessageServerClient
-case class ACKNodeJoin(node: String) extends MessageWACK   // node: ip
-case class ACKNodeRemove(node: String) extends MessageWACK // node: ip
+//// To MessageServerClient
+//case class ACKNodeJoin(node: String) extends MessageWACK   // node: ip
+//case class ACKNodeRemove(node: String) extends MessageWACK // node: ip
 
 //
 // Start source readers
