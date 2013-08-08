@@ -20,40 +20,28 @@ package com.walmartlabs.mupd8
 import scala.actors._
 import scala.actors.Actor._
 import grizzled.slf4j.Logging
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
-abstract class TimerActorMessage
-case class Stop(reason: AnyRef) extends TimerActorMessage
-object TimerActor extends Actor with Logging {
+object Timer extends Logging {
   private var _timeout = -1L
   private var _cmdID = -1
-  private var func: () => Unit = null
+  private var future: ScheduledFuture[_] = null
+
+  private val timerScheduler = Executors.newScheduledThreadPool(0);
 
   def startTimer(cmdID: Int, timeout: Long, f: () => Unit) {
     _timeout = timeout
     _cmdID = cmdID
-    func = f
     info("Timer starts: cmdID = " + _cmdID + ", timeout = " + _timeout)
-    if (this.getState == Actor.State.Terminated) {
-      this.restart
-      info("Timer restarted")
-    } else {
-	    this.start
-      info("Timer started")
-    }
+    if (future != null && !future.isDone()) future.cancel(true)
+    future = timerScheduler.schedule(new Runnable() {def run() {f()}}, timeout, TimeUnit.MILLISECONDS)
   }
 
   def stopTimer(cmdID: Int, reason: AnyRef) {
     info("Timer exit: cmdID = " + _cmdID + ", reason = " + reason)
-    this ! Stop(reason)
-  }
-
-  override def act {
-    self.reactWithin(_timeout) {
-      case TIMEOUT => func
-      case Stop(reason) =>
-        info("TimerActor stop: " + reason)
-        this.exit
-    }
+    future.cancel(false)
   }
 }
 
@@ -99,7 +87,7 @@ object AckedNodeCounter extends Actor with Logging {
           if (nodesNotAcked.isEmpty) {
             info("AckedNodeCounter: cmdID, " + cmdID + ", all nodes acked")
             // Stop timer
-            TimerActor.stopTimer(cmdID, "Prepare update ring is done")
+            Timer.stopTimer(cmdID, "Prepare update ring is done")
 
             // pin message server
             val msClient = new MessageServerClient(mshost, msport)
