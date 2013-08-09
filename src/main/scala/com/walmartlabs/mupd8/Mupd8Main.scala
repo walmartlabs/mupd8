@@ -43,14 +43,6 @@ import com.walmartlabs.mupd8.compression.CompressionFactory
 import com.walmartlabs.mupd8.compression.CompressionService
 import com.walmartlabs.mupd8.Misc._
 import com.walmartlabs.mupd8.application._
-import com.walmartlabs.mupd8.application.statistics.StatisticsBootstrap
-import com.walmartlabs.mupd8.application.statistics.StatisticsConstants
-import com.walmartlabs.mupd8.application.statistics.MapWrapper
-import com.walmartlabs.mupd8.application.statistics.UpdateWrapper
-import com.walmartlabs.mupd8.application.statistics.StatisticsBootstrap
-import com.walmartlabs.mupd8.application.statistics.StatisticsConstants
-import com.walmartlabs.mupd8.application.statistics.MapWrapper
-import com.walmartlabs.mupd8.application.statistics.UpdateWrapper
 import com.walmartlabs.mupd8.network.common.Decoder.DecodingState
 import com.walmartlabs.mupd8.network.client._
 import com.walmartlabs.mupd8.network.server._
@@ -392,29 +384,18 @@ object Mupd8Main extends Logging {
       "-to" -> (1, "Stream to which data from the URI is sent"),
       "-threads" -> (1, "Optional number of execution threads, default is 5"),
       "-shutdown" -> (0, "Shut down the Mupd8 App"),
-      "-pidFile" -> (1, "Optional PID filename"),
-      // flag for turning on/off collection of statistics as a mupd8 app runs
-      "-statistics" -> (1, "Collect statistics for monitoring?"),
-      "-elastic" -> (1, "Computation is elastic in terms of number of hosts participating in a mupd8 application"))
+      "-pidFile" -> (1, "Optional PID filename"))
 
     {
       val argMap = argParser(syntax, args)
       for {
         p <- argMap
-        //            if shutdown || p.size == p.get("-threads").size + p.get("-pidFile").size + p.get("-a").size +
-        //                                     p.get("-s").size + p.get("-d").size + syntax.size - 6
         if p.get("-s").size == p.get("-a").size
         if p.get("-s").size != p.get("-d").size
         threads <- excToOption(p.get("-threads").map(_.head.toInt).getOrElse(5))
       } yield {
         val shutdown = p.get("-shutdown") != None
-        /*
-        COMMENT: Obtain the 'statistics' and 'elastic' flag from the configuration. These flags determine if monitoring and
-                dyanmic load balancing is enabled, respectively.
-        */
-        val collectStatistics = if (p.get("-statistics") != None) { p.get("-statistics").get(0).equalsIgnoreCase("true") } else { false }
-
-        val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head), collectStatistics)
+        val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head))
         p.get("-pidFile") match {
           case None => writePID("mupd8.log")
           case Some(x) => writePID(x.head)

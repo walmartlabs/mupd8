@@ -18,18 +18,15 @@
 package com.walmartlabs.mupd8
 
 import java.io.File
+import java.net.InetAddress
 import java.util.ArrayList
 import scala.collection.breakOut
 import scala.collection.JavaConverters._
 import grizzled.slf4j.Logging
 import com.walmartlabs.mupd8.application._
 import com.walmartlabs.mupd8.Mupd8Type._
-import com.walmartlabs.mupd8.application.statistics.StatisticsConstants
-import com.walmartlabs.mupd8.application.statistics.MapWrapper
-import com.walmartlabs.mupd8.application.statistics.UpdateWrapper
-import java.net.InetAddress
 
-class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String], val sysConfig: Option[String], statistics: Boolean) extends Logging {
+class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String], val sysConfig: Option[String]) extends Logging {
   assert(appConfig.size == sysConfig.size && appConfig.size != configDir.size)
 
   val config = configDir map { p => new application.Config(new File(p)) } getOrElse new application.Config(sysConfig.get, appConfig.get)
@@ -43,42 +40,42 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 
   val performerFactory: Vector[Option[() => binary.Performer]] =
     (0 until performers.size map { i =>
-      val p = performers(i)
+      val performerConfig = performers(i)
       var isMapper = false
       // the wrapper class that wraps a performer instance
       var wrapperClass: Option[String] = null
-      info("Loading ... " + p)
-      val constructor : Option[() => binary.Performer] = p.mtype match {
+      info("Loading ... " + performerConfig)
+      val constructor: Option[() => binary.Performer] = performerConfig.mtype match {
         case Mapper => {
-          isMapper = true; wrapperClass = p.wrapperClass;
-          p.jclass.map(Class.forName(_)).map { m =>
+          isMapper = true; wrapperClass = performerConfig.wrapperClass;
+          performerConfig.jclass.map(Class.forName(_)).map { m =>
             if (classOf[binary.Mapper].isAssignableFrom(m)) {
               val mapperConstructor = m.asSubclass(classOf[binary.Mapper]).getConstructor(config.getClass, "".getClass)
-              () => mapperConstructor.newInstance(config, p.name)
+              () => mapperConstructor.newInstance(config, performerConfig.name)
             } else {
-              val msg = "Mapper "+p.name+" uses class "+m.getName()+" that is not assignable to "+classOf[binary.Mapper].getName()
+              val msg = "Mapper " + performerConfig.name + " uses class " + m.getName() + " that is not assignable to " + classOf[binary.Mapper].getName()
               error(msg)
               throw new ClassCastException(msg)
             }
           }
         }
         case Updater => {
-          isMapper = false; wrapperClass = p.wrapperClass;
-          p.jclass.map(Class.forName(_)).map { u =>
+          isMapper = false; wrapperClass = performerConfig.wrapperClass;
+          performerConfig.jclass.map(Class.forName(_)).map { u =>
             if (classOf[binary.SlateUpdater].isAssignableFrom(u)) {
-              if (p.slateBuilderClass.isEmpty) {
-                val msg = "Updater "+p.name+" uses a SlateUpdater class but does not specify a corresponding slate_builder."
+              if (performerConfig.slateBuilderClass.isEmpty) {
+                val msg = "Updater " + performerConfig.name + " uses a SlateUpdater class but does not specify a corresponding slate_builder."
                 error(msg)
                 info("An updater with no slate_builder may use a class Updater but not SlateUpdater.");
-                throw new ClassCastException("Updater "+p.name+" does not define slate_builder but class "+u.getName()+" implements SlateUpdater, not Updater.")
+                throw new ClassCastException("Updater " + performerConfig.name + " does not define slate_builder but class " + u.getName() + " implements SlateUpdater, not Updater.")
               }
               val updaterConstructor = u.asSubclass(classOf[binary.SlateUpdater]).getConstructor(config.getClass, "".getClass)
-              () => updaterConstructor.newInstance(config, p.name)
+              () => updaterConstructor.newInstance(config, performerConfig.name)
             } else if (classOf[binary.Updater].isAssignableFrom(u)) {
               val updaterFactory = new UpdaterFactory(u.asSubclass(classOf[binary.Updater]))
-              () => updaterFactory.construct(config, p.name)
+              () => updaterFactory.construct(config, performerConfig.name)
             } else {
-              val msg = "Updater "+p.name+" uses class "+u+" that is not assignable to "+classOf[binary.Updater].getName()
+              val msg = "Updater " + performerConfig.name + " uses class " + u + " that is not assignable to " + classOf[binary.Updater].getName()
               error(msg)
               throw new ClassCastException(msg)
             }
@@ -86,34 +83,17 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
         }
         case _ => None
       }
-      constructor.map { performerConstructor =>
-        val needToCollectStatistics = statistics
-        val wrappedPerformer =
-          if (statistics) {
-            val wrapperClassname = wrapperClass match {
-              case None => StatisticsConstants.DEFAULT_PRE_PERFORMER
-              case Some(x) => x
-            }
-            var constructor = Class.forName(wrapperClassname).asInstanceOf[Class[com.walmartlabs.mupd8.application.statistics.PrePerformer]].getConstructor("".getClass());
-            val prePerformer = constructor.newInstance(p.name)
-            if (isMapper) {
-              new MapWrapper(performerConstructor().asInstanceOf[binary.Mapper], prePerformer)
-            } else {
-              new UpdateWrapper(performerConstructor().asInstanceOf[binary.SlateUpdater], prePerformer)
-            }
+      constructor.map {
+        performerConstructor =>
+          val performer = performerConstructor()
+          performerArray(i) = performer
+
+          if (performerConfig.copy) {
+            () => { debug("Building object " + performerConfig.name); performer }
           } else {
-            performerConstructor()
+            val obj = performer
+            () => obj
           }
-
-        performerArray(i) = wrappedPerformer
-
-        if (p.copy) {
-          //        if ((p.name == "fbEntityProcessor")||(p.name == "interestStatsFetcher")) {
-          () => { debug("Building object " + p.name); wrappedPerformer }
-        } else {
-          val obj = wrappedPerformer
-          () => obj
-        }
       }
     })(breakOut)
 

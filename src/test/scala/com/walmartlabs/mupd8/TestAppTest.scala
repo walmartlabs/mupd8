@@ -40,7 +40,7 @@ class TestAppTest extends FunSuite {
   val sp = "file:" + cfgDir + "/T10.data" + "," + "K1"
   val key = "k1"
   val paras = "-host localhost -pidFile " + cfgDir + "/testapp.pid" + " -key k1 -from file:" + cfgDir + "/T10.data -to T10Source -threads 6 -d " + cfgDir
-  val appStaticInfo = new AppStaticInfo(Some(cfgDir), None, None, false)
+  val appStaticInfo = new AppStaticInfo(Some(cfgDir), None, None)
   val keyCombo : (String, Key) = ("K1Updater", Key("1".map(_.toByte).toArray))
   val httpStatus = "http://localhost:" + appStaticInfo.statusPort + "/app/status"
   val k1Slate = "http://localhost:" + appStaticInfo.statusPort  + "/app/slate/TestApp/K1Updater/1"
