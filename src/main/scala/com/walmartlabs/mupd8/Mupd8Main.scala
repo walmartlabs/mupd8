@@ -380,51 +380,6 @@ class TLS(val appRun: AppRuntime) extends binary.PerformerUtilities with Logging
   }
 }
 
-class MasterNode(args: Array[String], config: AppStaticInfo, shutdown: Boolean) extends Logging {
-  val targetNodes = config.systemHosts.keys
-  info("Target nodes are " + targetNodes.reduceLeft(_ + "," + _))
-
-  val machine = "$machine"
-  def execCmds(cmd: Array[String], successMsg: String, failMsg: String, wait: Boolean = true) {
-    val procs = targetNodes.par map { node =>
-      val cmdline = cmd map { c => if (c.zip(machine).forall(p => p._1 == p._2)) node + c.substring(machine.length, c.length) else c }
-      java.lang.Runtime.getRuntime.exec(cmdline)
-    }
-    if (wait) {
-      val procResults = procs map { _.waitFor() }
-      if (procResults.forall(_ == 0))
-        info(successMsg)
-      else
-        error(failMsg + procResults.zip(targetNodes).filter(_._1 != 0).map(_._2).reduceLeft(_ + "," + _))
-    }
-  }
-
-  val currDir = new java.io.File(".").getAbsolutePath.dropRight(2)
-  val parDir = currDir.split('/').dropRight(1).reduceLeft(_ + "/" + _)
-
-  if (!shutdown) {
-    execCmds(Array("ssh", machine, "mkdir -p " + currDir + "/log"),
-      "Created directories[OK]", "Directory creation failed for ")
-    execCmds(Array("rsync", "--verbose", "--progress", "--stats", "--compress", "--rsh=ssh",
-      "--recursive", "--times", "--perms", "--links", "--delete", "--exclude", "log",
-      currDir, machine + ":" + parDir),
-      "Completed rsync[OK]", "rsync failed for")
-
-    val mupd8CP = Mupd8Main.getClass.getProtectionDomain.getCodeSource.getLocation.toString.
-      split(':')(1).split('/').dropRight(1).reduceLeft(_ + "/" + _) + "/*"
-
-    execCmds(Array("ssh", machine,
-      "cd " + currDir + " && " +
-        "nohup java " + config.javaSetting + " -cp " + mupd8CP + ":" + config.javaClassPath +
-        " com.walmartlabs.mupd8.Mupd8Main -pidFile log/mupd8.pid " + args.reduceLeft(_ + " " + _) + " > log/run.log 2>&1"),
-      "", "", false)
-    info("Started Mupd8[OK]")
-  } else {
-    execCmds(Array("ssh", machine, "cat " + currDir + "/log/mupd8.pid | xargs kill"),
-      "Completed shutdown[OK]", "shutdown failed for ")
-  }
-}
-
 object Mupd8Main extends Logging {
 
   def main(args: Array[String]) {
@@ -453,32 +408,30 @@ object Mupd8Main extends Logging {
         threads <- excToOption(p.get("-threads").map(_.head.toInt).getOrElse(5))
       } yield {
         val shutdown = p.get("-shutdown") != None
-        val launcher = p.get("-pidFile") == None
         /*
         COMMENT: Obtain the 'statistics' and 'elastic' flag from the configuration. These flags determine if monitoring and
                 dyanmic load balancing is enabled, respectively.
         */
         val collectStatistics = if (p.get("-statistics") != None) { p.get("-statistics").get(0).equalsIgnoreCase("true") } else { false }
 
-        //Misc.configureLoggerFromXML("log4j.xml")
-        val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head), !launcher, collectStatistics)
-        if (launcher) {
-          new MasterNode(args, app, shutdown)
-        } else {
-	        p.get("-pidFile").map(x => writePID(x.head))
-	        val runtime = new AppRuntime(0, threads, app)
-	        if (runtime.ring != null) {
-	          if (app.sources.size > 0) {
-	            startSources(app, runtime)
-	          } else if (p.contains("-to") && p.contains("-sc")) {
-	            info("start source from cmdLine")
-	            runtime.startSource("cmdLineSource", p("-to").head, p("-sc").head, seqAsJavaList(p("-sp").head.split(',')))
-	          }
-	        } else {
-	          error("Mupd8Main: no hash ring found, exiting...")
-	        }
-	        info("Init is done")
+        val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head), collectStatistics)
+        p.get("-pidFile") match {
+          case None => writePID("mupd8.log")
+          case Some(x) => writePID(x.head)
         }
+        val runtime = new AppRuntime(0, threads, app)
+        if (runtime.ring != null) {
+          if (app.sources.size > 0) {
+            startSources(app, runtime)
+          } else if (p.contains("-to") && p.contains("-sc")) {
+            info("start source from cmdLine")
+            runtime.startSource("cmdLineSource", p("-to").head, p("-sc").head, seqAsJavaList(p("-sp").head.split(',')))
+          }
+        } else {
+          error("Mupd8Main: no hash ring found, exiting...")
+        }
+        info("Init is done")
+        //        }
       }
     } getOrElse {
       error("Command Syntax error")

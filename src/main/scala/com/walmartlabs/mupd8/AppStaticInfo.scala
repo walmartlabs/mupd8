@@ -29,7 +29,7 @@ import com.walmartlabs.mupd8.application.statistics.MapWrapper
 import com.walmartlabs.mupd8.application.statistics.UpdateWrapper
 import java.net.InetAddress
 
-class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String], val sysConfig: Option[String], val loadClasses: Boolean, statistics: Boolean) extends Logging {
+class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String], val sysConfig: Option[String], statistics: Boolean) extends Logging {
   assert(appConfig.size == sysConfig.size && appConfig.size != configDir.size)
 
   val config = configDir map { p => new application.Config(new File(p)) } getOrElse new application.Config(sysConfig.get, appConfig.get)
@@ -41,13 +41,13 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
   debug("edgeName2IDs = " + edgeName2IDs)
   var performerArray: Array[binary.Performer] = new Array[binary.Performer](performers.size)
 
-  val performerFactory: Vector[Option[() => binary.Performer]] = if (loadClasses) (
-    0 until performers.size map { i =>
+  val performerFactory: Vector[Option[() => binary.Performer]] =
+    (0 until performers.size map { i =>
       val p = performers(i)
       var isMapper = false
       // the wrapper class that wraps a performer instance
       var wrapperClass: Option[String] = null
-      info("Loading ... " + p.name + " " + p.mtype)
+      info("Loading ... " + p)
       val constructor : Option[() => binary.Performer] = p.mtype match {
         case Mapper => {
           isMapper = true; wrapperClass = p.wrapperClass;
@@ -116,10 +116,10 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
         }
       }
     })(breakOut)
-  else Vector()
 
-  val slateBuilderFactory: Vector[Option[() => binary.SlateBuilder]] = if (loadClasses) (
-    0 until performers.size map { i =>
+
+  val slateBuilderFactory: Vector[Option[() => binary.SlateBuilder]] = 
+    (0 until performers.size map { i =>
       val p = performers(i)
       val slateBuilder = p.mtype match {
         case Updater => {
@@ -140,7 +140,6 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
       }
       slateBuilder
     })(breakOut)
-  else Vector()
 
   val cassPort = config.getScopedValue(Array("mupd8", "slate_store", "port")).asInstanceOf[Number].intValue()
   val cassKeySpace = config.getScopedValue(Array("mupd8", "slate_store", "keyspace")).asInstanceOf[String]

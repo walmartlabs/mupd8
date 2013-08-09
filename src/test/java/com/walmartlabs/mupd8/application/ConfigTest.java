@@ -37,9 +37,9 @@ public class ConfigTest extends TestCase {
         Config config = new Config( new File( dir));
         String[] paths = { "mupd8", "application", "TestApp", "performers", "K1Updater", "class"};
         String k1Updater = ( String) config.getScopedValue( paths);
-        assertEquals("check performer class value", "com.walmartlabs.mupd8.examples.KnUpdater", k1Updater);
+        assertEquals("check performer class value", "com.walmartlabs.mupd8.examples.KnUpdaterJson", k1Updater);
         String[] cassPath = { "mupd8", "slate_store", "keyspace"};
-        assertEquals("check slate_store" , "Keyspace1", ( String) config.getScopedValue( cassPath));
+        assertEquals("check slate_store" , "Mupd8", ( String) config.getScopedValue( cassPath));
 
         JSONObject performerConfig = config.workerJSONs.get("K1Updater");
         assertEquals("workerJSONs defined in directory configuration", k1Updater, (String) performerConfig.get("class"));
@@ -56,7 +56,6 @@ public class ConfigTest extends TestCase {
         assertEquals("contains TestApp", "TestApp", firstKey);
 
         performerConfig = newConfig.workerJSONs.get("K1Updater");
-        assertEquals("workerJSONs defined in sys/app configuration", k1Updater, (String) performerConfig.get("class"));
-
+        assertEquals("workerJSONs defined in sys/app configuration", "com.walmartlabs.mupd8.examples.KnUpdater", (String) performerConfig.get("class"));
     }
 }
