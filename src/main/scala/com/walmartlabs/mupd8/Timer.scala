@@ -40,7 +40,7 @@ object Timer extends Logging {
   }
 
   def stopTimer(cmdID: Int, reason: AnyRef) {
-    info("Timer exit: cmdID = " + _cmdID + ", reason = " + reason)
+    info("Timer stops: cmdID = " + _cmdID + ", reason = " + reason)
     future.cancel(false)
   }
 }

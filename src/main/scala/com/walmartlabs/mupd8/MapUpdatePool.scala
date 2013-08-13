@@ -99,7 +99,6 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntim
   val threadDataPool = 0 until poolsize map { new ThreadData(_) }
   private val rand = new java.util.Random(System.currentTimeMillis)
   val cluster = clusterFactory(p => putLocal(p.getKey, p))
-  def init() { cluster.init() }
 
   def mod(i: Int) = if (i < 0) -i else i
 

@@ -45,6 +45,11 @@ public class Client {
       _host = host;
       _port = port;
     }
+    
+    @Override
+    public String toString() {
+      return "(" + _host + ", " + _port + ")";
+    }
   }
 
   private final Listener listener;
@@ -116,7 +121,7 @@ public class Client {
     for (; i < 3; i++) {
       future= bootstrap.connect(remoteAddr);
       if (!future.awaitUninterruptibly().isSuccess()) {
-        logger.warn("CLIENT - Failed to connect to server at " +
+        logger.error("CLIENT - Failed to connect to server at " +
                     remoteAddr.getHostName() + ":" + remoteAddr.getPort());
         try {
           Thread.sleep(500);
@@ -125,7 +130,7 @@ public class Client {
       } else break;
     }
     if (i >= 3) return false;
-    logger.warn("CLIENT - Connected to " + remoteAddr.getHostName() + ":" + remoteAddr.getPort());
+    logger.info("CLIENT - Connected to " + remoteAddr.getHostName() + ":" + remoteAddr.getPort());
 
     Channel connector = future.getChannel();
     connectors.put(host, connector);
@@ -172,18 +177,30 @@ public class Client {
     // Make connect only when it is used.
     if (!connectors.containsKey(connId)) {
       logger.warn("CLIENT - connection to (" + connId + ", " + endpoints.get(connId) + ") doesn't exist; going to make connection.");
-      if (!connect(endpoints.get(connId)._host, endpoints.get(connId)._port)) return false;
+      if (!connect(endpoints.get(connId)._host, endpoints.get(connId)._port)) {
+        logger.error("CLIENT - connecting to " + connId + " failed.");
+        return false;
+      }
     }
 
     Channel connector = connectors.get(connId);
     if (connector.isConnected()) {
-      // ChannelBuffer buffer = ChannelBuffers.copiedBuffer(message);
       connector.write(packet);
       return true;
-    }
-    else {
+    } else {
       logger.error("CLIENT - " + connId + " is not connected!");
-      return false;
+      if (!connect(endpoints.get(connId)._host, endpoints.get(connId)._port)) {
+        logger.error("CLIENT - reconnecting to " + connId + " failed.");
+        return false;
+      }
+      connector = connectors.get(connId);
+      if (connector.isConnected()) {
+        connector.write(packet);
+        return true;
+      } else {
+        logger.error("CLIENT - " + connId + " still is not connected!");
+        return false;
+      }
     }
   }
 

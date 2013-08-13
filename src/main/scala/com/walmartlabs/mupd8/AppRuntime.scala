@@ -45,15 +45,36 @@ class AppRuntime(appID: Int,
   // put definition here prevent null pointer exception when it is called at _ring init
   val eventBufferForRingChange: ConcurrentLinkedQueue[PerformerPacket] = new ConcurrentLinkedQueue[PerformerPacket]();
 
-  def initMapUpdatePool(poolsize: Int, runtime: AppRuntime, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
-    new MapUpdatePool[PerformerPacket](poolsize, runtime, clusterFactory)
-
   val msClient: MessageServerClient = if (appStatic.messageServerHost != None && appStatic.messageServerPort != None) {
     new MessageServerClient(appStatic.messageServerHost.get.asInstanceOf[String], appStatic.messageServerPort.get.asInstanceOf[Number].intValue(), 1000)
   } else {
     error("AppRuntime error: message server host name or port is empty")
     null
   }
+
+  def initMapUpdatePool(poolsize: Int, runtime: AppRuntime, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
+    new MapUpdatePool[PerformerPacket](poolsize, runtime, clusterFactory)
+  // pool depends on mucluster, mucluster depends on msClient
+  val pool = initMapUpdatePool(poolsize, this,
+    action => new MUCluster[PerformerPacket](appStatic, appStatic.statusPort + 100,
+                                             PerformerPacket(0, 0, Key(new Array[Byte](0)), Array(), "", this),
+                                             () => { new Decoder(this) },
+                                             action, msClient))
+
+  val storeIo = if (useNullPool) new NullPool
+                else new CassandraPool(appStatic.cassHosts,
+                                       appStatic.cassPort,
+                                       appStatic.cassKeySpace,
+                                       p => (appStatic.performers(appStatic.performerName2ID(p)).cf).getOrElse(appStatic.cassColumnFamily),
+                                       p => appStatic.performers(appStatic.performerName2ID(p)).ttl,
+                                       appStatic.compressionCodec)
+  // TLS depends on storeIo
+  private val threadMap: Map[Long, TLS] = pool.threadDataPool.map(_.thread.getId -> new TLS(this))(breakOut)
+  private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
+
+  val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
+  info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
+  val slateBuilders = appStatic.slateBuilderFactory.map(_.map(_.apply()))
 
   // start local server socket
   val localMessageServer = if (appStatic.messageServerPort != None) {
@@ -129,12 +150,6 @@ class AppRuntime(appID: Int,
   slateURLserver.start
   info("slateURLserver is up on port" + appStatic.statusPort)
 
-  val pool = initMapUpdatePool(poolsize, this,
-    action => new MUCluster[PerformerPacket](appStatic, appStatic.statusPort + 100,
-                                             PerformerPacket(0, 0, Key(new Array[Byte](0)), Array(), "", this),
-                                             () => { new Decoder(this) },
-                                             action, msClient))
-
   /* generate Hash Ring */
   private var _ring: HashRing = null
   def ring = _ring // getter
@@ -182,20 +197,6 @@ class AppRuntime(appID: Int,
     error("AppRuntime: No hash ring either from c¬onfig file or message server")
     System.exit(-1)
   }
-
-  val storeIo = if (useNullPool) new NullPool
-                else new CassandraPool(appStatic.cassHosts,
-                                       appStatic.cassPort,
-                                       appStatic.cassKeySpace,
-                                       p => (appStatic.performers(appStatic.performerName2ID(p)).cf).getOrElse(appStatic.cassColumnFamily),
-                                       p => appStatic.performers(appStatic.performerName2ID(p)).ttl,
-                                       appStatic.compressionCodec)
-
-  val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
-  info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
-  val slateBuilders = appStatic.slateBuilderFactory.map(_.map(_.apply()))
-  private val threadMap: Map[Long, TLS] = pool.threadDataPool.map(_.thread.getId -> new TLS(this))(breakOut)
-  private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
 
   def getSlate(key: (String, Key)) = {
     val performerId = appStatic.performerName2ID(key._1)
@@ -323,10 +324,6 @@ class AppRuntime(appID: Int,
     }
   }, "writerThread")
   writerThread.start()
-
-  // This step should be the last step in the initialization (it brings up the MapUpdatePool sockets)
-  // to avoid exposing the JVM to external input before it is ready
-  pool.init()
 
   def flushDirtySlateToCassandra() {
     if (threadVect != null) { // flush only when node is initted

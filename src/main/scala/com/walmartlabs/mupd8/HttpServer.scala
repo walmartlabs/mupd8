@@ -96,6 +96,7 @@ class HttpServerHandler(mapper : String => Option[Array[Byte]]) extends SimpleCh
   override def messageReceived(ctx : ChannelHandlerContext, e : MessageEvent) : Unit = {
     val msg : AnyRef = e.getMessage;
     if (msg.isInstanceOf[HttpRequest]) {
+      debug("HttpServer: received " + msg.asInstanceOf[HttpRequest])
       handleHttpRequest(ctx, msg.asInstanceOf[HttpRequest]);
     } else {
       super.messageReceived(ctx, e);

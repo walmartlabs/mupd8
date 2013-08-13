@@ -60,7 +60,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
         val msg = in.readObject()
         msg match {
           case NodeRemoveMessage(ipSetToRemove) =>
-            info("MessageServer: received node remove message: " + msg)
+            info("MessageServer: received NodeRemoveMessage: remove " + ipSetToRemove)
             // check if node is already removed
             val oldRingIPSet = ring2.iPs.toSet
             val ipSetToRemove1 = ipSetToRemove.filter(ip => oldRingIPSet.contains(ip))
@@ -256,6 +256,8 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
 
   AckedNodeCounter.start
 
+  // For now it only check node with sources on it
+  // From there those nodes can detect other nodes' failure
   object PingCheck extends Actor {
     override def act() {
       while (keepRunning) {
@@ -415,15 +417,19 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               val oldIPs: Set[String] = if (runtime.appStatic.systemHosts == null) Set.empty else runtime.appStatic.systemHosts.keySet
               val addedIPs = setAminusSetB(newIPs, oldIPs, immutable.Set.empty)
               val removedIPs = setAminusSetB(oldIPs, newIPs, immutable.Set.empty)
+              debug("UpdateRing: addedIPs = " + addedIPs + ", removedIPs = " + removedIPs)
               
-              runtime.ring = runtime.candidateRing
-              runtime.appStatic.systemHosts = runtime.candidateHostList._2
-              runtime.candidateRing = null
-              runtime.candidateHostList = null
+              // Adjust nodes in cluster before switch ring
+              // o.w. events for addedIPs might be able to be sent new nodes
               if (runtime.pool != null) {
                 runtime.pool.cluster.addHosts(addedIPs)
                 runtime.pool.cluster.removeHosts(removedIPs)
               }
+
+              runtime.ring = runtime.candidateRing
+              runtime.appStatic.systemHosts = runtime.candidateHostList._2
+              runtime.candidateRing = null
+              runtime.candidateHostList = null
               runtime.flushSlatesInBufferToQueue
               info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
             } else {

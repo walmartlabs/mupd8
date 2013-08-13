@@ -92,8 +92,7 @@ public class Server {
         	logger.info("SERVER is bound to *:" + port);
         	allChannels.add(channel);
         	return true;
-        }
-        else {
+        } else {
         	logger.error("SERVER failed to bind to *:" + port);
         	bootstrap.releaseExternalResources();
         	return false;

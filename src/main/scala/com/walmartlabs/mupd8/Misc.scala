@@ -62,10 +62,9 @@ object Misc extends Logging {
   }
 
   /** A way to force the JVM to exit on uncaught Throwable. */
-  class TerminatingExceptionHandler extends Thread.UncaughtExceptionHandler {
+  class TerminatingExceptionHandler extends Thread.UncaughtExceptionHandler with Logging {
     override def uncaughtException(t : Thread, e : Throwable) : Unit = {
-      println("Uncaught Throwable for thread " + t.getName() + " : " + e.getMessage() + ", exiting.");
-      e.printStackTrace(new java.io.PrintStream(System.out));
+      error("Uncaught Throwable for thread " + t.getName() + " : " + e.getMessage() + ", exiting.", e);
       System.exit(2);
     }
   }

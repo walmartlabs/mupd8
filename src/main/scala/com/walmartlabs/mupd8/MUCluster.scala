@@ -18,9 +18,6 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
     override def call() = decoderFactory()
   }
 
-  // hosts can be updated at runtime
-  def hosts = app.systemHosts
-
   val server = new Server(port, new Listener() {
     override def messageReceived(packet: AnyRef): Boolean = {
       val destObj = packet.asInstanceOf[T]
@@ -29,20 +26,16 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
       true
     }
   }, encoder, callableFactory)
+  server.start()
+  info("MUCluster: MUCluster server at " + port + " started")
 
   val client = new Client(new Listener() {
     override def messageReceived(packet: AnyRef): Boolean = {
       error("Client should not receive messages")
-      assert(false)
       true
     }
   }, encoder, callableFactory)
   client.init()
-
-  def init() {
-    server.start()
-    hosts.filterKeys(_.compareTo(app.self.ip) != 0).foreach (host => client.addEndpoint(host._1, port))
-  }
 
   // Add host to connection map
   def addHost(host: String) {
@@ -64,9 +57,12 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
 
   def send(destip: String, obj: T) {
     if (!client.send(destip, obj)) {
-      error("Failed to send slate to destination " + destip)
+      error("Failed to send event (" + obj + ") to destination " + destip)
       if (msClient != null) {
+        error("MUCluster: Report node " + destip + " failure")
         msClient.sendMessage(NodeRemoveMessage(Set(destip)))
+      } else {
+        error("MUCluster: msclient is null")
       }
     }
   }
