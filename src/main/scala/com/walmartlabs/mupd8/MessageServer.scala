@@ -40,6 +40,7 @@ import annotation.tailrec
 
 /* Message Server for whole cluster */
 class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest: Boolean = false) extends Thread with Logging {
+  setName("MessageServer")
 
   /* socket server to communicate clients */
   override def run() {
@@ -280,64 +281,6 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
     }
   }
   PingCheck.start
-}
-
-object MessageServer extends Logging {
-
-  def main(args: Array[String]) {
-    val parser = new OptionParser
-    val folderOpt = parser.accepts("d", "REQUIRED: config file folder containing sys and app configs").withRequiredArg().ofType(classOf[String])
-    val sysOpt = parser.accepts("s", "DEPRECATED: sys config file").withRequiredArg().ofType(classOf[String])
-    val appOpt = parser.accepts("a", "DEPRECATED: app config file").withRequiredArg().ofType(classOf[String])
-    val pidOpt = parser.accepts("pidFile", "mupd8 process PID file").withRequiredArg().ofType(classOf[String]).defaultsTo("messageserver.pid")
-    val options = parser.parse(args: _*)
-
-    var config: application.Config = null
-    if (options.has(folderOpt)) {
-      info(folderOpt + " is provided")
-      config = new application.Config(new File(options.valueOf(folderOpt)))
-    } else if (options.has(sysOpt) && options.has(appOpt)) {
-      info(sysOpt + " and " + appOpt + " are provided")
-      config = new application.Config(options.valueOf(sysOpt), options.valueOf(appOpt))
-    } else {
-      error("Missing arguments: Please provide either " +
-        folderOpt + " (" + folderOpt.description + ") or " +
-        sysOpt + " (" + sysOpt.description + ") and " +
-        appOpt + " (" + appOpt.description + ")")
-      System.exit(1)
-    }
-    val host = Option(config.getScopedValue(Array("mupd8", "messageserver", "host"))).getOrElse("").asInstanceOf[String]
-    val port = Option(config.getScopedValue(Array("mupd8", "messageserver", "port"))).getOrElse(-1).asInstanceOf[Long].toInt
-    val sources = Option(config.getScopedValue(Array("mupd8", "sources"))).map {
-      x => x.asInstanceOf[java.util.List[org.json.simple.JSONObject]]
-    }.getOrElse(new java.util.ArrayList[org.json.simple.JSONObject]()).asScala
-    if (host.isEmpty || port < 0) {
-      error("MessageServer: host or port is None - " + (host, port))
-      System.exit(-1)
-    }
-
-    if (options.has(pidOpt)) Misc.writePID(options.valueOf(pidOpt))
-
-    if (Misc.isLocalHost(host)) {
-      // save all listed sources
-      val allSources = (for {
-        source <- sources;
-        sourceName = source.get("name").asInstanceOf[String];
-        sourcePerformer = source.get("performer").asInstanceOf[String];
-        sourceClass = source.get("source").asInstanceOf[String];
-        params = source.get("parameters").asInstanceOf[java.util.List[String]].asScala.toList
-      } yield (sourceName -> new Source(sourceName, sourceClass, sourcePerformer, params))).toMap
-
-      // start server thread
-      val server = new MessageServer(Integer.valueOf(port), allSources)
-      server.start
-
-      Runtime.getRuntime().addShutdownHook(new Thread { override def run = server.shutdown() })
-    } else {
-      info("It is not a message server host")
-      System.exit(0);
-    }
-  }
 }
 
 /* Message Server for every node, which receives ring update message for now */

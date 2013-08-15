@@ -14,7 +14,7 @@ start() {
     #export JAVA_OPT="-Xmx512M -Xms512M"
 
     echo "starting messageserver..."
-    nohup java com.walmartlabs.mupd8.MessageServer -pidFile $messageserver_pidfile -d `pwd`/src/main/config/testapp >> nohup.messageserver.out 2>&1 &
+#    nohup java com.walmartlabs.mupd8.MessageServer -pidFile $messageserver_pidfile -d `pwd`/src/main/config/testapp >> nohup.messageserver.out 2>&1 &
 
      echo "starting the mupd8 app..."
 #    nohup java com.walmartlabs.mupd8.Mupd8Main -pidFile $pidfile -key k1 -from file:$HOME/data/T10.data -to T10Source -threads 6 -s `pwd`/src/main/config/testapp/sys_old -a `pwd`/src/main/config/testapp/app_old &

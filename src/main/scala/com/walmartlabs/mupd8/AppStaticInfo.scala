@@ -137,8 +137,8 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
     x => x.asInstanceOf[java.util.List[org.json.simple.JSONObject]]
   }.getOrElse(new java.util.ArrayList[org.json.simple.JSONObject]())
 
-  val messageServerHost = Option(config.getScopedValue(Array("mupd8", "messageserver", "host")))
-  val messageServerPort = Option(config.getScopedValue(Array("mupd8", "messageserver", "port")))
+  val messageServerHost: Option[String] = Option(config.getScopedValue(Array("mupd8", "messageserver", "host"))).map(_.asInstanceOf[String])
+  val messageServerPort: Option[Int] = Option(config.getScopedValue(Array("mupd8", "messageserver", "port"))).map(_.asInstanceOf[Long].toInt)
 
   // Try to detect node's hostname and ipaddress by connecting to message server
   private def getHostName(retryCount: Int): Host = {
@@ -146,10 +146,10 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
       Host(InetAddress.getLocalHost.getHostAddress, InetAddress.getLocalHost.getHostName)
     } else {
       try {
-    	val s = new java.net.Socket(messageServerHost.get.asInstanceOf[String], messageServerPort.get.asInstanceOf[Long].toInt)
-    	val host = Host(s.getLocalAddress.getHostAddress, s.getLocalAddress.getHostName)
-    	s.close
-    	host
+        val s = new java.net.Socket(messageServerHost.get.asInstanceOf[String], messageServerPort.get.asInstanceOf[Long].toInt)
+        val host = Host(s.getLocalAddress.getHostAddress, s.getLocalAddress.getHostName)
+        s.close
+        host
       } catch {
         case e: Exception => warn("getHostName: Connect to message server failed, retry", e); getHostName(retryCount + 1)
       }

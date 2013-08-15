@@ -94,9 +94,31 @@ class UpdaterFactory[U <: binary.Updater](val updaterType : Class[U]) {
 }
 
 object Mupd8Main extends Logging {
+  
+  def startMessageServer(appStatic: AppStaticInfo) {
+      // save all listed sources
+      val allSources = (for {
+        source <- appStatic.sources;
+        sourceName = source.get("name").asInstanceOf[String];
+        sourcePerformer = source.get("performer").asInstanceOf[String];
+        sourceClass = source.get("source").asInstanceOf[String];
+        params = source.get("parameters").asInstanceOf[java.util.List[String]].asScala.toList
+      } yield (sourceName -> new Source(sourceName, sourceClass, sourcePerformer, params))).toMap
+
+      // start server thread
+      if (appStatic.messageServerPort.isDefined) {
+        val server = new MessageServer(Integer.valueOf(appStatic.messageServerPort.get), allSources)
+        server.start
+
+        Runtime.getRuntime().addShutdownHook(new Thread { override def run = server.shutdown() })
+      } else {
+        error("MessagerServer: message server port isn't defined")
+      }
+  }
 
   def main(args: Array[String]) {
     Thread.setDefaultUncaughtExceptionHandler(new Misc.TerminatingExceptionHandler())
+
     val syntax = Map("-s" -> (1, "Sys config file name"),
       "-a" -> (1, "App config file name"),
       "-d" -> (1, "Unified-config directory name"),
@@ -107,38 +129,38 @@ object Mupd8Main extends Logging {
       "-shutdown" -> (0, "Shut down the Mupd8 App"),
       "-pidFile" -> (1, "Optional PID filename"))
 
-    {
-      val argMap = argParser(syntax, args)
-      for {
-        p <- argMap
-        if p.get("-s").size == p.get("-a").size
-        if p.get("-s").size != p.get("-d").size
-        threads <- excToOption(p.get("-threads").map(_.head.toInt).getOrElse(5))
-      } yield {
-        val shutdown = p.get("-shutdown") != None
-        val app = new AppStaticInfo(p.get("-d").map(_.head), p.get("-a").map(_.head), p.get("-s").map(_.head))
-        p.get("-pidFile") match {
-          case None => writePID("mupd8.log")
-          case Some(x) => writePID(x.head)
-        }
-        val runtime = new AppRuntime(0, threads, app)
-        if (runtime.ring != null) {
-          if (app.sources.size > 0) {
-            startSources(app, runtime)
-          } else if (p.contains("-to") && p.contains("-sc")) {
-            info("start source from cmdLine")
-            runtime.startSource("cmdLineSource", p("-to").head, p("-sc").head, seqAsJavaList(p("-sp").head.split(',')))
-          }
-        } else {
-          error("Mupd8Main: no hash ring found, exiting...")
-        }
-        info("Init is done")
-        //        }
-      }
-    } getOrElse {
-      error("Command Syntax error")
-      error("Syntax is\n" + syntax.map(p => p._1 + " " + p._2._2 + "\n").reduceLeft(_ + _))
+    val argMap = argParser(syntax, args)
+    if (argMap.get("-s").size != argMap.get("-a").size || argMap.get("-s").size == argMap.get("-d").size) {
+      error("Command parameter \"-s, -a, -d\" error, exiting...")
+      System.exit(-1)
     }
+    val threads = argMap.get("-threads").map(_.head.toInt).getOrElse(5)
+    val shutdown = !argMap.get("-shutdown").isDefined
+    val appStatic = new AppStaticInfo(argMap.get("-d").map(_.head), argMap.get("-a").map(_.head), argMap.get("-s").map(_.head))
+    argMap.get("-pidFile") match {
+      case None => writePID("mupd8.log")
+      case Some(x) => writePID(x.head)
+    }
+    
+    // start message server
+    if (appStatic.messageServerHost.isDefined && Misc.isLocalHost(appStatic.messageServerHost.get)) {
+      startMessageServer(appStatic)
+    } else {
+      info("It is not a message server host")
+    }
+    
+    val runtime = new AppRuntime(0, threads, appStatic)
+    if (runtime.ring != null) {
+      if (appStatic.sources.size > 0) {
+        startSources(appStatic, runtime)
+      } else if (argMap.contains("-to") && argMap.contains("-sc")) {
+        info("start source from cmdLine")
+        runtime.startSource("cmdLineSource", argMap("-to").head, argMap("-sc").head, seqAsJavaList(argMap("-sp").head.split(',')))
+      }
+    } else {
+      error("Mupd8Main: no hash ring found, exiting...")
+    }
+    info("Initialization is done")
   }
 
   def startSources(app: AppStaticInfo, runtime: AppRuntime) {

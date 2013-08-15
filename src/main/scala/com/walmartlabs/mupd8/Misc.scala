@@ -113,7 +113,7 @@ object Misc extends Logging {
 
   def str(a: Array[Byte]) = new String(a)
 
-  def argParser(syntax: Map[String, (Int, String)], args: Array[String]): Option[Map[String, List[String]]] = {
+  def argParser(syntax: Map[String, (Int, String)], args: Array[String]): Map[String, List[String]] = {
     var parseSuccess = true
 
     def next(i: Int): Option[((String, List[String]), Int)] =
@@ -128,9 +128,9 @@ object Misc extends Logging {
 
     parseSuccess = parseSuccess && !result.isEmpty && !(result zip result.tail).exists(p => p._1._1 == p._2._1)
     if (parseSuccess)
-      Some(Map.empty ++ result)
+      Map.empty ++ result
     else
-      None
+      Map.empty
   }
 
   class Later[T] {
