@@ -328,7 +328,8 @@ EOF
     "#java_class_path"  : "share/java/*",
     "#java_setting"     : "-Xmx200M -Xms200M",
     "sources" : [
-         {       
+         {
+             "name": "source1"
              "source" : "com.walmartlabs.mupd8.JSONSource",
              "host" : "localhost",
              "performer" : "request_source",
