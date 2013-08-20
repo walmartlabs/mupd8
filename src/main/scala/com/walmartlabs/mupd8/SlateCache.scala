@@ -61,9 +61,9 @@ class SlateCache(val io: IoPool, val usageLimit: Long, val tls: TLS) extends Log
       while (io.pendingCount > 200) java.lang.Thread.sleep(100)
       def slateFromBytes(p:Array[Byte]) = { slateBuilder.toSlate(p) }
       if( doSafePut ) {
-        io.fetch(key._1, key._2, p => action(safePut(key, p.map {slateFromBytes}.getOrElse{updater.getDefaultSlate()})))
+        io.fetchSlates(key._1, key._2, p => action(safePut(key, p.map {slateFromBytes}.getOrElse{updater.getDefaultSlate()})))
       } else {
-        io.fetch(key._1, key._2, p => action(p.map {slateFromBytes}.getOrElse{updater.getDefaultSlate()}))
+        io.fetchSlates(key._1, key._2, p => action(p.map {slateFromBytes}.getOrElse{updater.getDefaultSlate()}))
       }
     }
   }

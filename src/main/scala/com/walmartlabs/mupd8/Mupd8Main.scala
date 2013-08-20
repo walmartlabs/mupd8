@@ -111,6 +111,8 @@ object Mupd8Main extends Logging {
         server.start
 
         Runtime.getRuntime().addShutdownHook(new Thread { override def run = server.shutdown() })
+        
+        info("MessageServer started")
       } else {
         error("MessagerServer: message server port isn't defined")
       }

@@ -28,11 +28,21 @@ import org.scale7.cassandra.pelops.Mutator
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
+import scala.collection.JavaConverters._
+import scala.collection.JavaConversions._
 import org.apache.cassandra.thrift.ConsistencyLevel
 import org.scale7.cassandra.pelops.Bytes
+import org.apache.cassandra.thrift.Column
+import org.apache.cassandra.thrift.KsDef
+import scala.util.Try
+import org.apache.cassandra.thrift.CfDef
+import org.scale7.cassandra.pelops.KeyspaceManager
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Failure
 
 trait IoPool extends Logging{
-  def fetch(name: String, key: Key, next: Option[Array[Byte]] => Unit)
+  def fetchSlates(name: String, key: Key, next: Option[Array[Byte]] => Unit)
   def initBatchWrite: Boolean = true
   def batchWrite(columnName: String, key: Key, slate: Array[Byte]): Boolean
   def flushBatchWrite: Boolean = true
@@ -41,8 +51,15 @@ trait IoPool extends Logging{
 }
 
 class NullPool extends IoPool {
-  def fetch(name: String, key: Key, next: Option[Array[Byte]] => Unit) { next(None) }
+  def fetchSlates(name: String, key: Key, next: Option[Array[Byte]] => Unit) { next(None) }
   def batchWrite(columnName: String, key: Key, slate: Array[Byte]): Boolean = true
+}
+
+object CassandraPool {
+  val SETTINGS_CF = "settings"
+  val PRIMARY_ROWKEY = "primary"
+  val UP_FLAG = "up_flag"
+  val NODE_LIST = "node_list"
 }
 
 class CassandraPool(
@@ -53,34 +70,27 @@ class CassandraPool(
   val getTTL: String => Int,
   val compressionCodec: String) extends IoPool {
 
-  val poolName = keyspace //TODO: Change this
+  val poolName = keyspace
   val cluster = new Cluster(hosts.reduceLeft(_ + "," + _), port)
   val cService = CompressionFactory.getService(compressionCodec)
   info("Use compression codec " + compressionCodec)
-  val dbIsConnected =
-    {
-      for (
-        keySpaceManager <- Option(Pelops.createKeyspaceManager(cluster));
-        _ <- { info("Getting keyspaces from Cassandra Cluster " + hosts.reduceLeft(_ + "," + _) + ":" + port); Some(true) };
-        keySpaces <- excToOption(keySpaceManager.getKeyspaceNames.toArray.map(_.asInstanceOf[org.apache.cassandra.thrift.KsDef]));
-        _ <- { info("[OK] - Checking for keyspace " + keyspace); Some(true) };
-        ks <- keySpaces find (_.getName == keyspace)
-      //_ <- {info("[OK] - Checking for column family " + columnFamily) ; Some(true)} ;
-      //cfs             <- ks.getCf_defs.toArray find {_.asInstanceOf[org.apache.cassandra.thrift.CfDef].getName == columnFamily}
-      ) yield { info("Keyspace " + keyspace + " is found"); true }
-    } getOrElse { error("Keyspace " + keyspace + " is not found. Terminating Mupd8..."); false }
+  val keyspaceManager = Pelops.createKeyspaceManager(cluster)
+  // try connecting cassandra server
+  Try(keyspaceManager.getKeyspaceNames()) match {
+    case Failure(ex) =>
+      error("CassandraPool: connecting cassandra failed, exiting...", ex)
+      System.exit(-1)
+    case Success(_) => info("CassandraPool: cassandra server connected.")
+  }
 
-  if (!dbIsConnected) java.lang.System.exit(1)
-
-  Pelops.addPool(poolName, cluster, keyspace)
   val selector = Pelops.createSelector(poolName) // TODO: Should this be per thread?
   val pool = new ThreadPoolExecutor(10, 50, 5, TimeUnit.SECONDS, new LinkedBlockingQueue[Runnable]) // TODO: We can drop events unless we have a Rejection Handler or LinkedQueue
 
-  def fetch(name: String, key: Key, next: Option[Array[Byte]] => Unit) {
+  // fetch slates and call next on slates
+  def fetchSlates(name: String, key: Key, next: Option[Array[Byte]] => Unit) {
     pool.submit(run {
       val start = java.lang.System.nanoTime()
       val col = excToOption(selector.getColumnFromRow(getCF(name), Bytes.fromByteArray(key.value), Bytes.fromByteArray(name.getBytes), ConsistencyLevel.QUORUM))
-      //debug("Fetch " + (java.lang.System.nanoTime() - start) / 1000000 + " " + name + " " + str(key))
       next(col.map { col =>
         assert(col != null)
         val ba = Bytes.fromByteBuffer(col.value).toByteArray
