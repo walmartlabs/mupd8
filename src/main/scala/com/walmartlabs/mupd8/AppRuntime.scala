@@ -154,12 +154,9 @@ class AppRuntime(appID: Int,
   private var _ring: HashRing = null
   def ring = _ring // getter
   def ring_= (r: HashRing): Unit = {_ring = HashRing.initFromRing(r)} // setter
-//  def ring_= (hash: IndexedSeq[String]): Unit = {_ring = new HashRing(hash)}
 
   // candidate ring and host list from message server
   var candidateRing: HashRing = null
-  // (ip addresses, ip to hostname map)
-  var candidateHostList: (IndexedSeq[String], immutable.Map[String, String]) = null
 
   // Try to Register host to message server and get updated hash ring from message server
   // even if hash ring is generated from system hosts already

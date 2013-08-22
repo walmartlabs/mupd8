@@ -290,7 +290,6 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
   override def run() {
     def setCandidateRingAndHostList(hash: IndexedSeq[String], hosts: (IndexedSeq[String], immutable.Map[String, String])) {
       runtime.candidateRing = HashRing.initFromParameters(hosts._1, hash, hosts._2)
-      runtime.candidateHostList = hosts
     }
 
     info("LocalMessageServerThread: Start listening to " + port)
@@ -356,7 +355,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             out.writeObject(ACKMessage)
 
             if (runtime.candidateRing != null) {
-              val newIPs: Set[String] = runtime.candidateHostList._1.toSet
+              val newIPs: Set[String] = runtime.candidateRing.ips.toSet
               val oldIPs: Set[String] = if (runtime.appStatic.systemHosts == null) Set.empty else runtime.appStatic.systemHosts.keySet
               val addedIPs = setAminusSetB(newIPs, oldIPs, immutable.Set.empty)
               val removedIPs = setAminusSetB(oldIPs, newIPs, immutable.Set.empty)
@@ -370,9 +369,8 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               }
 
               runtime.ring = runtime.candidateRing
-              runtime.appStatic.systemHosts = runtime.candidateHostList._2
+              runtime.appStatic.systemHosts = runtime.candidateRing.ipHostMap
               runtime.candidateRing = null
-              runtime.candidateHostList = null
               runtime.flushSlatesInBufferToQueue
               info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
             } else {

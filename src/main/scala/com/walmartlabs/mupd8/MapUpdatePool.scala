@@ -195,7 +195,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntim
     if (appRun.appStatic.self.ip.compareTo(dest) == 0
         ||
         // during ring chagne process, if dest is going to be removed from cluster
-        (appRun.candidateHostList != null && !appRun.candidateHostList._2.contains(dest)))
+        (appRun.candidateRing != null && !appRun.candidateRing.ips.contains(dest)))
       putLocal(key, x)
     else
       cluster.send(dest, x)
