@@ -63,10 +63,10 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
           case NodeRemoveMessage(ipSetToRemove) =>
             info("MessageServer: received NodeRemoveMessage: remove " + ipSetToRemove)
             // check if node is already removed
-            val oldRingIPSet = ring2.iPs.toSet
+            val oldRingIPSet = ring.ips.toSet
             val ipSetToRemove1 = ipSetToRemove.filter(ip => oldRingIPSet.contains(ip))
-            val newHostList = ring2.iPs.filter(ip => !ipSetToRemove.contains(ip))
-            debug("oldRingIPSet = " + oldRingIPSet + ", ipSetToRemove = " + ipSetToRemove + ", ipSetToRemove1 = " + ipSetToRemove1)            
+            val newHostList = ring.ips.filter(ip => !ipSetToRemove.contains(ip))
+            debug("oldRingIPSet = " + oldRingIPSet + ", ipSetToRemove = " + ipSetToRemove + ", ipSetToRemove1 = " + ipSetToRemove1)
             if (ipSetToRemove1.isEmpty) {
               info("MessageServer: NodeRemoveMessage - " + ipSetToRemove + " is already removed in message server")
               out.writeObject(ACKMessage)
@@ -76,7 +76,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
               // send ACK to reported
               out.writeObject(ACKMessage)
               // update hash ring
-              ring2 = ring2.remove(newHostList, ipSetToRemove1)
+              ring = ring.remove(newHostList, ipSetToRemove1)
 
               // update source
               // check if hostToRemove has source on it
@@ -84,8 +84,8 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
                 if (ipSetToRemove.contains(source._2)) {
                   val sourceName = source._1
                   // pick another host from ring to start source on
-                  val ipToStart = ring2(sourceName)
-                  info("NodeRemoveMessage: pick " + ring2.ipHostMap(ipToStart) + " to start source" + (sourceName))
+                  val ipToStart = ring(sourceName)
+                  info("NodeRemoveMessage: pick " + ring.ipHostMap(ipToStart) + " to start source" + (sourceName))
 
                   // if source is not started, send start message
                   // Connect source with hostToStart. If source is not accessible from
@@ -99,7 +99,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
               if (!isTest) {
                 // if it is unit test, don't send new ring to all nodes
                 // Local message server's port is always port + 1
-                info("NodeRemoveMessage: CmdID " + lastCmdID + " - Sending " + ring2 + " to " + ring2.iPs.map(ring2.ipHostMap(_)))
+                info("NodeRemoveMessage: CmdID " + lastCmdID + " - Sending " + ring + " to " + ring.ips.map(ring.ipHostMap(_)))
 
                 // reset Timer
                 Timer.startTimer(lastCmdID, 2000L, () => {
@@ -110,10 +110,10 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
                   msClient.sendMessage(NodeRemoveMessage(notAckedNodes))
                 })
                 // reset counter
-                AckedNodeCounter ! StartCounter(lastCmdID, ring2.iPs, "localhost", port)
+                AckedNodeCounter ! StartCounter(lastCmdID, ring.ips, "localhost", port)
 
                 // Send prepare ring update message
-                SendNewRing ! SendMessageToNode(lastCmdID, ring2.iPs, (port + 1), PrepareRemoveHostMessage(lastCmdID, ring2.hash, ring2.iPs, ring2.ipHostMap), port)
+                SendNewRing ! SendMessageToNode(lastCmdID, ring.ips, (port + 1), PrepareRemoveHostMessage(lastCmdID, ring.hash, ring.ips, ring.ipHostMap), port)
               }
             }
 
@@ -124,18 +124,18 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
             // send ACK to reported
             out.writeObject(ACKMessage)
             // update hash ring
-            ring2 = if (ring2 == null) HashRing2.initFromHost(hostToAdd)
-            else if (ring2.iPs.contains(hostToAdd.ip)) {
-              ring2 // if ring2 already contains this node, do nothing
+            ring = if (ring == null) HashRing.initFromHost(hostToAdd)
+            else if (ring.ips.contains(hostToAdd.ip)) {
+              ring // if ring already contains this node, do nothing
             } else {
-              val newHostList = ring2.iPs :+ hostToAdd.ip
-              ring2.add(newHostList, hostToAdd)
+              val newHostList = ring.ips :+ hostToAdd.ip
+              ring.add(newHostList, hostToAdd)
             }
             // TODO: replace isTest with new SendNewRing
             if (!isTest) {
               // if it is unit test, don't send new ring to all nodes
               // Local message server's port is always port + 1
-              info("NodeJoinMessage: cmdID " + lastCmdID + " - Sending " + ring2 + " to " + ring2.iPs.map(ring2.ipHostMap(_)))
+              info("NodeJoinMessage: cmdID " + lastCmdID + " - Sending " + ring + " to " + ring.ips.map(ring.ipHostMap(_)))
               // reset Timer
               Timer.startTimer(lastCmdID, 2000L, () => {
                 val notAckedNodes = AckedNodeCounter.nodesNotAcked
@@ -145,24 +145,24 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
                 msClient.sendMessage(NodeRemoveMessage(notAckedNodes))
               })
               // reset counter
-              AckedNodeCounter ! StartCounter(lastCmdID, ring2.iPs, "localhost", port)
+              AckedNodeCounter ! StartCounter(lastCmdID, ring.ips, "localhost", port)
 
               // Send prepare ring update message
-              SendNewRing ! SendMessageToNode(lastCmdID, ring2.iPs, port + 1, PrepareAddHostMessage(lastCmdID, ring2.hash, ring2.iPs, ring2.ipHostMap), port)
+              SendNewRing ! SendMessageToNode(lastCmdID, ring.ips, port + 1, PrepareAddHostMessage(lastCmdID, ring.hash, ring.ips, ring.ipHostMap), port)
             }
 
           case ACKPrepareAddHostMessage(cmdID, host) =>
-            info("MessageServer: Receive ACKPrepareAddHostMessage - " + (cmdID, ring2.ipHostMap(host)))
+            info("MessageServer: Receive ACKPrepareAddHostMessage - " + (cmdID, ring.ipHostMap(host)))
             AckedNodeCounter ! CountPrepareACK(cmdID, host)
 
           case ACKPrepareRemoveHostMessage(cmdID, ip) =>
-            info("MessageServer: Receive ACKPrepareRemoveHostMessage - " + (cmdID, ring2.ipHostMap(ip)))
+            info("MessageServer: Receive ACKPrepareRemoveHostMessage - " + (cmdID, ring.ipHostMap(ip)))
             AckedNodeCounter ! CountPrepareACK(cmdID, ip)
 
           case AllNodesACKedPrepareMessage(cmdID: Int) =>
             info("MessageServer: AllNodesACKedPrepareMessage received, cmdID = " + cmdID)
             // send update ring message to Nodes
-            SendNewRing ! SendMessageToNode(cmdID, ring2.iPs, port + 1, UpdateRing(cmdID), port)
+            SendNewRing ! SendMessageToNode(cmdID, ring.ips, port + 1, UpdateRing(cmdID), port)
 
           case IPCHECKDONE =>
             info("MessageServer: IP CHECK received")
@@ -203,26 +203,26 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
 
   /* actor sending new ring to nodes in cluster */
   abstract class SendNewRingMessage
-  case class SendMessageToNode(cmdID: Int, iPs: IndexedSeq[String], port: Int, msg: Message, msport: Int) extends SendNewRingMessage
+  case class SendMessageToNode(cmdID: Int, ips: IndexedSeq[String], port: Int, msg: Message, msport: Int) extends SendNewRingMessage
   object SendNewRing extends Actor {
     private val stop = false
 
     override def act() {
       react {
         // msport: port of message server
-        case SendMessageToNode(cmdID, iPs, port, msg, msport) =>
-          iPs foreach (ip =>
+        case SendMessageToNode(cmdID, ips, port, msg, msport) =>
+          ips foreach (ip =>
             // check it is still latest command and hash ring
             if (cmdID == lastRingUpdateCmdID) {
-              info("SendNewRing: Sending cmdID " + cmdID + ", msg = " + msg + " to endpoint " + (ring2.ipHostMap(ip), port))
+              info("SendNewRing: Sending cmdID " + cmdID + ", msg = " + msg + " to endpoint " + (ring.ipHostMap(ip), port))
               val lmsclient = new LocalMessageServerClient(ip, port)
               if (!lmsclient.sendMessage(msg)) {
                 // report host fails if any exception happens
-                info("SendNewRing: report " + ring2.ipHostMap(ip) + " fails")
+                info("SendNewRing: report " + ring.ipHostMap(ip) + " fails")
                 val msClient = new MessageServerClient("localhost", msport)
                 msClient.sendMessage(NodeRemoveMessage(immutable.Set(ip)))
               }
-            } else info("SendNewRing: skip non-currernt command - " + lastRingUpdateCmdID + ", " + ring2))
+            } else info("SendNewRing: skip non-currernt command - " + lastRingUpdateCmdID + ", " + ring))
           act()
         case "EXIT" =>
           info("SendNewRing receive EXIT")
@@ -250,7 +250,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
   // there may message not requiring no new ring update
   var lastCmdID = -1
   var lastRingUpdateCmdID = -1
-  var ring2: HashRing2 = null
+  var ring: HashRing = null
   var keepRunning = true
   // save started source readers
   var startedSources: Map[String, String] = Map.empty // (source name -> source host machine ip)
@@ -289,7 +289,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
 
   override def run() {
     def setCandidateRingAndHostList(hash: IndexedSeq[String], hosts: (IndexedSeq[String], immutable.Map[String, String])) {
-      runtime.candidateRing = new HashRing(hash)
+      runtime.candidateRing = HashRing.initFromParameters(hosts._1, hash, hosts._2)
       runtime.candidateHostList = hosts
     }
 
@@ -351,7 +351,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
                   setAminusSetB(setA.tail, setB, rlt + setA.head)
               }
             }
-            
+
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
 
@@ -361,7 +361,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               val addedIPs = setAminusSetB(newIPs, oldIPs, immutable.Set.empty)
               val removedIPs = setAminusSetB(oldIPs, newIPs, immutable.Set.empty)
               debug("UpdateRing: addedIPs = " + addedIPs + ", removedIPs = " + removedIPs)
-              
+
               // Adjust nodes in cluster before switch ring
               // o.w. events for addedIPs might be able to be sent new nodes
               if (runtime.pool != null) {

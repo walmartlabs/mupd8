@@ -27,23 +27,12 @@ import grizzled.slf4j.Logging
 /**
  *  A map from Int < N to hostname.
  */
-class HashRing(val hash: IndexedSeq[String]) extends Logging {
-  private val N = hash.size
-
-  // pick up hosts
-  def apply(key : Any) : String = {
-    hash(((key.hashCode * 997 + Int.MaxValue.toLong) % N).toInt)
-  }
-
-  override def toString: String = hash.toString
-}
-
-object HashRing2 {
+object HashRing {
   private val N = 5000
   private val random = new Random(System.currentTimeMillis)
 
-  def initFromHosts(hosts: IndexedSeq[Host]): HashRing2 = {
-    def _initFromHosts(hostList: List[Host], ring: HashRing2): HashRing2 = {
+  def initFromHosts(hosts: IndexedSeq[Host]): HashRing = {
+    def _initFromHosts(hostList: List[Host], ring: HashRing): HashRing = {
       if (hostList.isEmpty) ring
       else if (ring == null) {
         val hash = Vector.range(0, N) map (x => hostList.head)
@@ -51,7 +40,7 @@ object HashRing2 {
         val newRing = initFromHost(hostList.head)
         _initFromHosts(hostList.tail, newRing)
       } else {
-        val newHosts = ring.iPs :+ hostList.head.ip
+        val newHosts = ring.ips :+ hostList.head.ip
         val newRing = ring.add(newHosts, hostList.head)
         _initFromHosts(hostList.tail, newRing)
       }
@@ -64,11 +53,20 @@ object HashRing2 {
     }
   }
 
-  def initFromHost(host: Host): HashRing2 = synchronized {
+  def initFromHost(host: Host): HashRing = synchronized {
     val hash = Vector.range(0, N) map (x => host.ip)
     val map = Map(host -> N)
-    new HashRing2(IndexedSeq[String](host.ip), hash, Map(host.ip -> host.hostname), Map(host.ip -> N))
+    new HashRing(IndexedSeq[String](host.ip), hash, Map(host.ip -> host.hostname), Map(host.ip -> N))
   }
+
+  def initFromParameters(iPs: IndexedSeq[String], hash: IndexedSeq[String], ipHostMap: Map[String, String]): HashRing = {
+    hash.count(ip1 => ip1.compareToIgnoreCase("test") == 0)
+    val countMap = hash.distinct.map(ip => (ip, hash.count(ip1 => ip1.compareToIgnoreCase(ip) == 0))).toMap
+    new HashRing(iPs, hash, ipHostMap, countMap)
+  }
+
+  def initFromRing(ring: HashRing): HashRing =
+    new HashRing(ring.ips, ring.hash, ring.ipHostMap, ring.ipCountMap)
 }
 
 // This version of hash ring is used and maintained by message server
@@ -76,11 +74,11 @@ object HashRing2 {
 // hash: real hash table, inited with hostlist(0). map each ip to a slot
 // ipHostMap: map ip address to hostname
 // hostCountMap: (ip -> slot # of ip); stat map for add and remove's convenience
-class HashRing2 private (val iPs: IndexedSeq[String], val hash: IndexedSeq[String], val ipHostMap: Map[String, String], val hostCountMap: Map[String, Int]) extends Serializable with Logging {
+class HashRing private (val ips: IndexedSeq[String], val hash: IndexedSeq[String], val ipHostMap: Map[String, String], val ipCountMap: Map[String, Int]) extends Serializable with Logging {
 
   // pick up hosts
   def apply(key : Any): String = {
-    hash(((key.hashCode * 997 + Int.MaxValue.toLong) % HashRing2.N).toInt)
+    hash(((key.hashCode * 997 + Int.MaxValue.toLong) % HashRing.N).toInt)
   }
 
   /**
@@ -89,11 +87,11 @@ class HashRing2 private (val iPs: IndexedSeq[String], val hash: IndexedSeq[Strin
    * hosts one by one.
    * hostToRemove: ip address of node to remove
    */
-  def remove(newIPList: IndexedSeq[String], iPToRemove: String): HashRing2 = synchronized {
+  def remove(newIPList: IndexedSeq[String], iPToRemove: String): HashRing = synchronized {
     def pickHost(map: Map[String, Int]): String = {
       // randomly pick 2 hosts, use the one existing less in hash to fill slot to be removed
-      val h1 = newIPList(HashRing2.random.nextInt(newIPList.size))
-      val h2 = newIPList(HashRing2.random.nextInt(newIPList.size))
+      val h1 = newIPList(HashRing.random.nextInt(newIPList.size))
+      val h2 = newIPList(HashRing.random.nextInt(newIPList.size))
       if (map(h1) > map(h2)) h2 else h1
     }
 
@@ -110,13 +108,13 @@ class HashRing2 private (val iPs: IndexedSeq[String], val hash: IndexedSeq[Strin
     if (newIPList.isEmpty) null
     else {
       val slotsToReFill = hash.zipWithIndex.filter(_._1.compareTo(iPToRemove) == 0).map(_._2).toList
-      val (newHash, newMap) = _remove(slotsToReFill, hash, hostCountMap)
-      new HashRing2(newIPList, newHash, ipHostMap - iPToRemove, newMap - iPToRemove)
+      val (newHash, newMap) = _remove(slotsToReFill, hash, ipCountMap)
+      new HashRing(newIPList, newHash, ipHostMap - iPToRemove, newMap - iPToRemove)
     }
   }
 
-  def remove(newIPList: IndexedSeq[String], iPSetToRemove: Set[String]): HashRing2 = synchronized {
-    def _remove(iPSetToRemove: Set[String], ring: HashRing2): HashRing2 = {
+  def remove(newIPList: IndexedSeq[String], iPSetToRemove: Set[String]): HashRing = synchronized {
+    def _remove(iPSetToRemove: Set[String], ring: HashRing): HashRing = {
         if (iPSetToRemove.isEmpty) ring
         else {
           val head = iPSetToRemove.head
@@ -133,10 +131,10 @@ class HashRing2 private (val iPs: IndexedSeq[String], val hash: IndexedSeq[Strin
    * Algo: Randomly pick totalSlots/len_of_new_host_list slots
    * and put new host into them
    */
-  def add(newIPList: IndexedSeq[String], hostToAdd : Host): HashRing2 = synchronized {
+  def add(newIPList: IndexedSeq[String], hostToAdd : Host): HashRing = synchronized {
     @tailrec
     def pickSlot(hash: IndexedSeq[String]): Int = {
-      val r = HashRing2.random.nextInt(HashRing2.N)
+      val r = HashRing.random.nextInt(HashRing.N)
       if (hash(r).compareTo(hostToAdd.ip) == 0) pickSlot(hash) else r
     }
 
@@ -151,23 +149,23 @@ class HashRing2 private (val iPs: IndexedSeq[String], val hash: IndexedSeq[Strin
       } else (hash, map)
     }
 
-    val totalSlot = HashRing2.N / (iPs.size + 1)
-    val (newHash, newMap) = _add(totalSlot, hash, hostCountMap)
-    new HashRing2(newIPList, newHash, ipHostMap + (hostToAdd.ip -> hostToAdd.hostname), newMap + (hostToAdd.ip -> totalSlot))
+    val totalSlot = HashRing.N / (ips.size + 1)
+    val (newHash, newMap) = _add(totalSlot, hash, ipCountMap)
+    new HashRing(newIPList, newHash, ipHostMap + (hostToAdd.ip -> hostToAdd.hostname), newMap + (hostToAdd.ip -> totalSlot))
   }
 
   def stat(hostList: IndexedSeq[String], target: Double): Boolean = {
-    val targetN: Int = HashRing2.N / hostList.size
-    !hostCountMap.exists(x =>  math.abs(x._2 - targetN) > targetN * target)
+    val targetN: Int = HashRing.N / hostList.size
+    !ipCountMap.exists(x =>  math.abs(x._2 - targetN) > targetN * target)
   }
 
-  def size = iPs.size
+  def size = ips.size
 
-  override def toString(): String = hostCountMap.map(p => (ipHostMap(p._1) -> p._2)).toString
+  override def toString(): String = ipCountMap.map(p => (ipHostMap(p._1) -> p._2)).toString
 
   // equals and hashCode are for unit test
   override def equals(that: Any) : Boolean =
-    that.isInstanceOf[HashRing2] && (this.hash == that.asInstanceOf[HashRing2].hash) && (this.iPs == that.asInstanceOf[HashRing2].iPs);
+    that.isInstanceOf[HashRing] && (this.hash == that.asInstanceOf[HashRing].hash) && (this.ips == that.asInstanceOf[HashRing].ips);
 
   override def hashCode = hash.hashCode
 }

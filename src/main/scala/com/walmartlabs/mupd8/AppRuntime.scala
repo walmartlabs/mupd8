@@ -153,9 +153,8 @@ class AppRuntime(appID: Int,
   /* generate Hash Ring */
   private var _ring: HashRing = null
   def ring = _ring // getter
-  def ring_= (r: HashRing2): Unit = _ring = new HashRing(r.hash) // setter
-  def ring_= (r: HashRing): Unit = _ring = new HashRing(r.hash)
-  def ring_= (hash: IndexedSeq[String]): Unit = _ring = new HashRing(hash)
+  def ring_= (r: HashRing): Unit = {_ring = HashRing.initFromRing(r)} // setter
+//  def ring_= (hash: IndexedSeq[String]): Unit = {_ring = new HashRing(hash)}
 
   // candidate ring and host list from message server
   var candidateRing: HashRing = null

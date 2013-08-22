@@ -38,22 +38,22 @@ class HashRingTest extends FunSuite with ShouldMatchers {
 
   val random = new Random(java.lang.System.currentTimeMillis)
 
-  test("test hashring2") {
+  test("test HashRing") {
     val hostList1 = Vector.range(0, 10) map (i => Host("192.168.1." + i.toString, "host" + i.toString))
     val hostList2 = hostList1 :+ Host("192.168.1.100","host100")
-    var ring2 = HashRing2.initFromHosts(hostList1)
-    assert(ring2.stat(hostList1.map(_.ip), 0.05))
+    var ring = HashRing.initFromHosts(hostList1)
+    assert(ring.stat(hostList1.map(_.ip), 0.05))
     for (i <- 1 to 5000) {
-      ring2 = ring2.add(hostList2.map(_.ip), Host("192.168.1.100","host100"))
-      assert(ring2.stat(hostList2.map(_.ip), 0.05))
-      ring2 = ring2.remove(hostList1.map(_.ip), "192.168.1.100")
-      assert(ring2.stat(hostList1.map(_.ip), 0.05))
+      ring = ring.add(hostList2.map(_.ip), Host("192.168.1.100","host100"))
+      assert(ring.stat(hostList2.map(_.ip), 0.05))
+      ring = ring.remove(hostList1.map(_.ip), "192.168.1.100")
+      assert(ring.stat(hostList1.map(_.ip), 0.05))
     }
   }
 
-  test("hashring2 serialization") {
+  test("HashRing serialization") {
     val hostList = Vector.range(0, 10) map (i => Host("192.168.1." + i.toString, "host" + i.toString + ".example.com"))
-    val ring = HashRing2.initFromHosts(hostList)
+    val ring = HashRing.initFromHosts(hostList)
     val fileOut = new FileOutputStream("hashring.ser");
     val out = new ObjectOutputStream(fileOut);
     out.writeObject(ring)
@@ -69,7 +69,7 @@ class HashRingTest extends FunSuite with ShouldMatchers {
     new File("hashring.ser").delete
 
     val hostList2 = hostList :+ Host("192.168.1.100", "host100")
-    val ring3 = HashRing2.initFromHosts(hostList2)
+    val ring3 = HashRing.initFromHosts(hostList2)
     new ObjectOutputStream(new FileOutputStream("hashring3.ser")).writeObject(ring3);
 
     val ring4 = new ObjectInputStream(new FileInputStream("hashring3.ser")).readObject
@@ -79,8 +79,7 @@ class HashRingTest extends FunSuite with ShouldMatchers {
 
   test("hashring") {
     val hostList = Vector.range(0, 10) map (i => Host("192.168.1." + i.toString, "host" + i.toString + ".example.com"))
-    val r2 = HashRing2.initFromHosts(hostList)
-    val ring = new HashRing(r2.hash)
+    val r2 = HashRing.initFromHosts(hostList)
   }
 
 }

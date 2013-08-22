@@ -83,6 +83,7 @@ class CassandraPool(
     case Success(_) => info("CassandraPool: cassandra server connected.")
   }
 
+  Pelops.addPool(poolName, cluster, keyspace);
   val selector = Pelops.createSelector(poolName) // TODO: Should this be per thread?
   val pool = new ThreadPoolExecutor(10, 50, 5, TimeUnit.SECONDS, new LinkedBlockingQueue[Runnable]) // TODO: We can drop events unless we have a Rejection Handler or LinkedQueue
 
