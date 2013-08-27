@@ -77,6 +77,7 @@ class AppRuntime(appID: Int,
             }
           }
         case Some(msgserver) =>
+          info("Message server config from data store: " + msgserver)
           val data = msgserver.split(":")
           messageServerHost = data(0)
           messageServerPort = data(1).toInt
@@ -87,6 +88,7 @@ class AppRuntime(appID: Int,
   }
 
   def startMessageServer() {
+    info("Start message server at " + appStatic.messageServerPortFromConfig)
     // save all listed sources
     val allSources = (for {
       source <- appStatic.sources;

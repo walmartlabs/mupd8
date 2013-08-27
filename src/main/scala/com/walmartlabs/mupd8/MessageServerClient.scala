@@ -58,6 +58,7 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 20
 
   // check host ip address and hostname by connecting message server
   def checkIP(): Option[Host] = {
+    info("Check IP")
     try {
       val s = new java.net.Socket(serverHost, serverPort)
       val host = Host(s.getLocalAddress.getHostAddress, s.getLocalAddress.getHostName)
