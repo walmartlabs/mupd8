@@ -138,31 +138,16 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
     x => x.asInstanceOf[java.util.List[org.json.simple.JSONObject]]
   }.getOrElse(new java.util.ArrayList[org.json.simple.JSONObject]())
 
-  val messageServerHost: Option[String] = Option(config.getScopedValue(Array("mupd8", "messageserver", "host"))).map(_.asInstanceOf[String])
-  val messageServerPort: Option[Int] = Option(config.getScopedValue(Array("mupd8", "messageserver", "port"))).map(_.asInstanceOf[Long].toInt)
-
-  // Try to detect node's hostname and ipaddress by connecting to message server
-  private def getHostName(retryCount: Int): Host = {
-    if (retryCount > 10 || messageServerHost == None || messageServerPort == None) {
-      Host(InetAddress.getLocalHost.getHostAddress, InetAddress.getLocalHost.getHostName)
-    } else {
-      try {
-        val s = new java.net.Socket(messageServerHost.get.asInstanceOf[String], messageServerPort.get.asInstanceOf[Long].toInt)
-        val host = Host(s.getLocalAddress.getHostAddress, s.getLocalAddress.getHostName)
-        s.close
-        host
-      } catch {
-        case e: Exception => warn("getHostName: Connect to message server failed, retry", e); getHostName(retryCount + 1)
-      }
-    }
+  val messageServerHostFromConfig: String = Option(config.getScopedValue(Array("mupd8", "messageserver", "host"))) match {
+    case None => error("Message server host setting is wrong, exit..."); System.exit(-1); null
+    case Some(str) => str.asInstanceOf[String]
   }
-  info("Connect to message server " + (messageServerHost, messageServerPort) + " to decide hostname")
-  val self: Host = if (messageServerHost == None || messageServerPort == None)
-                     Host(InetAddress.getLocalHost.getHostAddress, InetAddress.getLocalHost.getHostName)
-                   else
-                     new MessageServerClient(messageServerHost.get.asInstanceOf[String], messageServerPort.get.asInstanceOf[Long].toInt).checkIP
+  val messageServerPortFromConfig: Int = Option(config.getScopedValue(Array("mupd8", "messageserver", "port"))) match {
+    case None => error("Message server port setting is wrong, exiting...");System.exit(-1); -1
+    case Some(str) => str.asInstanceOf[Long].toInt
+  }
 
-  info("Host id is " + self)
+  val internalPort = statusPort + 100
 
-  def internalPort = statusPort + 100;
+  val startupTimeout = 15
 }

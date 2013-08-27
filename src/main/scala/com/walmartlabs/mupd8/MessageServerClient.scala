@@ -57,26 +57,20 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 20
   }
 
   // check host ip address and hostname by connecting message server
-  def checkIP(): Host = {
-    def getHostName(retryCount: Int): Host = {
-      if (retryCount > 10) {
-        Host(InetAddress.getLocalHost.getHostAddress, InetAddress.getLocalHost.getHostName)
-      } else {
-        try {
-          val s = new java.net.Socket(serverHost, serverPort)
-          val host = Host(s.getLocalAddress.getHostAddress, s.getLocalAddress.getHostName)
-          val out = new ObjectOutputStream(s.getOutputStream)
-          out.writeObject(IPCHECKDONE)
-          out.close
-          s.close
-          host
-        } catch {
-          case e: Exception => warn("MessageServerClient::checkIP - Connect to message server failed, retry", e); getHostName(retryCount + 1)
-        }
-      }
+  def checkIP(): Option[Host] = {
+    try {
+      val s = new java.net.Socket(serverHost, serverPort)
+      val host = Host(s.getLocalAddress.getHostAddress, s.getLocalAddress.getHostName)
+      val out = new ObjectOutputStream(s.getOutputStream)
+      out.writeObject(IPCHECKDONE)
+      out.close
+      s.close
+      Some(host)
+    } catch {
+      case e: Exception =>
+        warn("MessageServerClient::checkIP - Connect to message server failed, retry", e)
+        None
     }
-
-    getHostName(0)
   }
 
 }
@@ -87,7 +81,7 @@ class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Int
     try {
       msg match {
         case PING() => debug("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
-        case _ => info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort) 
+        case _ => info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
       }
       val socket = new Socket(serverHost, serverPort)
       val out = new ObjectOutputStream(socket.getOutputStream)

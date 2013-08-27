@@ -33,33 +33,13 @@ import com.walmartlabs.mupd8.GT._
 import com.walmartlabs.mupd8.Misc._
 import com.walmartlabs.mupd8.Mupd8Type._
 import com.walmartlabs.mupd8.application._
+import scala.annotation.tailrec
 
 class AppRuntime(appID: Int,
                  poolsize: Int,
                  val appStatic: AppStaticInfo,
                  useNullPool: Boolean = false) extends Logging {
-  val rand = new Random(System.currentTimeMillis())
-  private val sourceThreads: mutable.ListBuffer[(String, List[java.lang.Thread])] = new mutable.ListBuffer
-  val hostUpdateLock = new Object
-  // Buffer for slates dest of which according to candidateRing is not current node anymore
-  // put definition here prevent null pointer exception when it is called at _ring init
-  val eventBufferForRingChange: ConcurrentLinkedQueue[PerformerPacket] = new ConcurrentLinkedQueue[PerformerPacket]();
-
-  val msClient: MessageServerClient = if (appStatic.messageServerHost != None && appStatic.messageServerPort != None) {
-    new MessageServerClient(appStatic.messageServerHost.get.asInstanceOf[String], appStatic.messageServerPort.get.asInstanceOf[Number].intValue(), 1000)
-  } else {
-    error("AppRuntime error: message server host name or port is empty")
-    null
-  }
-
-  def initMapUpdatePool(poolsize: Int, runtime: AppRuntime, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
-    new MapUpdatePool[PerformerPacket](poolsize, runtime, clusterFactory)
-  // pool depends on mucluster, mucluster depends on msClient
-  val pool = initMapUpdatePool(poolsize, this,
-    action => new MUCluster[PerformerPacket](appStatic, appStatic.statusPort + 100,
-                                             PerformerPacket(0, 0, Key(new Array[Byte](0)), Array(), "", this),
-                                             () => { new Decoder(this) },
-                                             action, msClient))
+  val sysStartTime = System.currentTimeMillis()
 
   val storeIo = if (useNullPool) new NullPool
                 else new CassandraPool(appStatic.cassHosts,
@@ -68,6 +48,120 @@ class AppRuntime(appID: Int,
                                        p => (appStatic.performers(appStatic.performerName2ID(p)).cf).getOrElse(appStatic.cassColumnFamily),
                                        p => appStatic.performers(appStatic.performerName2ID(p)).ttl,
                                        appStatic.compressionCodec)
+
+  // Read previous message server settings
+  // check message server, (message_server_host, port), from data store
+  var messageServerHost: String = null
+  var messageServerPort: Int = -1
+  def setMessageServerFromDataStore() {
+    @tailrec
+    def fetchMessageServerFromDataStore(): Unit = {
+      info("Fetching message server address from db store")
+      storeIo.fetchStringValueColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER) match {
+        case None =>
+          if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) {
+            // cluster first time start, no message server in data store
+            // then start message server, write message server config into data store
+            startMessageServer()
+            storeIo.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig + ":" + appStatic.messageServerPortFromConfig.toString)
+            messageServerHost = appStatic.messageServerHostFromConfig
+            messageServerPort = appStatic.messageServerPortFromConfig
+          } else {
+            if (System.currentTimeMillis() - sysStartTime > appStatic.startupTimeout * 1000) {
+              error("fetchMessageServer timeout, exiting...")
+              System.exit(-1)
+            } else {
+              // sleep and retry
+              Thread.sleep(500)
+              fetchMessageServerFromDataStore()
+            }
+          }
+        case Some(msgserver) =>
+          val data = msgserver.split(":")
+          messageServerHost = data(0)
+          messageServerPort = data(1).toInt
+      }
+    }
+
+    fetchMessageServerFromDataStore()
+  }
+
+  def startMessageServer() {
+    // save all listed sources
+    val allSources = (for {
+      source <- appStatic.sources;
+      sourceName = source.get("name").asInstanceOf[String];
+      sourcePerformer = source.get("performer").asInstanceOf[String];
+      sourceClass = source.get("source").asInstanceOf[String];
+      params = source.get("parameters").asInstanceOf[java.util.List[String]].asScala.toList
+    } yield (sourceName -> new Source(sourceName, sourceClass, sourcePerformer, params))).toMap
+
+    // start server thread
+    val server = new MessageServer(Integer.valueOf(appStatic.messageServerPortFromConfig), allSources)
+    server.start
+
+    Runtime.getRuntime().addShutdownHook(new Thread { override def run = server.shutdown() })
+
+    info("MessageServer started")
+  }
+
+  // check ip and host by connecting to message server
+  // if message server is not responsive, retrieve message server config from data store and retry
+  info("Connect to message server " + (messageServerHost, messageServerPort) + " to decide hostname")
+  def getLocalHostName(retryTimes: Int): Option[Host] = {
+    def _getLocalHostName(retryCount: Int): Option[Host] = {
+      if (retryCount >= retryTimes) None
+      else {
+        setMessageServerFromDataStore()
+        new MessageServerClient(messageServerHost, messageServerPort, 1000).checkIP() match {
+          case None => Thread.sleep(300); warn("getHostName again"); _getLocalHostName(retryCount + 1)
+          case Some(host) => Some(host)
+        }
+      }
+    }
+
+    val isMessageServerFromConfig = Misc.isLocalHost(appStatic.messageServerHostFromConfig)
+    _getLocalHostName(0)
+  }
+  // if this node is specified in config as message server, try less times
+  val firstCheckIpRlt: Option[Host] = getLocalHostName(if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) 5 else 10)
+  val self: Host = firstCheckIpRlt match {
+    case None =>
+      if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) {
+        // if message server is set to this node in config file, restart message server on this node
+        info("Start message server according to config file")
+        startMessageServer()
+        getLocalHostName(5) match {
+          case None => error("Check local host name failed, exit..."); System.exit(-1); null
+          case Some(host) => host
+        }
+      } else {
+        error("Check local host name failed, exit..."); System.exit(-1); null
+      }
+    case Some(host) => host
+  }
+  info("Host id is " + self)
+
+  // message server might be changed to set to current node in case cluster restarts.
+  // so set msClient here instead of at checkIP
+  val msClient: MessageServerClient = new MessageServerClient(messageServerHost, messageServerPort, 1000)
+
+  val rand = new Random(System.currentTimeMillis())
+  private val sourceThreads: mutable.ListBuffer[(String, List[java.lang.Thread])] = new mutable.ListBuffer
+  val hostUpdateLock = new Object
+  // Buffer for slates dest of which according to candidateRing is not current node anymore
+  // put definition here prevent null pointer exception when it is called at _ring init
+  val eventBufferForRingChange: ConcurrentLinkedQueue[PerformerPacket] = new ConcurrentLinkedQueue[PerformerPacket]();
+
+  def initMapUpdatePool(poolsize: Int, runtime: AppRuntime, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
+    new MapUpdatePool[PerformerPacket](poolsize, runtime, clusterFactory)
+  // pool depends on mucluster, mucluster depends on msClient
+  val pool = initMapUpdatePool(poolsize, this,
+    action => new MUCluster[PerformerPacket](self, appStatic.statusPort + 100,
+                                             PerformerPacket(0, 0, Key(new Array[Byte](0)), Array(), "", this),
+                                             () => { new Decoder(this) },
+                                             action, msClient))
+
   // TLS depends on storeIo
   private val threadMap: Map[Long, TLS] = pool.threadDataPool.map(_.thread.getId -> new TLS(this))(breakOut)
   private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
@@ -77,13 +171,8 @@ class AppRuntime(appID: Int,
   val slateBuilders = appStatic.slateBuilderFactory.map(_.map(_.apply()))
 
   // start local server socket
-  val localMessageServer = if (appStatic.messageServerPort != None) {
-    new Thread(new LocalMessageServer(appStatic.messageServerPort.get.asInstanceOf[Number].intValue() + 1, this), "LocalMessageServer")
-  } else {
-    error("AppRuntime error: local message server port is None")
-    null
-  }
-  if (localMessageServer != null) localMessageServer.start
+  val localMessageServer = new Thread(new LocalMessageServer(messageServerPort + 1, this), "LocalMessageServer")
+  localMessageServer.start
   Thread.sleep(200) // Give local Message Server sometime to start
 
   val maxWorkerCount = 2 * Runtime.getRuntime.availableProcessors
@@ -129,7 +218,7 @@ class AppRuntime(appID: Int,
         val key: (String, Key) = (tok(4), Key(tok(5).map(_.toByte).toArray))
         val poolKey = PerformerPacket.getKey(appStatic.performerName2ID(key._1), key._2)
         val dest = ring(poolKey)
-        if (appStatic.self.ip.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
+        if (self.ip.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
           getSlate(key)
         else {
           val slate = fetchURL("http://" + dest + ":" + (appStatic.statusPort + 300) + s)
@@ -165,7 +254,7 @@ class AppRuntime(appID: Int,
       error("Failed to send join message to message server, exiting...")
       System.exit(-1)
     } else {
-      if (!msClient.sendMessage(NodeJoinMessage(appStatic.self))) {
+      if (!msClient.sendMessage(NodeJoinMessage(self))) {
         warn("Connecting to message server failed")
         Thread.sleep(500)
         trySendNodeJoinMessageToMessageServer(time - 500)
@@ -197,7 +286,7 @@ class AppRuntime(appID: Int,
   def getSlate(key: (String, Key)) = {
     val performerId = appStatic.performerName2ID(key._1)
     val host = ring(PerformerPacket.getKey(performerId, key._2))
-    assert(host.compareTo(appStatic.self.ip) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
+    assert(host.compareTo(self.ip) == 0 || host.compareTo("localhost") == 0 || host.compareTo("127.0.0.1") == 0)
     val future = new Later[SlateObject]
     getTLS(performerId, key._2).slateCache.waitForSlate(key, future.set(_), getUpdater(performerId, key._2), getSlateBuilder(performerId), false)
     val bytes = new ByteArrayOutputStream()

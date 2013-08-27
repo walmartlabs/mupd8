@@ -130,7 +130,7 @@ class SlateCache(val io: IoPool, val usageLimit: Long, val tls: TLS) extends Log
                                    else if (tls.appRun.candidateRing == null) false
                                    else {
                                      // decompose key to build performerpacket key
-                                     tls.appRun.appStatic.self.ip.compareTo(tls.appRun.candidateRing(PerformerPacket.getKey(tls.appRun.appStatic.performerName2ID(x._1._1), x._1._2))) != 0
+                                     tls.appRun.self.ip.compareTo(tls.appRun.candidateRing(PerformerPacket.getKey(tls.appRun.appStatic.performerName2ID(x._1._1), x._1._2))) != 0
                                    }).toList
     lock.release
     retVal

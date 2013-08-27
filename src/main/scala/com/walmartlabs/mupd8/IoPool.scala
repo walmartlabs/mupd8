@@ -40,6 +40,7 @@ import org.scale7.cassandra.pelops.KeyspaceManager
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Failure
+import org.scale7.cassandra.pelops.Selector
 
 trait IoPool extends Logging{
   def fetchSlates(name: String, key: Key, next: Option[Array[Byte]] => Unit)
@@ -48,6 +49,9 @@ trait IoPool extends Logging{
   def flushBatchWrite: Boolean = true
   def closeBatchWrite: Unit = {}
   def pendingCount = 0
+  def fetchStringValueColumn(cfName: String, rowKey: String, colName: String): Option[String] = None
+  def writeColumn(cfName: String, rowKey: String, colName: String, value: String) {}
+  def shutdown {}
 }
 
 class NullPool extends IoPool {
@@ -58,8 +62,7 @@ class NullPool extends IoPool {
 object CassandraPool {
   val SETTINGS_CF = "settings"
   val PRIMARY_ROWKEY = "primary"
-  val UP_FLAG = "up_flag"
-  val NODE_LIST = "node_list"
+  val MESSAGE_SERVER = "MessageServer"
 }
 
 class CassandraPool(
@@ -88,7 +91,7 @@ class CassandraPool(
   val pool = new ThreadPoolExecutor(10, 50, 5, TimeUnit.SECONDS, new LinkedBlockingQueue[Runnable]) // TODO: We can drop events unless we have a Rejection Handler or LinkedQueue
 
   // fetch slates and call next on slates
-  def fetchSlates(name: String, key: Key, next: Option[Array[Byte]] => Unit) {
+  override def fetchSlates(name: String, key: Key, next: Option[Array[Byte]] => Unit) {
     pool.submit(run {
       val start = java.lang.System.nanoTime()
       val col = excToOption(selector.getColumnFromRow(getCF(name), Bytes.fromByteArray(key.value), Bytes.fromByteArray(name.getBytes), ConsistencyLevel.QUORUM))
@@ -98,6 +101,15 @@ class CassandraPool(
         cService.uncompress(ba)
       })
     })
+  }
+
+  override def fetchStringValueColumn(cfName: String, rowKey: String, colName: String): Option[String] = {
+    Try(selector.getColumnFromRow(cfName, rowKey, colName, ConsistencyLevel.QUORUM)) match {
+      case Success(col) => Some(Selector.getColumnStringValue(col))
+      case Failure(ex) =>
+        error("fetchStringValueColumn failed", ex)
+        None
+    }
   }
 
   var batchMutator: Mutator = null
@@ -131,5 +143,13 @@ class CassandraPool(
     }
   }
 
+  override def writeColumn(cfName: String, rowKey: String, colName: String, value: String) {
+    val mutator = Pelops.createMutator(poolName)
+    mutator.writeColumn(cfName, rowKey, mutator.newColumn(colName, value))
+    mutator.execute(ConsistencyLevel.QUORUM)
+  }
+
   override def pendingCount = pool.getQueue.size + pool.getActiveCount
+
+  override def shutdown {Pelops.shutdown()}
 }

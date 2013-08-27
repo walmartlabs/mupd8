@@ -317,7 +317,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               runtime.flushFilteredDirtySlateToCassandra
               lastCmdID = cmdID
               debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + iP2HostMap)
-              runtime.msClient.sendMessage(ACKPrepareAddHostMessage(cmdID, runtime.appStatic.self.ip))
+              runtime.msClient.sendMessage(ACKPrepareAddHostMessage(cmdID, runtime.self.ip))
               info("LocalMessageServer: PrepareAddHostMessage - CMD " + cmdID + " - Sent ACKPrepareAddHostMessage to message server")
             }  else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
@@ -334,7 +334,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               debug("PrepareRemoveHostMessage - going to flush cassandra")
               runtime.flushFilteredDirtySlateToCassandra
               lastCmdID = cmdID
-              runtime.msClient.sendMessage(ACKPrepareRemoveHostMessage(cmdID, runtime.appStatic.self.ip))
+              runtime.msClient.sendMessage(ACKPrepareRemoveHostMessage(cmdID, runtime.self.ip))
               info("LocalMessageServer: CMD " + cmdID + " - Sent ACKPrepareRemoveHostMessage to message server")
             } else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)

@@ -8,7 +8,7 @@ import com.walmartlabs.mupd8.network.server.Server
 import com.walmartlabs.mupd8.network.common.Listener
 import com.walmartlabs.mupd8.network.client.Client
 
-class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
+class MUCluster[T <: MapUpdateClass[T]](self: Host,
                                         val port: Int,
                                         encoder: OneToOneEncoder,
                                         decoderFactory: () => ReplayingDecoder[network.common.Decoder.DecodingState],
@@ -39,7 +39,7 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
 
   // Add host to connection map
   def addHost(host: String) {
-    if (host.compareTo(app.self.ip) != 0) client.addEndpoint(host, port)
+    if (host.compareTo(self.ip) != 0) client.addEndpoint(host, port)
   }
 
   def addHosts(hosts: Set[String]) {

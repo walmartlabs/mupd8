@@ -94,29 +94,6 @@ class UpdaterFactory[U <: binary.Updater](val updaterType : Class[U]) {
 }
 
 object Mupd8Main extends Logging {
-  
-  def startMessageServer(appStatic: AppStaticInfo) {
-      // save all listed sources
-      val allSources = (for {
-        source <- appStatic.sources;
-        sourceName = source.get("name").asInstanceOf[String];
-        sourcePerformer = source.get("performer").asInstanceOf[String];
-        sourceClass = source.get("source").asInstanceOf[String];
-        params = source.get("parameters").asInstanceOf[java.util.List[String]].asScala.toList
-      } yield (sourceName -> new Source(sourceName, sourceClass, sourcePerformer, params))).toMap
-
-      // start server thread
-      if (appStatic.messageServerPort.isDefined) {
-        val server = new MessageServer(Integer.valueOf(appStatic.messageServerPort.get), allSources)
-        server.start
-
-        Runtime.getRuntime().addShutdownHook(new Thread { override def run = server.shutdown() })
-        
-        info("MessageServer started")
-      } else {
-        error("MessagerServer: message server port isn't defined")
-      }
-  }
 
   def main(args: Array[String]) {
     Thread.setDefaultUncaughtExceptionHandler(new Misc.TerminatingExceptionHandler())
@@ -143,14 +120,7 @@ object Mupd8Main extends Logging {
       case None => writePID("mupd8.log")
       case Some(x) => writePID(x.head)
     }
-    
-    // start message server
-    if (appStatic.messageServerHost.isDefined && Misc.isLocalHost(appStatic.messageServerHost.get)) {
-      startMessageServer(appStatic)
-    } else {
-      info("It is not a message server host")
-    }
-    
+
     val runtime = new AppRuntime(0, threads, appStatic)
     if (runtime.ring != null) {
       if (appStatic.sources.size > 0) {
@@ -168,13 +138,8 @@ object Mupd8Main extends Logging {
   def startSources(app: AppStaticInfo, runtime: AppRuntime) {
     class AskPermit(sourceName: String) extends Actor {
       def act() {
-        if (!app.messageServerHost.isDefined || !app.messageServerPort.isDefined) {
-          error("startSource: Host or Port is None, " + (app.messageServerHost, app.messageServerPort))
-          exit()
-        }
-
-        val client: MessageServerClient = new MessageServerClient(app.messageServerHost.get.asInstanceOf[String], app.messageServerPort.get.asInstanceOf[Number].intValue(), 1000)
-        client.sendMessage(AskPermitToStartSourceMessage(sourceName, app.self))
+        val client: MessageServerClient = new MessageServerClient(runtime.messageServerHost, runtime.messageServerPort, 1000)
+        client.sendMessage(AskPermitToStartSourceMessage(sourceName, runtime.self))
       }
     }
 
