@@ -55,12 +55,12 @@ class MUCluster[T <: MapUpdateClass[T]](self: Host,
     hosts.foreach(removeHost(_))
   }
 
-  def send(destip: String, obj: T) {
-    if (!client.send(destip, obj)) {
-      error("Failed to send event (" + obj + ") to destination " + destip)
+  def send(dest: Host, obj: T) {
+    if (!client.send(dest.ip, obj)) {
+      error("Failed to send event (" + obj + ") to destination " + dest)
       if (msClient != null) {
-        error("MUCluster: Report node " + destip + " failure")
-        msClient.sendMessage(NodeRemoveMessage(Set(destip)))
+        error("MUCluster: Report node " + dest + " failure")
+        msClient.sendMessage(NodeChangeMessage(Set.empty, Set(dest)))
       } else {
         error("MUCluster: msclient is null")
       }

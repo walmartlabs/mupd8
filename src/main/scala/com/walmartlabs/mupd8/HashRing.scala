@@ -126,12 +126,22 @@ class HashRing private (val ips: IndexedSeq[String], val hash: IndexedSeq[String
     _remove(iPSetToRemove, this);
   }
 
+  def remove(hosts_to_remove: Set[Host]): HashRing = {
+    def _remove(ips_to_remove: Set[String]): HashRing = {
+      val newIPList = this.ips.filter(ip => !ips_to_remove.contains(ip))
+      remove(newIPList, ips_to_remove)
+    }
+
+    val ips_to_remove = hosts_to_remove.map(_.ip)
+    _remove(ips_to_remove)
+  }
+
   /**
    * Add a new host, hostToAdd.
    * Algo: Randomly pick totalSlots/len_of_new_host_list slots
    * and put new host into them
    */
-  def add(newIPList: IndexedSeq[String], hostToAdd : Host): HashRing = synchronized {
+  def add(newIPList: IndexedSeq[String], hostToAdd: Host): HashRing = synchronized {
     @tailrec
     def pickSlot(hash: IndexedSeq[String]): Int = {
       val r = HashRing.random.nextInt(HashRing.N)
@@ -157,6 +167,45 @@ class HashRing private (val ips: IndexedSeq[String], val hash: IndexedSeq[String
   def stat(hostList: IndexedSeq[String], target: Double): Boolean = {
     val targetN: Int = HashRing.N / hostList.size
     !ipCountMap.exists(x =>  math.abs(x._2 - targetN) > targetN * target)
+  }
+
+  // add hosts into hashring
+  def add(hosts_to_add: Set[Host]): HashRing = {
+    // add one ip, return (new hash array, ip count)
+    def addIP(copy_to_add: Int, ip_to_add: String, hash: IndexedSeq[String], map: Map[String, Int]): (IndexedSeq[String], Map[String, Int]) = {
+      @tailrec
+      def pickSlot(hash: IndexedSeq[String]): Int = {
+        val r = HashRing.random.nextInt(HashRing.N)
+        if (hash(r).compareTo(ip_to_add) == 0) pickSlot(hash) else r
+      }
+
+      if (copy_to_add == 0) {
+        (hash, map)
+      } else {
+        // randomly pick 2 slots, and feed hostToAdd into the one with more slots in hash
+        val p = (pickSlot(hash), pickSlot(hash))
+        val slot = if (map(hash(p._1)) > map(hash(p._2))) p._1 else p._2
+        val newMap = map updated (hash(slot), map(hash(slot)) - 1) // also update count map
+        val newHash = hash updated (slot, ip_to_add)
+        addIP(copy_to_add - 1, ip_to_add, newHash, newMap)
+      }
+    }
+    // add ips, return hash array
+    def _addIPs(ips_to_add: IndexedSeq[String], hash: IndexedSeq[String], map: Map[String, Int]): IndexedSeq[String] = {
+      if (ips_to_add.isEmpty) {
+        hash
+      } else {
+        val (newhash, newmap) = addIP(1, ips_to_add.head, hash, map)
+        _addIPs(ips_to_add.tail, newhash, newmap)
+      }
+    }
+
+    val newIpHostMap = this.ipHostMap ++ hosts_to_add.map(host => (host.ip, host.hostname)).toMap
+    val ipList_to_add = hosts_to_add.map(_.ip).toIndexedSeq
+    val newIps = ips ++ ipList_to_add
+    val newhash = _addIPs(ipList_to_add, hash, ipCountMap)
+
+    HashRing.initFromParameters(newIps, newhash, newIpHostMap)
   }
 
   def size = ips.size

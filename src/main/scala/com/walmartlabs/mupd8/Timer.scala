@@ -49,7 +49,7 @@ object Timer extends Logging {
 // and Update[Add|Remove]HostMessage. And if left nodes to ACK set is empty, pin message server
 abstract class AckedNodeCounterMessage
 case class StartCounter(cmdID: Int, hosts: IndexedSeq[String], _mshost: String, _msport: Int) extends AckedNodeCounterMessage
-case class CountPrepareACK(cmdID: Int, host: String) extends AckedNodeCounterMessage
+case class CountPrepareACK(cmdID: Int, ip: String) extends AckedNodeCounterMessage
 object AckedNodeCounter extends Actor with Logging {
   private var currentCmdID = -1
   var nodesNotAcked = scala.collection.immutable.Set[String]()
@@ -73,14 +73,14 @@ object AckedNodeCounter extends Actor with Logging {
         act
 
       // count acked node
-      case CountPrepareACK(cmdID, host) =>
+      case CountPrepareACK(cmdID, ip) =>
         if (cmdID < currentCmdID)
           error("AckedNodeCounter: cmdID, " + cmdID + ", expired; current cmdID = " + currentCmdID)
         else if (cmdID > currentCmdID)
           warn("AckedNodeCounter: cmdID, " + cmdID + ", hasn't been started")
         else {
           // clear host
-          nodesNotAcked = nodesNotAcked - host
+          nodesNotAcked = nodesNotAcked - ip
           info("AckedNodeCounter: CountPrepareACK - updated nodesNotAcked = " + nodesNotAcked)
 
           // if all nodes acked cmdID, pin message server

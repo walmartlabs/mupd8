@@ -225,9 +225,8 @@ class AppRuntime(appID: Int,
         else {
           val slate = fetchURL("http://" + dest + ":" + (appStatic.statusPort + 300) + s)
           if (slate == None) {
-            // TODO: send remove messageServer
             warn("Can't reach dest(" + dest + "); going to report " + dest + " fails.")
-            msClient.sendMessage(NodeRemoveMessage(Set(dest)))
+            msClient.sendMessage(NodeChangeMessage(Set.empty, Set(Host(dest, ring.ipHostMap(dest)))))
           }
           slate
         }
@@ -256,7 +255,7 @@ class AppRuntime(appID: Int,
       error("Failed to send join message to message server, exiting...")
       System.exit(-1)
     } else {
-      if (!msClient.sendMessage(NodeJoinMessage(self))) {
+      if (!msClient.sendMessage(NodeChangeMessage(Set(self), Set.empty))) {
         warn("Connecting to message server failed")
         Thread.sleep(500)
         trySendNodeJoinMessageToMessageServer(time - 500)

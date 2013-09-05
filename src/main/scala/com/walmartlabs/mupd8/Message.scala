@@ -23,10 +23,8 @@ abstract class MessageWACK extends Message // message needs ACK
 case class ACKMessage() extends MessageWOACK
 
 // To message server
-case class NodeRemoveMessage(ips: Set[String]) extends MessageWACK  // node: Host(ip, hostname)
-case class NodeJoinMessage(node: Host) extends MessageWACK      // node: Host(ip, hostname)
-case class ACKPrepareAddHostMessage(cmdID: Int, hostToAdd: String) extends MessageWOACK         // hostToAdd: ip
-case class ACKPrepareRemoveHostMessage(cmdID: Int, hostToRemove: String) extends MessageWOACK   // hostToRemove: ip
+case class NodeChangeMessage(nodes_to_add: Set[Host], nodes_to_remove: Set[Host]) extends MessageWACK  // node: Host(ip, hostname)
+case class PrepareNodeChangeDoneMessage(cmdID: Int, hostip: String) extends MessageWOACK         // hostToAdd: ip
 case class AllNodesACKedPrepareMessage(cmdID: Int) extends MessageWOACK
 case class ACKTIMEOUTMessage(cmdID: Int) extends MessageWACK
 // for ip check
@@ -38,22 +36,11 @@ case class IPCHECKDONE() extends MessageWOACK
 // hashInNewRing: ip address array used as hashtable in new hash ring
 // iPsInNewRing: all ip addresses in new ring
 // iPHostMap: ip address to host name map
-case class PrepareAddHostMessage(cmdID: Int, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
+case class PrepareNodeChangeMessage(cmdID: Int, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
   override def toString() = "PrepareAddHostMessage(" + cmdID + ", " + iP2HostMap + ")"
 }
-// cmdID
-// removedIPSet: IPs of nodes to be removed
-// hashInNewRing: ip address array used as hashtable in new hash ring
-// iPsInNewRing: all ip addresses in new ring
-// iPHostMap: ip address to host name map
-case class PrepareRemoveHostMessage(cmdID: Int, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
-  override def toString() = "PrepareRemoveHostMessage(" + cmdID + ", " + iP2HostMap + ")"
-}
-case class UpdateRing(cmdID: Int) extends MessageWACK
 
-//// To MessageServerClient
-//case class ACKNodeJoin(node: String) extends MessageWACK   // node: ip
-//case class ACKNodeRemove(node: String) extends MessageWACK // node: ip
+case class UpdateRing(cmdID: Int) extends MessageWACK
 
 //
 // Start source readers

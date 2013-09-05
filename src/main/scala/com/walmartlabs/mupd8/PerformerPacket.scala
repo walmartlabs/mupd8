@@ -85,7 +85,8 @@ case class PerformerPacket(pri: Priority,
         appRun.eventBufferForRingChange.offer(this)
       } else if (appRun.candidateRing == null && appRun.ring(getKey) != appRun.self.ip) {
         // if not in ring change process and dest of this slate is not this node
-        appRun.pool.cluster.send(appRun.ring(getKey), this)
+        val destip = appRun.ring(getKey)
+        appRun.pool.cluster.send(Host(destip, appRun.ring.ipHostMap(destip)), this)
       } else {
         execute(appRun.getUpdater(pid).update(tls, stream, slateKey.value, event, slate))
       }
