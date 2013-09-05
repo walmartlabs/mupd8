@@ -72,7 +72,7 @@ class MessageServer(port: Int, allSources: Map[String, Source], isTest: Boolean 
 
               // update hash ring
               if (ring == null) {
-                HashRing.initFromHosts(hosts_to_add1.toIndexedSeq)
+                ring = HashRing.initFromHosts(hosts_to_add1.toIndexedSeq)
               } else {
                 ring = ring.add(hosts_to_add1)
                 ring = ring.remove(hosts_to_remove1)
@@ -162,7 +162,8 @@ class MessageServer(port: Int, allSources: Map[String, Source], isTest: Boolean 
         error("MessageServer: hosts_to_add," + hosts_to_add + " , an hosts_to_remove," + hosts_to_remove + " , conflict")
         (Set.empty, Set.empty)
       } else {
-        (hosts_to_add -- ring.ips.map(ip => Host(ip, ring.ipHostMap(ip))), hosts_to_remove -- ring.ips.map(ip => Host(ip, ring.ipHostMap(ip))))
+        (hosts_to_add.filter(host => !ring.ips.contains(host.ip)),
+         hosts_to_remove.filter(host => ring.ips.contains(host.ip)))
       }
     } else {
       (hosts_to_add, Set.empty)

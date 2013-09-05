@@ -127,13 +127,55 @@ class HashRing private (val ips: IndexedSeq[String], val hash: IndexedSeq[String
   }
 
   def remove(hosts_to_remove: Set[Host]): HashRing = {
-    def _remove(ips_to_remove: Set[String]): HashRing = {
-      val newIPList = this.ips.filter(ip => !ips_to_remove.contains(ip))
-      remove(newIPList, ips_to_remove)
+    // remove items in slot_to_remove
+    @tailrec
+    def removeIP(slots_to_remove: IndexedSeq[Int], hash: IndexedSeq[String], map: Map[String, Int]): (IndexedSeq[String], Map[String, Int]) = {
+      @tailrec
+      def pickSlot(hash: IndexedSeq[String]): Int = {
+        val r = HashRing.random.nextInt(HashRing.N)
+        if (hash(r).compareTo(hash(slots_to_remove.head)) == 0) pickSlot(hash) else r
+      }
+
+      if (slots_to_remove.isEmpty) {
+        (hash, map)
+      } else {
+        // randomly pick 2 slots, and feed hostToAdd into the one with more slots in hash
+        val p = (pickSlot(hash), pickSlot(hash))
+        val slot = if (map(hash(p._1)) < map(hash(p._2))) p._1 else p._2
+        val newMap = map updated (hash(slot), map(hash(slot)) + 1) // also update count map
+        val newHash = hash updated (slots_to_remove.head, hash(slot))
+        removeIP(slots_to_remove.tail, newHash, newMap)
+      }
     }
 
-    val ips_to_remove = hosts_to_remove.map(_.ip)
-    _remove(ips_to_remove)
+    // add ips, return (new hash array, ip count map)
+    @tailrec
+    def _removeIPs(ips_to_remove: Set[String], hash: IndexedSeq[String], map: Map[String, Int]): (IndexedSeq[String], Map[String, Int]) = {
+      if (ips_to_remove.isEmpty) {
+        (hash, map)
+      } else if (ips.size == 1 && ips_to_remove.size == 1 && ips_to_remove.head.compareTo(ips.head) == 0) {
+        (IndexedSeq.empty, Map.empty)
+      } else {
+        val ip_to_remove = ips_to_remove.head
+        val slots_to_remove = hash.zipWithIndex.filter(p => p._1.compareTo(ip_to_remove) == 0).map(_._2)
+        val (newhash, newmap) = removeIP(slots_to_remove, hash, map)
+        val newmap1 = newmap - ip_to_remove
+        _removeIPs(ips_to_remove.tail, newhash, newmap1)
+      }
+    }
+
+    if (hosts_to_remove.isEmpty) {
+      this
+    } else {
+      val ips_to_remove = hosts_to_remove.map(_.ip)
+      val (newhash, newmap) = _removeIPs(ips_to_remove, hash, ipCountMap)
+      if (newmap.isEmpty && newhash.isEmpty) {
+        null
+      } else {
+        val newips = ips.filter(!ips_to_remove.contains(_))
+        HashRing.initFromParameters(newips, newhash, ipHostMap);
+      }
+    }
   }
 
   /**
@@ -172,6 +214,7 @@ class HashRing private (val ips: IndexedSeq[String], val hash: IndexedSeq[String
   // add hosts into hashring
   def add(hosts_to_add: Set[Host]): HashRing = {
     // add one ip, return (new hash array, ip count)
+    @tailrec
     def addIP(copy_to_add: Int, ip_to_add: String, hash: IndexedSeq[String], map: Map[String, Int]): (IndexedSeq[String], Map[String, Int]) = {
       @tailrec
       def pickSlot(hash: IndexedSeq[String]): Int = {
@@ -190,22 +233,30 @@ class HashRing private (val ips: IndexedSeq[String], val hash: IndexedSeq[String
         addIP(copy_to_add - 1, ip_to_add, newHash, newMap)
       }
     }
+
     // add ips, return hash array
+    @tailrec
     def _addIPs(ips_to_add: IndexedSeq[String], hash: IndexedSeq[String], map: Map[String, Int]): IndexedSeq[String] = {
       if (ips_to_add.isEmpty) {
         hash
       } else {
-        val (newhash, newmap) = addIP(1, ips_to_add.head, hash, map)
-        _addIPs(ips_to_add.tail, newhash, newmap)
+        val num_to_add = HashRing.N / (map.size + 1)
+        val (newhash, newmap) = addIP(num_to_add, ips_to_add.head, hash, map)
+        val newmap1 = newmap + (ips_to_add.head -> num_to_add)
+        _addIPs(ips_to_add.tail, newhash, newmap1)
       }
     }
 
-    val newIpHostMap = this.ipHostMap ++ hosts_to_add.map(host => (host.ip, host.hostname)).toMap
-    val ipList_to_add = hosts_to_add.map(_.ip).toIndexedSeq
-    val newIps = ips ++ ipList_to_add
-    val newhash = _addIPs(ipList_to_add, hash, ipCountMap)
+    if (hosts_to_add.isEmpty) {
+      this
+    } else {
+      val newIpHostMap = this.ipHostMap ++ hosts_to_add.map(host => (host.ip, host.hostname)).toMap
+      val ipList_to_add = hosts_to_add.map(_.ip).toIndexedSeq
+      val newIps = ips ++ ipList_to_add
+      val newhash = _addIPs(ipList_to_add, hash, ipCountMap)
 
-    HashRing.initFromParameters(newIps, newhash, newIpHostMap)
+      HashRing.initFromParameters(newIps, newhash, newIpHostMap)
+    }
   }
 
   def size = ips.size
