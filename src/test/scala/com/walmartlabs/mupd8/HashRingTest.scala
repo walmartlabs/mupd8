@@ -38,16 +38,21 @@ class HashRingTest extends FunSuite with ShouldMatchers {
 
   val random = new Random(java.lang.System.currentTimeMillis)
 
+  def check(ring: HashRing, p: Double): Boolean = {
+    val target: Double = 1.toDouble/ ring.ips.size.toDouble
+    !ring.ipCountMap.flatMap(e => IndexedSeq(e._2.toDouble/HashRing.N.toDouble/target)).exists(d => Math.abs(d - 1d) >= p)
+  }
+
   test("test HashRing") {
     val hostList1 = Vector.range(0, 10) map (i => Host("192.168.1." + i.toString, "host" + i.toString))
     val hostList2 = hostList1 :+ Host("192.168.1.100","host100")
     var ring = HashRing.initFromHosts(hostList1)
-    assert(ring.stat(hostList1.map(_.ip), 0.05))
-    for (i <- 1 to 5000) {
-      ring = ring.add(hostList2.map(_.ip), Host("192.168.1.100","host100"))
-      assert(ring.stat(hostList2.map(_.ip), 0.05))
-      ring = ring.remove(hostList1.map(_.ip), "192.168.1.100")
-      assert(ring.stat(hostList1.map(_.ip), 0.05))
+    assert(check(ring, 0.05))
+    for (i <- 1 to 500) {
+      ring = ring.add(Set(Host("192.168.1.100","host100")))
+      assert(check(ring, 0.05))
+      ring = ring.remove(Set(Host("192.168.1.100", "host100")))
+      assert(check(ring, 0.05))
     }
   }
 
