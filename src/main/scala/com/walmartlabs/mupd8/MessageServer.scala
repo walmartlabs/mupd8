@@ -17,7 +17,6 @@
 
 package com.walmartlabs.mupd8
 
-//import java.nio.channels._
 import java.nio.channels.Channels
 import java.nio.channels.ServerSocketChannel
 import java.net.InetSocketAddress
@@ -38,7 +37,7 @@ import java.net.ServerSocket
 import annotation.tailrec
 
 /* Message Server for whole cluster */
-class MessageServer(port: Int, allSources: Map[String, Source], isTest: Boolean = false) extends Thread with Logging {
+class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Source], isTest: Boolean = false) extends Thread with Logging {
   setName("MessageServer")
 
   /* socket server to communicate clients */
@@ -81,8 +80,8 @@ class MessageServer(port: Int, allSources: Map[String, Source], isTest: Boolean 
               // update source
               // check if hostToRemove has source on it
               val ips_to_remove1 = hosts_to_remove1.map(_.ip)
-              startedSources.foreach { source =>
-                if (ips_to_remove1.contains(source._2)) {
+              appRun.startedSources.foreach { source =>
+                if (ips_to_remove1.contains(source._2.ip)) {
                   val sourceName = source._1
                   // pick another host from ring to start source on
                   val ipToStart = ring(sourceName)
@@ -91,7 +90,7 @@ class MessageServer(port: Int, allSources: Map[String, Source], isTest: Boolean 
                   // if source is not started, send start message
                   // Connect source with hostToStart. If source is not accessible from
                   // this actor, actor will report noderemovemessage to trigger next try
-                  startedSources += (sourceName -> ipToStart)
+                  appRun.startedSources += (sourceName -> Host(ipToStart, ring.ipHostMap(ipToStart)))
                   val localMSClient = new SendStartSource(sourceName, ipToStart)
                   localMSClient.start
                 }
@@ -109,7 +108,7 @@ class MessageServer(port: Int, allSources: Map[String, Source], isTest: Boolean 
                   msClient.sendMessage(NodeChangeMessage(Set.empty, notAckedNodes.map(ip => Host(ip, ring.ipHostMap(ip)))))
                 })
                 // reset counter
-                AckedNodeCounter ! StartCounter(lastCmdID, ring.ips, "localhost", port)
+                AckedNodeCounter ! StartCounter(lastCmdID, appRun, ring.ips, "localhost", port)
 
                 // Send prepare ring update message
                 SendNewRing ! SendMessageToNode(lastCmdID, ring.ips, (port + 1), PrepareNodeChangeMessage(lastCmdID, ring.hash, ring.ips, ring.ipHostMap), port)
@@ -134,13 +133,16 @@ class MessageServer(port: Int, allSources: Map[String, Source], isTest: Boolean 
           case AskPermitToStartSourceMessage(sourceName, host) =>
             info("MessageServer: Received AskPermitToStartSourceMessage" + (sourceName, host))
             out.writeObject(ACKMessage)
-            if (!startedSources.contains(sourceName)) {
+            lastCmdID = lastCmdID + 1
+            if (!appRun.startedSources.contains(sourceName)) {
               // if source is not started, send start message
               // Connect source with hostToStart. If source is not accessible from
               // this actor, actor will report noderemovemessage to trigger next try
-              startedSources += (sourceName -> host.ip)
+              appRun.startedSources += (sourceName -> host)
               val localMSClient = new SendStartSource(sourceName, host.ip)
               localMSClient.start
+              // send ask new source information to all nodes
+              SendNewRing ! SendMessageToNode(lastCmdID, ring.ips, (port + 1), NewSourceMessage(lastCmdID, host, sourceName), port)
             }
 
           case _ => error("MessageServerThread: Not a valid msg: " + msg)
@@ -205,7 +207,9 @@ class MessageServer(port: Int, allSources: Map[String, Source], isTest: Boolean 
           if (!nodesFailedToSend.isEmpty){
             info("SendNewRing: failed to send new ring to couple node, send NodeChangeMessage to messageserver")
             val msClient = new MessageServerClient("localhost", msport)
-            msClient.sendMessage(NodeChangeMessage(Set.empty, nodesFailedToSend))
+            if (!msClient.sendMessage(NodeChangeMessage(Set.empty, nodesFailedToSend))) {
+
+            }
           }
           act()
         case "EXIT" =>
@@ -237,7 +241,7 @@ class MessageServer(port: Int, allSources: Map[String, Source], isTest: Boolean 
   var ring: HashRing = null
   var keepRunning = true
   // save started source readers
-  var startedSources: Map[String, String] = Map.empty // (source name -> source host machine ip)
+//  var startedSources: Map[String, String] = Map.empty // (source name -> source host machine ip)
 
   AckedNodeCounter.start
 
@@ -246,10 +250,10 @@ class MessageServer(port: Int, allSources: Map[String, Source], isTest: Boolean 
   object PingCheck extends Actor {
     override def act() {
       while (keepRunning) {
-        var failedNodes: Set[String] = Set.empty
-        startedSources.foreach{source =>
+        var failedNodes: Set[Host] = Set.empty
+        appRun.startedSources.foreach{source =>
           // send ping message
-          val lmsClient = new LocalMessageServerClient(source._2, port + 1)
+          val lmsClient = new LocalMessageServerClient(source._2.ip, port + 1)
           if (!lmsClient.sendMessage(PING())) {
             // report host fails if any exception happens
             error("SendStartSource: report " + source._2 + " fails")
@@ -258,7 +262,7 @@ class MessageServer(port: Int, allSources: Map[String, Source], isTest: Boolean 
         }
         if (!failedNodes.isEmpty) {
           val msClient = new MessageServerClient("localhost", port)
-          msClient.sendMessage(NodeChangeMessage(Set.empty, failedNodes.map(ip => Host(ip, ring.ipHostMap(ip)))))
+          msClient.sendMessage(NodeChangeMessage(Set.empty, failedNodes))
         }
         Thread.sleep(2000)
       }
@@ -269,7 +273,8 @@ class MessageServer(port: Int, allSources: Map[String, Source], isTest: Boolean 
 
 /* Message Server for every node, which receives ring update message for now */
 class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with Logging {
-  private var lastCmdID = -1;
+  private var lastCmdID = -1
+  private var lastCommittedCmdID = -1
 
   override def run() {
     def setCandidateRingAndHostList(hash: IndexedSeq[String], hosts: (IndexedSeq[String], Map[String, String])) {
@@ -323,34 +328,48 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
 
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
-
-            if (runtime.candidateRing != null) {
-              val newIPs: Set[String] = runtime.candidateRing.ips.toSet
-              val oldIPs: Set[String] = if (runtime.appStatic.systemHosts == null) Set.empty else runtime.appStatic.systemHosts.keySet
-              val addedIPs = setAminusSetB(newIPs, oldIPs, Set.empty)
-              val removedIPs = setAminusSetB(oldIPs, newIPs, Set.empty)
-              debug("UpdateRing: addedIPs = " + addedIPs + ", removedIPs = " + removedIPs)
-
-              // Adjust nodes in cluster before switch ring
-              // o.w. events for addedIPs might be able to be sent new nodes
-              if (runtime.pool != null) {
-                runtime.pool.cluster.addHosts(addedIPs)
-                runtime.pool.cluster.removeHosts(removedIPs)
-              }
-
-              runtime.ring = runtime.candidateRing
-              runtime.appStatic.systemHosts = runtime.candidateRing.ipHostMap
-              runtime.candidateRing = null
-              runtime.flushSlatesInBufferToQueue
-              info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
+            if (lastCommittedCmdID >= cmdID) {
+              info("LocalMessageserver: cmd " + cmdID + " has already been committed")
             } else {
-              warn("UpdateRing: candidate ring is null in UpdateRing")
+              if (runtime.candidateRing != null) {
+                // send commit spam to all other nodes
+                new SendCommitSpam(runtime.candidateRing.ips, cmdID).start
+
+                val newIPs: Set[String] = runtime.candidateRing.ips.toSet
+                val oldIPs: Set[String] = if (runtime.appStatic.systemHosts == null) Set.empty else runtime.appStatic.systemHosts.keySet
+                val addedIPs = setAminusSetB(newIPs, oldIPs, Set.empty)
+                val removedIPs = setAminusSetB(oldIPs, newIPs, Set.empty)
+                debug("UpdateRing: addedIPs = " + addedIPs + ", removedIPs = " + removedIPs)
+
+                // Adjust nodes in cluster before switch ring
+                // o.w. events for addedIPs might be able to be sent new nodes
+                if (runtime.pool != null) {
+                  runtime.pool.cluster.addHosts(addedIPs)
+                  runtime.pool.cluster.removeHosts(removedIPs)
+                }
+
+                runtime.ring = runtime.candidateRing
+                runtime.appStatic.systemHosts = runtime.candidateRing.ipHostMap
+                runtime.candidateRing = null
+                runtime.flushSlatesInBufferToQueue
+                info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
+              } else {
+                warn("UpdateRing: candidate ring is null in UpdateRing")
+              }
             }
 
           case StartSourceMessage(sourceName) =>
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
             runtime.startSource(sourceName)
+
+          case ToBeNextMessageSeverMessage(requestedBy) =>
+            info("LocalMessageServer: Received " + msg)
+            runtime.startMessageServer()
+
+          case NewSourceMessage(cmdID, host, sourceName) =>
+            info("LocalMessageServer: Recieved " + msg)
+            runtime.startedSources = runtime.startedSources + (sourceName -> host)
 
           case PING() =>
             trace("Received PING")
@@ -365,4 +384,14 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
       }
     }
   }
+
+  class SendCommitSpam(ips: Seq[String], cmdID: Int) extends Actor {
+    override def act() {
+      ips.foreach { ip =>
+        val lmsClient = new LocalMessageServerClient(ip, port)
+        lmsClient.sendMessage(UpdateRing(cmdID))
+      }
+    }
+  }
+
 }

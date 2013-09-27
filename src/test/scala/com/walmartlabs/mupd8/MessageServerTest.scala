@@ -30,7 +30,7 @@ class MessageServerTest extends FunSuite {
   test("MessageServer/Client add/remove") {
     val random = new Random(System.currentTimeMillis)
 
-    val server = new MessageServer(4568, Map.empty, true)
+    val server = new MessageServer(null, 4568, Map.empty, true)
     server.start
     Thread.sleep(500)
 

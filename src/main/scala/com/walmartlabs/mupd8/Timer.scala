@@ -48,18 +48,20 @@ object Timer extends Logging {
 // AckedNodeCounter counts how many nodes already ACK Prepare[Add|Remove]HostMessage
 // and Update[Add|Remove]HostMessage. And if left nodes to ACK set is empty, pin message server
 abstract class AckedNodeCounterMessage
-case class StartCounter(cmdID: Int, hosts: IndexedSeq[String], _mshost: String, _msport: Int) extends AckedNodeCounterMessage
+case class StartCounter(cmdID: Int, appruntime: AppRuntime, hosts: IndexedSeq[String], _mshost: String, _msport: Int) extends AckedNodeCounterMessage
 case class CountPrepareACK(cmdID: Int, ip: String) extends AckedNodeCounterMessage
 object AckedNodeCounter extends Actor with Logging {
   private var currentCmdID = -1
   var nodesNotAcked = scala.collection.immutable.Set[String]()
   private var mshost: String = null
   private var msport: Int = -1
+  private var appRuntime: AppRuntime = null
 
   def act {
     react {
       // reset/start counter
-      case StartCounter(cmdID, hosts, _mshost, _msport) =>
+      case StartCounter(cmdID, app, hosts, _mshost, _msport) =>
+        appRuntime = app
         if (cmdID < currentCmdID)
           error("AckedNodeCounter: cmdID, " + cmdID + ", expired; current cmdID = " + currentCmdID)
         else {
@@ -91,7 +93,12 @@ object AckedNodeCounter extends Actor with Logging {
 
             // pin message server
             val msClient = new MessageServerClient(mshost, msport)
-            msClient.sendMessage(AllNodesACKedPrepareMessage(cmdID))
+            if (!msClient.sendMessage(AllNodesACKedPrepareMessage(cmdID))) {
+              error("AckedNodeCounter: message server is not reachable")
+              if (!appRuntime.nextMessageServer.isDefined) {
+                error("AckedNodeCounter: couldn't find next message server, exit...");
+              }
+            }
             currentCmdID = -1
           }
         }

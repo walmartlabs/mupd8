@@ -207,7 +207,7 @@ public class Config {
 	 * @param input
 	 * @return preprocessed file
 	 */
-	public static String readWithPreprocessing(Reader input) throws IOException {
+	private static String readWithPreprocessing(Reader input) throws IOException {
 		BufferedReader bufferedReader = new BufferedReader(input);
 		String content = "";
 

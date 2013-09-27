@@ -39,6 +39,12 @@ case class IPCHECKDONE() extends MessageWOACK
 case class PrepareNodeChangeMessage(cmdID: Int, hashInNewRing: IndexedSeq[String], iPsInNewRing: IndexedSeq[String], iP2HostMap: Map[String, String]) extends MessageWOACK {
   override def toString() = "PrepareAddHostMessage(" + cmdID + ", " + iP2HostMap + ")"
 }
+case class ToBeNextMessageSeverMessage(requestedBy: Host) extends MessageWACK {
+  override def toString() = "ToBeNextMessageServerMessage( Requested By " + requestedBy + " )"
+}
+case class NewSourceMessage(cmdID: Int, host: Host, sourceName: String) extends MessageWOACK {
+  override def toString() = "NewSourceMessage( " + cmdID + ", " + sourceName + " on " + host + ")"
+}
 
 case class UpdateRing(cmdID: Int) extends MessageWACK
 

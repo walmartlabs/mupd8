@@ -17,8 +17,8 @@
 
 package com.walmartlabs.mupd8
 
-import scala.collection.immutable
-import scala.collection.mutable
+//import scala.collection.immutable
+//import scala.collection.mutable
 import scala.collection.breakOut
 import scala.collection.JavaConverters._
 import scala.collection.JavaConversions._
@@ -49,6 +49,8 @@ class AppRuntime(appID: Int,
                                        p => appStatic.performers(appStatic.performerName2ID(p)).ttl,
                                        appStatic.compressionCodec)
 
+  var startedSources: Map[String, Host] = Map.empty // (source name -> source host machine)
+
   // Read previous message server settings
   // check message server, (message_server_host, port), from data store
   var messageServerHost: String = null
@@ -64,6 +66,7 @@ class AppRuntime(appID: Int,
             // then start message server, write message server config into data store
             startMessageServer()
             storeIo.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig + ":" + appStatic.messageServerPortFromConfig.toString)
+            info("Set message server from config - " + (messageServerHost, messageServerPort))
             messageServerHost = appStatic.messageServerHostFromConfig
             messageServerPort = appStatic.messageServerPortFromConfig
           } else {
@@ -90,7 +93,7 @@ class AppRuntime(appID: Int,
   def startMessageServer() {
     info("Start message server at " + appStatic.messageServerPortFromConfig)
     // save all listed sources
-    val allSources = (for {
+    val allSourcesFromConfig: Map[String, Source] = (for {
       source <- appStatic.sources;
       sourceName = source.get("name").asInstanceOf[String];
       sourcePerformer = source.get("performer").asInstanceOf[String];
@@ -99,7 +102,7 @@ class AppRuntime(appID: Int,
     } yield (sourceName -> new Source(sourceName, sourceClass, sourcePerformer, params))).toMap
 
     // start server thread
-    val server = new MessageServer(Integer.valueOf(appStatic.messageServerPortFromConfig), allSources)
+    val server = new MessageServer(this, Integer.valueOf(appStatic.messageServerPortFromConfig), allSourcesFromConfig)
     server.start
 
     Runtime.getRuntime().addShutdownHook(new Thread { override def run = server.shutdown() })
@@ -116,17 +119,16 @@ class AppRuntime(appID: Int,
       else {
         setMessageServerFromDataStore()
         new MessageServerClient(messageServerHost, messageServerPort, 1000).checkIP() match {
-          case None => Thread.sleep(300); warn("getHostName again"); _getLocalHostName(retryCount + 1)
+          case None => Thread.sleep(3000); warn("getHostName again"); _getLocalHostName(retryCount + 1)
           case Some(host) => Some(host)
         }
       }
     }
 
-    val isMessageServerFromConfig = Misc.isLocalHost(appStatic.messageServerHostFromConfig)
     _getLocalHostName(0)
   }
   // if this node is specified in config as message server, try less times
-  val firstCheckIpRlt: Option[Host] = getLocalHostName(if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) 5 else 10)
+  val firstCheckIpRlt: Option[Host] = getLocalHostName(if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) 5 else 20)
   val self: Host = firstCheckIpRlt match {
     case None =>
       if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) {
@@ -149,7 +151,7 @@ class AppRuntime(appID: Int,
   val msClient: MessageServerClient = new MessageServerClient(messageServerHost, messageServerPort, 1000)
 
   val rand = new Random(System.currentTimeMillis())
-  private val sourceThreads: mutable.ListBuffer[(String, List[java.lang.Thread])] = new mutable.ListBuffer
+  private val sourceThreads: collection.mutable.ListBuffer[(String, List[java.lang.Thread])] = new collection.mutable.ListBuffer
   val hostUpdateLock = new Object
   // Buffer for slates dest of which according to candidateRing is not current node anymore
   // put definition here prevent null pointer exception when it is called at _ring init
@@ -162,7 +164,7 @@ class AppRuntime(appID: Int,
     action => new MUCluster[PerformerPacket](self, appStatic.statusPort + 100,
                                              PerformerPacket(0, 0, Key(new Array[Byte](0)), Array(), "", this),
                                              () => { new Decoder(this) },
-                                             action, msClient))
+                                             action, this, msClient))
 
   // TLS depends on storeIo
   private val threadMap: Map[Long, TLS] = pool.threadDataPool.map(_.thread.getId -> new TLS(this))(breakOut)
@@ -226,7 +228,13 @@ class AppRuntime(appID: Int,
           val slate = fetchURL("http://" + dest + ":" + (appStatic.statusPort + 300) + s)
           if (slate == None) {
             warn("Can't reach dest(" + dest + "); going to report " + dest + " fails.")
-            msClient.sendMessage(NodeChangeMessage(Set.empty, Set(Host(dest, ring.ipHostMap(dest)))))
+            if (!msClient.sendMessage(NodeChangeMessage(Set.empty, Set(Host(dest, ring.ipHostMap(dest)))))) {
+              error("SlateUrlServer: message server is done")
+              if (!nextMessageServer().isDefined) {
+                error("SlateUrlServer: cannot find node to be next message server, exit...")
+                System.exit(-1);
+              }
+            }
           }
           slate
         }
@@ -262,7 +270,7 @@ class AppRuntime(appID: Int,
       }
     }
   }
-  trySendNodeJoinMessageToMessageServer(10000) // try to send join message to message server for 10 sec
+  trySendNodeJoinMessageToMessageServer(10000)  // try to send join message to message server for 10 sec
   info("Send node join message to message server")
 
   def waitHashRing(time: Int) {
@@ -303,7 +311,6 @@ class AppRuntime(appID: Int,
   slateServer.start
 
   // name set of sources started on this node
-  var startedSources: Set[String] = immutable.Set.empty
   def startSource(sourceName: String): Boolean = {
     val source = appStatic.sources.asScala.toList.find(s => sourceName.compareTo(s.get("name").asInstanceOf[String]) == 0)
     source match {
@@ -388,7 +395,7 @@ class AppRuntime(appID: Int,
       })
       t.start()
       // record started source
-      startedSources = startedSources + sourceName
+      startedSources = startedSources + (sourceName -> self)
     })
     !threads.isEmpty
   }
@@ -480,7 +487,6 @@ class AppRuntime(appID: Int,
   // succeed only for threads in threadMap (namely, MapUpdatePool threads).
   // Other threads need to use the getFoo(pid, key) form instead to "borrow" a
   // Foo from one of the threadMap threads (chosen by key).
-  //
   def getTLS = threadMap(Thread.currentThread().getId)
 
   def getMapper(pid: Int) = getTLS.objects(pid).get.asInstanceOf[binary.Mapper]
@@ -493,4 +499,25 @@ class AppRuntime(appID: Int,
   def getTLS(pid: Int, key: Key) =
     threadVect(pool.getPreferredPoolIndex(PerformerPacket.getKey(pid, key)))
 
+  // find next message server
+  def nextMessageServer(): Option[String] = {
+    // check with head of ip list
+    def _checkNode(nodes: IndexedSeq[String]): Option[String] = {
+      if (nodes.isEmpty) {
+        None
+      } else {
+        val next = nodes.head
+        if (next.compareTo(messageServerHost) == 0) _checkNode(nodes.tail)
+        else {
+          val lmsclient = new LocalMessageServerClient(next, messageServerPort + 1)
+          if (!lmsclient.sendMessage(ToBeNextMessageSeverMessage(self))) {
+            _checkNode(nodes.tail)
+          }
+          Some(next)
+        }
+      }
+    }
+
+    _checkNode(ring.ips);
+  }
 }
