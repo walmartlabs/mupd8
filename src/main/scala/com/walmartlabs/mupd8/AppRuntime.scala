@@ -40,7 +40,6 @@ class AppRuntime(appID: Int,
                  val appStatic: AppStaticInfo,
                  useNullPool: Boolean = false) extends Logging {
   val sysStartTime = System.currentTimeMillis()
-
   val storeIo = if (useNullPool) new NullPool
                 else new CassandraPool(appStatic.cassHosts,
                                        appStatic.cassPort,
@@ -48,13 +47,39 @@ class AppRuntime(appID: Int,
                                        p => (appStatic.performers(appStatic.performerName2ID(p)).cf).getOrElse(appStatic.cassColumnFamily),
                                        p => appStatic.performers(appStatic.performerName2ID(p)).ttl,
                                        appStatic.compressionCodec)
-
   var startedSources: Map[String, Host] = Map.empty // (source name -> source host machine)
+  var messageServerHost: String = null
+  var messageServerPort: Int = -1
+  var startedMessageServer = false
+  // if this node is specified in config as message server, try less times
+  val firstCheckIpRlt: Option[Host] = getLocalHostName(if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) 5 else 20)
+  val self: Host = firstCheckIpRlt match {
+    case None =>
+      if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) {
+        // if message server is set to this node in config file, restart message server on this node
+        info("Start message server according to config file")
+        startMessageServer()
+        getLocalHostName(5) match {
+          case None => error("Check local host name failed, exit..."); System.exit(-1); null
+          case Some(host) => host
+        }
+      } else {
+        error("Check local host name failed, exit..."); System.exit(-1); null
+      }
+    case Some(host) => host
+  }
+  info("Host id is " + self)
+
+  // generate Hash Ring
+  private var _ring: HashRing = null
+  def ring = _ring // getter
+  def ring_= (r: HashRing): Unit = {_ring = HashRing.initFromRing(r)} // setter
+
+  // candidate ring and host list from message server
+  var candidateRing: HashRing = null
 
   // Read previous message server settings
   // check message server, (message_server_host, port), from data store
-  var messageServerHost: String = null
-  var messageServerPort: Int = -1
   def setMessageServerFromDataStore() {
     @tailrec
     def fetchMessageServerFromDataStore(): Unit = {
@@ -91,6 +116,11 @@ class AppRuntime(appID: Int,
   }
 
   def startMessageServer() {
+    if (startedMessageServer) {
+      info("Message server has been started on this node")
+      return
+    } else startedMessageServer = true
+
     info("Start message server at " + appStatic.messageServerPortFromConfig)
     // save all listed sources
     val allSourcesFromConfig: Map[String, Source] = (for {
@@ -127,24 +157,6 @@ class AppRuntime(appID: Int,
 
     _getLocalHostName(0)
   }
-  // if this node is specified in config as message server, try less times
-  val firstCheckIpRlt: Option[Host] = getLocalHostName(if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) 5 else 20)
-  val self: Host = firstCheckIpRlt match {
-    case None =>
-      if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) {
-        // if message server is set to this node in config file, restart message server on this node
-        info("Start message server according to config file")
-        startMessageServer()
-        getLocalHostName(5) match {
-          case None => error("Check local host name failed, exit..."); System.exit(-1); null
-          case Some(host) => host
-        }
-      } else {
-        error("Check local host name failed, exit..."); System.exit(-1); null
-      }
-    case Some(host) => host
-  }
-  info("Host id is " + self)
 
   // message server might be changed to set to current node in case cluster restarts.
   // so set msClient here instead of at checkIP
@@ -247,14 +259,6 @@ class AppRuntime(appID: Int,
   })
   slateURLserver.start
   info("slateURLserver is up on port" + appStatic.statusPort)
-
-  /* generate Hash Ring */
-  private var _ring: HashRing = null
-  def ring = _ring // getter
-  def ring_= (r: HashRing): Unit = {_ring = HashRing.initFromRing(r)} // setter
-
-  // candidate ring and host list from message server
-  var candidateRing: HashRing = null
 
   // Try to Register host to message server and get updated hash ring from message server
   // even if hash ring is generated from system hosts already

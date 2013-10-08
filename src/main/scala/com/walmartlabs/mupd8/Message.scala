@@ -42,6 +42,9 @@ case class PrepareNodeChangeMessage(cmdID: Int, hashInNewRing: IndexedSeq[String
 case class ToBeNextMessageSeverMessage(requestedBy: Host) extends MessageWACK {
   override def toString() = "ToBeNextMessageServerMessage( Requested By " + requestedBy + " )"
 }
+case class NewMessageServerMessage(cmdID: Int, newMessageServer: Host) extends MessageWACK {
+  override def toString() = "NewMessageServerMessage( " + newMessageServer + " )"
+}
 case class NewSourceMessage(cmdID: Int, host: Host, sourceName: String) extends MessageWOACK {
   override def toString() = "NewSourceMessage( " + cmdID + ", " + sourceName + " on " + host + ")"
 }

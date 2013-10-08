@@ -38,7 +38,20 @@ import annotation.tailrec
 
 /* Message Server for whole cluster */
 class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Source], isTest: Boolean = false) extends Thread with Logging {
+  // separate lastCmdID and lastRingUpdateCmdID in case in future
+  // there may message not requiring no new ring update
+  var lastCmdID = -1
+  var lastRingUpdateCmdID = -1
+  var ring: HashRing = if (appRun != null) appRun.ring else null
+  var keepRunning = true
+
   setName("MessageServer")
+  SendNewRing.start
+  AckedNodeCounter.start
+  PingCheck.start
+  lastCmdID = 0
+  if (ring != null)
+    SendNewRing ! SendMessageToNode(lastCmdID, ring.ips, (port + 1), NewMessageServerMessage(lastCmdID, appRun.self), port)
 
   /* socket server to communicate clients */
   override def run() {
@@ -219,7 +232,6 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
       }
     }
   }
-  SendNewRing.start
 
   class SendStartSource(sourceName: String, ipToStart: String) extends Actor {
     override def act() {
@@ -233,17 +245,6 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
       }
     }
   }
-
-  // separate lastCmdID and lastRingUpdateCmdID in case in future
-  // there may message not requiring no new ring update
-  var lastCmdID = -1
-  var lastRingUpdateCmdID = -1
-  var ring: HashRing = null
-  var keepRunning = true
-  // save started source readers
-//  var startedSources: Map[String, String] = Map.empty // (source name -> source host machine ip)
-
-  AckedNodeCounter.start
 
   // For now it only check node with sources on it
   // From there those nodes can detect other nodes' failure
@@ -268,7 +269,6 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
       }
     }
   }
-  PingCheck.start
 }
 
 /* Message Server for every node, which receives ring update message for now */
@@ -366,6 +366,12 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
           case ToBeNextMessageSeverMessage(requestedBy) =>
             info("LocalMessageServer: Received " + msg)
             runtime.startMessageServer()
+
+          case NewMessageServerMessage(cmdID, messageServer) =>
+            info("LocalMessageServer: Received " + msg)
+            runtime.messageServerHost = messageServer.ip
+            lastCmdID = cmdID
+            lastCommittedCmdID = -1
 
           case NewSourceMessage(cmdID, host, sourceName) =>
             info("LocalMessageServer: Recieved " + msg)
