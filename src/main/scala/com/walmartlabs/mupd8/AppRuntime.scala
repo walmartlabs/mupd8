@@ -51,6 +51,7 @@ class AppRuntime(appID: Int,
   var messageServerHost: String = null
   var messageServerPort: Int = -1
   var startedMessageServer = false
+  info("Connect to message server " + (messageServerHost, messageServerPort) + " to decide hostname")
   // if this node is specified in config as message server, try less times
   val firstCheckIpRlt: Option[Host] = getLocalHostName(if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) 5 else 20)
   val self: Host = firstCheckIpRlt match {
@@ -142,7 +143,6 @@ class AppRuntime(appID: Int,
 
   // check ip and host by connecting to message server
   // if message server is not responsive, retrieve message server config from data store and retry
-  info("Connect to message server " + (messageServerHost, messageServerPort) + " to decide hostname")
   def getLocalHostName(retryTimes: Int): Option[Host] = {
     def _getLocalHostName(retryCount: Int): Option[Host] = {
       if (retryCount >= retryTimes) None
