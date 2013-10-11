@@ -67,8 +67,8 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
       try {
         val channel = serverSocketChannel.accept()
         debug("Channel - " + channel + " is opened")
-        val in = new ObjectInputStream(Channels.newInputStream(channel))
-        val out = new ObjectOutputStream(Channels.newOutputStream(channel))
+        val in = new ObjectInputStream(new BufferedInputStream(Channels.newInputStream(channel)))
+        val out = new ObjectOutputStream(new BufferedOutputStream(Channels.newOutputStream(channel)))
         val msg = in.readObject()
         msg match {
           case NodeChangeMessage(hosts_to_add, hosts_to_remove) =>
@@ -288,8 +288,8 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
     while (true) {
       try {
         val channel = serverSocketChannel.accept()
-        val in = new ObjectInputStream(Channels.newInputStream(channel))
-        val out = new ObjectOutputStream(Channels.newOutputStream(channel))
+        val in = new ObjectInputStream(new BufferedInputStream(Channels.newInputStream(channel)))
+        val out = new ObjectOutputStream(new BufferedOutputStream(Channels.newOutputStream(channel)))
         val msg = in.readObject
         msg match {
           case PrepareNodeChangeMessage(cmdID, hashInNewRing, iPsInNewRing, iP2HostMap) =>

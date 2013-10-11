@@ -18,12 +18,7 @@
 package com.walmartlabs.mupd8
 
 import java.net.Socket
-import scala.collection.mutable
-import java.io._
-import java.net.{ InetAddress, Socket, SocketException }
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.io.IOException
+import java.net.InetSocketAddress
 import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import grizzled.slf4j.Logging
@@ -33,7 +28,10 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 20
   def sendMessage(msg: Message): Boolean = synchronized {
     try {
       debug("MessageServerClient: send " + msg + " to Message Server: " + serverHost + ", " + serverPort)
-      val socket = new Socket(serverHost, serverPort) // TODO: replace socket with channel apis
+      // have to use socket, not Channel. Since channel doesn't support so_timeout
+      // http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=4614802
+      val socket = new Socket()
+      socket.connect(new InetSocketAddress(serverHost, serverPort), timeout)
       val out = new ObjectOutputStream(socket.getOutputStream)
       val in = new ObjectInputStream(socket.getInputStream)
       socket.setSoTimeout(timeout)
@@ -84,7 +82,8 @@ class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Int
         case PING() => debug("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
         case _ => info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
       }
-      val socket = new Socket(serverHost, serverPort)
+      val socket = new Socket()
+      socket.connect(new InetSocketAddress(serverHost, serverPort), timeout)
       val out = new ObjectOutputStream(socket.getOutputStream)
       val in = new ObjectInputStream(socket.getInputStream)
       socket.setSoTimeout(timeout)
