@@ -365,10 +365,12 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
 
           case ToBeNextMessageSeverMessage(requestedBy) =>
             info("LocalMessageServer: Received " + msg)
+            out.writeObject(ACKMessage)
             runtime.startMessageServer()
 
           case NewMessageServerMessage(cmdID, messageServer) =>
             info("LocalMessageServer: Received " + msg)
+            out.writeObject(ACKMessage)
             runtime.messageServerHost = messageServer.ip
             lastCmdID = cmdID
             lastCommittedCmdID = -1
