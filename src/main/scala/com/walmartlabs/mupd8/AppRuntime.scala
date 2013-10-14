@@ -39,6 +39,14 @@ class AppRuntime(appID: Int,
                  poolsize: Int,
                  val appStatic: AppStaticInfo,
                  useNullPool: Boolean = false) extends Logging {
+  /*
+   * Startup sequence
+   * 1. start local message server
+   * 2. get host name from message server, including starting message server
+   * 3. join cluster
+   * 4. ...
+   */
+
   val sysStartTime = System.currentTimeMillis()
   val storeIo = if (useNullPool) new NullPool
                 else new CassandraPool(appStatic.cassHosts,
@@ -49,8 +57,15 @@ class AppRuntime(appID: Int,
                                        appStatic.compressionCodec)
   var startedSources: Map[String, Host] = Map.empty // (source name -> source host machine)
   var messageServerHost: String = null
-  var messageServerPort: Int = -1
+  val messageServerPort: Int = appStatic.messageServerPortFromConfig
   var startedMessageServer = false
+
+  // 1. start local server socket
+  val localMessageServer = new Thread(new LocalMessageServer(messageServerPort + 1, this), "LocalMessageServer")
+  localMessageServer.start
+  Thread.sleep(200) // Give local Message Server sometime to start
+
+  // 2. get hostname from message server
   info("Connect to message server " + (messageServerHost, messageServerPort) + " to decide hostname")
   // if this node is specified in config as message server, try less times
   val firstCheckIpRlt: Option[Host] = getLocalHostName(if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) 5 else 20)
@@ -60,6 +75,7 @@ class AppRuntime(appID: Int,
         // if message server is set to this node in config file, restart message server on this node
         info("Start message server according to config file")
         startMessageServer()
+        Thread.sleep(500) // yield cpu to startMessageServer
         getLocalHostName(5) match {
           case None => error("Check local host name failed, exit..."); System.exit(-1); null
           case Some(host) => host
@@ -70,14 +86,25 @@ class AppRuntime(appID: Int,
     case Some(host) => host
   }
   info("Host id is " + self)
+  // init msClient
+  val msClient: MessageServerClient = new MessageServerClient(messageServerHost, messageServerPort, 1000)
 
-  // generate Hash Ring
+  // 3. ask to join cluster and update hash ring
   private var _ring: HashRing = null
   def ring = _ring // getter
   def ring_= (r: HashRing): Unit = {_ring = HashRing.initFromRing(r)} // setter
-
   // candidate ring and host list from message server
   var candidateRing: HashRing = null
+
+  trySendNodeJoinMessageToMessageServer(10000)  // try to send join message to message server for 10 sec
+  info("Send node join message to message server")
+  waitHashRing(5000) // wait hash ring from message server for 5 sec
+  info("Update ring from Message server")
+
+  if (ring == null) {
+    error("AppRuntime: No hash ring either from c¬onfig file or message server")
+    System.exit(-1)
+  }
 
   // Read previous message server settings
   // check message server, (message_server_host, port), from data store
@@ -91,10 +118,9 @@ class AppRuntime(appID: Int,
             // cluster first time start, no message server in data store
             // then start message server, write message server config into data store
             startMessageServer()
-            storeIo.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig + ":" + appStatic.messageServerPortFromConfig.toString)
+            storeIo.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
             info("Set message server from config - " + (messageServerHost, messageServerPort))
             messageServerHost = appStatic.messageServerHostFromConfig
-            messageServerPort = appStatic.messageServerPortFromConfig
           } else {
             if (System.currentTimeMillis() - sysStartTime > appStatic.startupTimeout * 1000) {
               error("fetchMessageServer timeout, exiting...")
@@ -107,9 +133,7 @@ class AppRuntime(appID: Int,
           }
         case Some(msgserver) =>
           info("Message server config from data store: " + msgserver)
-          val data = msgserver.split(":")
-          messageServerHost = data(0)
-          messageServerPort = data(1).toInt
+          messageServerHost = msgserver
       }
     }
 
@@ -158,10 +182,6 @@ class AppRuntime(appID: Int,
     _getLocalHostName(0)
   }
 
-  // message server might be changed to set to current node in case cluster restarts.
-  // so set msClient here instead of at checkIP
-  val msClient: MessageServerClient = new MessageServerClient(messageServerHost, messageServerPort, 1000)
-
   val rand = new Random(System.currentTimeMillis())
   private val sourceThreads: collection.mutable.ListBuffer[(String, List[java.lang.Thread])] = new collection.mutable.ListBuffer
   val hostUpdateLock = new Object
@@ -185,11 +205,6 @@ class AppRuntime(appID: Int,
   val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
   info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
   val slateBuilders = appStatic.slateBuilderFactory.map(_.map(_.apply()))
-
-  // start local server socket
-  val localMessageServer = new Thread(new LocalMessageServer(messageServerPort + 1, this), "LocalMessageServer")
-  localMessageServer.start
-  Thread.sleep(200) // Give local Message Server sometime to start
 
   val maxWorkerCount = 2 * Runtime.getRuntime.availableProcessors
   val slateURLserver = new HttpServer(appStatic.statusPort, maxWorkerCount, s => {
@@ -274,8 +289,6 @@ class AppRuntime(appID: Int,
       }
     }
   }
-  trySendNodeJoinMessageToMessageServer(10000)  // try to send join message to message server for 10 sec
-  info("Send node join message to message server")
 
   def waitHashRing(time: Int) {
     if (time <= 0) {
@@ -287,13 +300,6 @@ class AppRuntime(appID: Int,
         waitHashRing(time - 500)
       }
     }
-  }
-  waitHashRing(5000) // wait hash ring from message server for 5 sec
-  info("Update ring from Message server")
-
-  if (ring == null) {
-    error("AppRuntime: No hash ring either from c¬onfig file or message server")
-    System.exit(-1)
   }
 
   def getSlate(key: (String, Key)) = {

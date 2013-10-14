@@ -89,6 +89,7 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
                 ring = ring.add(hosts_to_add1)
                 ring = ring.remove(hosts_to_remove1)
               }
+              info("MessageServer: new ring = " + ring)
 
               // update source
               // check if hostToRemove has source on it
