@@ -304,14 +304,14 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
               runtime.waitPerformerJobsDone
 
               // flush dirty slates
-              debug("PrepareAddHostMessage - going to flush cassandra")
+              debug("PrepareNodeChangeMessage - going to flush cassandra")
               runtime.flushFilteredDirtySlateToCassandra
               lastCmdID = cmdID
 
               // send ACKPrepareNodeChangeMessage back to message server7
               debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + iP2HostMap)
               runtime.msClient.sendMessage(PrepareNodeChangeDoneMessage(cmdID, runtime.self.ip))
-              info("LocalMessageServer: PrepareAddHostMessage - CMD " + cmdID + " - Sent ACKPrepareAddHostMessage to message server")
+              info("LocalMessageServer: PrepareNodeChangeMessage - CMD " + cmdID + " - Sent ACKPrepareNodeChangeMessage to message server")
             } else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
 
