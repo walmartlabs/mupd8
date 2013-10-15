@@ -46,8 +46,8 @@ class AppRuntime(appID: Int,
    * 3. join cluster
    * 4. ...
    */
-
   val sysStartTime = System.currentTimeMillis()
+  val rand = new Random(System.currentTimeMillis())
   val storeIo = if (useNullPool) new NullPool
                 else new CassandraPool(appStatic.cassHosts,
                                        appStatic.cassPort,
@@ -182,7 +182,6 @@ class AppRuntime(appID: Int,
     _getLocalHostName(0)
   }
 
-  val rand = new Random(System.currentTimeMillis())
   private val sourceThreads: collection.mutable.ListBuffer[(String, List[java.lang.Thread])] = new collection.mutable.ListBuffer
   val hostUpdateLock = new Object
   // Buffer for slates dest of which according to candidateRing is not current node anymore

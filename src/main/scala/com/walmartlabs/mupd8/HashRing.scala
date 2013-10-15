@@ -118,7 +118,8 @@ class HashRing private (val ips: IndexedSeq[String], val hash: IndexedSeq[String
         null
       } else {
         val newips = ips.filter(!ips_to_remove.contains(_))
-        HashRing.initFromParameters(newips, newhash, ipHostMap);
+        val newipHostMap = ipHostMap.filter(p => newips.contains(p._1))
+        HashRing.initFromParameters(newips, newhash, newipHostMap);
       }
     }
   }
