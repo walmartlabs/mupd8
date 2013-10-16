@@ -43,8 +43,8 @@ class AppRuntime(appID: Int,
    * Startup sequence
    * 1. start local message server
    * 2. get host name from message server, including starting message server
-   * 3. join cluster
-   * 4. ...
+   * 3. create mapupdater pool
+   * 4. join cluster
    */
   val sysStartTime = System.currentTimeMillis()
   val rand = new Random(System.currentTimeMillis())
@@ -89,12 +89,29 @@ class AppRuntime(appID: Int,
   // init msClient
   val msClient: MessageServerClient = new MessageServerClient(messageServerHost, messageServerPort, 1000)
 
-  // 3. ask to join cluster and update hash ring
+  // 3. mapupdater pool is needed by ring update
+  // pool depends on mucluster, mucluster depends on msClient
+  val pool = initMapUpdatePool(poolsize, this,
+    action => new MUCluster[PerformerPacket](self, appStatic.statusPort + 100,
+                                             PerformerPacket(0, 0, Key(new Array[Byte](0)), Array(), "", this),
+                                             () => { new Decoder(this) },
+                                             action, this, msClient))
+
+  // TLS depends on storeIo
+  private val threadMap: Map[Long, TLS] = pool.threadDataPool.map(_.thread.getId -> new TLS(this))(breakOut)
+  private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
+
+  // 4. ask to join cluster and update hash ring
   private var _ring: HashRing = null
   def ring = _ring // getter
   def ring_= (r: HashRing): Unit = {_ring = HashRing.initFromRing(r)} // setter
   // candidate ring and host list from message server
   var candidateRing: HashRing = null
+  private val sourceThreads: collection.mutable.ListBuffer[(String, List[java.lang.Thread])] = new collection.mutable.ListBuffer
+  val hostUpdateLock = new Object
+  // Buffer for slates dest of which according to candidateRing is not current node anymore
+  // put definition here prevent null pointer exception when it is called at _ring init
+  val eventBufferForRingChange: ConcurrentLinkedQueue[PerformerPacket] = new ConcurrentLinkedQueue[PerformerPacket]();
 
   trySendNodeJoinMessageToMessageServer(10000)  // try to send join message to message server for 10 sec
   info("Send node join message to message server")
@@ -182,24 +199,8 @@ class AppRuntime(appID: Int,
     _getLocalHostName(0)
   }
 
-  private val sourceThreads: collection.mutable.ListBuffer[(String, List[java.lang.Thread])] = new collection.mutable.ListBuffer
-  val hostUpdateLock = new Object
-  // Buffer for slates dest of which according to candidateRing is not current node anymore
-  // put definition here prevent null pointer exception when it is called at _ring init
-  val eventBufferForRingChange: ConcurrentLinkedQueue[PerformerPacket] = new ConcurrentLinkedQueue[PerformerPacket]();
-
   def initMapUpdatePool(poolsize: Int, runtime: AppRuntime, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
     new MapUpdatePool[PerformerPacket](poolsize, runtime, clusterFactory)
-  // pool depends on mucluster, mucluster depends on msClient
-  val pool = initMapUpdatePool(poolsize, this,
-    action => new MUCluster[PerformerPacket](self, appStatic.statusPort + 100,
-                                             PerformerPacket(0, 0, Key(new Array[Byte](0)), Array(), "", this),
-                                             () => { new Decoder(this) },
-                                             action, this, msClient))
-
-  // TLS depends on storeIo
-  private val threadMap: Map[Long, TLS] = pool.threadDataPool.map(_.thread.getId -> new TLS(this))(breakOut)
-  private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
 
   val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
   info("Memory available for use by Slate Cache is " + slateRAM + " bytes")

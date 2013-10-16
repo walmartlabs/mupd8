@@ -298,6 +298,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             if (cmdID > lastCmdID) {
               // set candidate ring
               setCandidateRingAndHostList(hashInNewRing, (iPsInNewRing, iP2HostMap))
+              info("LocalMessageserver - candidateRing = " + runtime.candidateRing)
 
               // wait until current performer job is done
               debug("Checking current performer job")
@@ -353,7 +354,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
                 runtime.appStatic.systemHosts = runtime.candidateRing.ipHostMap
                 runtime.candidateRing = null
                 runtime.flushSlatesInBufferToQueue
-                info("LocalMessageServer: cmdID - " + cmdID + " update ring done")
+                info("LocalMessageServer: cmdID - " + cmdID + " update ring done, new ring = " + runtime.ring)
               } else {
                 warn("UpdateRing: candidate ring is null in UpdateRing")
               }
