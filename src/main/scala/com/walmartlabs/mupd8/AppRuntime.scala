@@ -96,6 +96,9 @@ class AppRuntime(appID: Int,
                                              PerformerPacket(0, 0, Key(new Array[Byte](0)), Array(), "", this),
                                              () => { new Decoder(this) },
                                              action, this, msClient))
+  val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
+  info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
+  val slateBuilders = appStatic.slateBuilderFactory.map(_.map(_.apply()))
 
   // TLS depends on storeIo
   private val threadMap: Map[Long, TLS] = pool.threadDataPool.map(_.thread.getId -> new TLS(this))(breakOut)
@@ -201,10 +204,6 @@ class AppRuntime(appID: Int,
 
   def initMapUpdatePool(poolsize: Int, runtime: AppRuntime, clusterFactory: (PerformerPacket => Unit) => MUCluster[PerformerPacket]): MapUpdatePool[PerformerPacket] =
     new MapUpdatePool[PerformerPacket](poolsize, runtime, clusterFactory)
-
-  val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
-  info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
-  val slateBuilders = appStatic.slateBuilderFactory.map(_.map(_.apply()))
 
   val maxWorkerCount = 2 * Runtime.getRuntime.availableProcessors
   val slateURLserver = new HttpServer(appStatic.statusPort, maxWorkerCount, s => {
