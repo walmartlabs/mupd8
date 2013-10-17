@@ -191,14 +191,17 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntim
   }
 
   def put(key: PerformerPacketKey, x: T) {
-    val destip = appRun.ring(key)
-    if (appRun.self.ip.compareTo(destip) == 0
+    // at startup appRun.ring could be null
+    if (appRun.ring != null) {
+      val destip = appRun.ring(key)
+      if (appRun.self.ip.compareTo(destip) == 0
         ||
         // during ring chagne process, if dest is going to be removed from cluster
         (appRun.candidateRing != null && !appRun.candidateRing.ips.contains(destip)))
-      putLocal(key, x)
-    else
-      cluster.send(Host(destip, appRun.ring.ipHostMap(destip)), x)
+        putLocal(key, x)
+      else
+        cluster.send(Host(destip, appRun.ring.ipHostMap(destip)), x)
+    }
   }
 
   /*
