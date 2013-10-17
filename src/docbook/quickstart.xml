@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Copyright 2011-2012 @WalmartLabs, a division of Wal-Mart Stores, Inc.
-  
+
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
   You may obtain a copy of the License at
-  
+
       http://www.apache.org/licenses/LICENSE-2.0
-  
+
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -24,7 +24,7 @@
       Getting a new application started in the JVM <application>MUPD8</application>
       is easy.
     </para>
-    
+
     <para>
       First, for a conceptual overview of MapUpdate data-stream processing, please see the PVLDB Vol. 5 No. 12 paper or its corresponding presentation at VLDB 2012: Muppet: MapReduce-Style Processing of Fast Data.
     </para>
@@ -42,7 +42,7 @@
       then write and run the new MUPD8 application.
       The commands enumerated can be followed verbatim in about 10&ndash;15 minutes.
     </para>
-    
+
     <note>
       <para>
 	The commands that follow use the following software:
@@ -386,13 +386,6 @@ EOF
 <prompt>$</prompt> <userinput>(cd ../apache-cassandra-1.1.2 &amp;&amp; \
       echo 'create column family mupd8_demo;' | \
       bin/cassandra-cli --host localhost --keyspace Mupd8 )</userinput>
-</screen>
-    </para>
-        <para>
-      Run MUPD8's Message Server:
-<screen>
-<prompt>$</prompt> <userinput>java -cp ~/.m2/repository/org/slf4j/slf4j-simple/1.6.4/slf4j-simple-1.6.4.jar:~/.m2/repository/org/slf4j/slf4j-api/1.6.4/slf4j-api-1.6.4.jar:../mupd8/target/mupd8-1.0-SNAPSHOT.jar:../mupd8/target/mupd8-1.0-SNAPSHOT-jar-with-dependencies.jar:target/mupd8_demo-1.0-SNAPSHOT.jar \
-     com.walmartlabs.mupd8.MessageServer -pidFile messageserver.pid -d etc/ </userinput>
 </screen>
     </para>
     <para>
