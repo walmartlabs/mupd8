@@ -354,6 +354,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
                 runtime.appStatic.systemHosts = runtime.candidateRing.ipHostMap
                 runtime.candidateRing = null
                 runtime.flushSlatesInBufferToQueue
+                lastCommittedCmdID = cmdID
                 info("LocalMessageServer: cmdID - " + cmdID + " update ring done, new ring = " + runtime.ring)
               } else {
                 warn("UpdateRing: candidate ring is null in UpdateRing")
