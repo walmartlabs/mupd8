@@ -41,10 +41,11 @@ class AppRuntime(appID: Int,
                  useNullPool: Boolean = false) extends Logging {
   /*
    * Startup sequence
-   * 1. start local message server
-   * 2. get host name from message server, including starting message server
-   * 3. create mapupdater pool
-   * 4. join cluster
+   * 1. init storeIO
+   * 2. start local message server
+   * 3. get host name from message server, including starting message server
+   * 4. create mapupdater pool
+   * 5. join cluster
    */
   val sysStartTime = System.currentTimeMillis()
   val rand = new Random(System.currentTimeMillis())
