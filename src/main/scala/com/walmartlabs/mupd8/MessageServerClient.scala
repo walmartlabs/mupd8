@@ -74,7 +74,7 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 20
 
 }
 
-class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 2000) extends Logging {
+class LocalMessageServerClient(val serverHost: String, serverPort: Int, timeout: Int = 2000) extends Logging {
 
   def sendMessage(msg: Message): Boolean = synchronized {
     try {

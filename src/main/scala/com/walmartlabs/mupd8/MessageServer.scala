@@ -370,7 +370,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
             runtime.startMessageServer()
-            runtime.storeIo.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, runtime.self.ip)
+            runtime.storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, runtime.self.ip)
             info("LocalMessageServer: write messageserver " + self + " to data store")
 
           case NewMessageServerMessage(cmdID, messageServer) =>

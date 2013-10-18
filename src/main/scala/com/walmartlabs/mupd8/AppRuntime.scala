@@ -47,9 +47,10 @@ class AppRuntime(appID: Int,
    * 4. create mapupdater pool
    * 5. join cluster
    */
+  // 1. init storeIO
   val sysStartTime = System.currentTimeMillis()
   val rand = new Random(System.currentTimeMillis())
-  val storeIo = if (useNullPool) new NullPool
+  val storeIO = if (useNullPool) new NullPool
                 else new CassandraPool(appStatic.cassHosts,
                                        appStatic.cassPort,
                                        appStatic.cassKeySpace,
@@ -61,12 +62,12 @@ class AppRuntime(appID: Int,
   val messageServerPort: Int = appStatic.messageServerPortFromConfig
   var startedMessageServer = false
 
-  // 1. start local server socket
+  // 2. start local server socket
   val localMessageServer = new Thread(new LocalMessageServer(messageServerPort + 1, this), "LocalMessageServer")
   localMessageServer.start
   Thread.sleep(200) // Give local Message Server sometime to start
 
-  // 2. get hostname from message server
+  // 3. get hostname from message server
   info("Connect to message server " + (messageServerHost, messageServerPort) + " to decide hostname")
   // if this node is specified in config as message server, try less times
   val firstCheckIpRlt: Option[Host] = getLocalHostName(if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) 5 else 20)
@@ -90,7 +91,7 @@ class AppRuntime(appID: Int,
   // init msClient
   var msClient: MessageServerClient = new MessageServerClient(messageServerHost, messageServerPort, 1000)
 
-  // 3. mapupdater pool is needed by ring update
+  // 4. mapupdater pool is needed by ring update
   // pool depends on mucluster, mucluster depends on msClient
   val pool = initMapUpdatePool(poolsize, this,
     action => new MUCluster[PerformerPacket](self, appStatic.statusPort + 100,
@@ -105,7 +106,7 @@ class AppRuntime(appID: Int,
   private val threadMap: Map[Long, TLS] = pool.threadDataPool.map(_.thread.getId -> new TLS(this))(breakOut)
   private val threadVect: Vector[TLS] = (threadMap map { _._2 })(breakOut)
 
-  // 4. ask to join cluster and update hash ring
+  // 5. ask to join cluster and update hash ring
   private var _ring: HashRing = null
   def ring = _ring // getter
   def ring_= (r: HashRing): Unit = {_ring = HashRing.initFromRing(r)} // setter
@@ -127,19 +128,23 @@ class AppRuntime(appID: Int,
     System.exit(-1)
   }
 
+  // Start heart beat message server
+  val heartBeat = new HeartBeat(this)
+  if (!Misc.isLocalHost(this.messageServerHost)) heartBeat.start()
+
   // Read previous message server settings
   // check message server, (message_server_host, port), from data store
   def setMessageServerFromDataStore() {
     @tailrec
     def fetchMessageServerFromDataStore(): Unit = {
       info("Fetching message server address from db store")
-      storeIo.fetchStringValueColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER) match {
+      storeIO.fetchStringValueColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER) match {
         case None =>
           if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) {
             // cluster first time start, no message server in data store
             // then start message server, write message server config into data store
             startMessageServer()
-            storeIo.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
+            storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
             info("Set message server from config - " + (messageServerHost, messageServerPort))
             messageServerHost = appStatic.messageServerHostFromConfig
           } else {
@@ -235,7 +240,7 @@ class AppRuntime(appID: Int,
               "\nMin size: " + poolsizes.take(num) +
               "\nMax size: " + poolsizes.reverse.take(num) +
               "\nAverage estimated exec time milliseconds: " + executionTime +
-              "\nPending IOs: " + storeIo.pendingCount +
+              "\nPending IOs: " + storeIO.pendingCount +
               "\n"
           }).get.getBytes
       }
@@ -259,7 +264,7 @@ class AppRuntime(appID: Int,
               error("SlateUrlServer: message server is done")
               if (!nextMessageServer().isDefined) {
                 error("SlateUrlServer: cannot find node to be next message server, exit...")
-                System.exit(-1);
+                System.exit(-1)
               }
             }
           }
@@ -433,16 +438,16 @@ class AppRuntime(appID: Int,
 
   def flushDirtySlateToCassandra() {
     if (threadVect != null) { // flush only when node is initted
-      storeIo.initBatchWrite
+      storeIO.initBatchWrite
       var dirtySlateList: List[((String, Key), SlateValue)] = List.empty
       threadVect foreach { tls => {
         val items: List[((String, Key), SlateValue)] = tls.slateCache.getDirtyItems
         dirtySlateList = dirtySlateList ++: items
         items.foreach (writeSlateToCassandra(_))
       }}
-      if (storeIo.flushBatchWrite)
+      if (storeIO.flushBatchWrite)
         dirtySlateList foreach ( _._2.dirty = false )
-      storeIo.closeBatchWrite
+      storeIO.closeBatchWrite
     }
   }
 
@@ -450,16 +455,16 @@ class AppRuntime(appID: Int,
   def flushFilteredDirtySlateToCassandra() {
     if (threadVect != null) { // flush only when node is initted
       info("flushFilteredDirtySlateToCassandra: starts to flush slates")
-      storeIo.initBatchWrite
+      storeIO.initBatchWrite
       var dirtySlateList: List[((String, Key), SlateValue)] = List.empty
       threadVect foreach { tls => {
         val items = tls.slateCache.getFilteredDirtyItems
         dirtySlateList ++:= items
         items.foreach (writeSlateToCassandra(_))
       }}
-      if (storeIo.flushBatchWrite)
+      if (storeIO.flushBatchWrite)
         dirtySlateList foreach ( _._2.dirty = false )
-      storeIo.closeBatchWrite
+      storeIO.closeBatchWrite
       info("flushFilteredDirtySlateToCassandra: flush slates is done")
     }
   }
@@ -471,7 +476,7 @@ class AppRuntime(appID: Int,
     val slateByteStream = new ByteArrayOutputStream()
     getSlateBuilder(appStatic.performerName2ID(key._1)).toBytes(slateVal.slate, slateByteStream)
     // TODO: .getBytes may not work the way you want it to!! Encoding issues!
-    storeIo.batchWrite(key._1, key._2, slateByteStream.toByteArray())
+    storeIO.batchWrite(key._1, key._2, slateByteStream.toByteArray())
   }
 
   // When ring change is done, flush events in buffer into local queue and process/dispatch them

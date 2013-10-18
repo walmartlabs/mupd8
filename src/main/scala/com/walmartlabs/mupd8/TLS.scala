@@ -27,7 +27,7 @@ import com.walmartlabs.mupd8.Mupd8Type._
 
 class TLS(val appRun: AppRuntime) extends binary.PerformerUtilities with Logging {
   val objects = appRun.appStatic.performerFactory.map(_.map(_.apply()))
-  val slateCache = new SlateCache(appRun.storeIo, appRun.appStatic.slateCacheCount, this)
+  val slateCache = new SlateCache(appRun.storeIO, appRun.appStatic.slateCacheCount, this)
   val queue = new PriorityBlockingQueue[Runnable]
   var perfPacket: PerformerPacket = null
   var startTime: Long = 0
