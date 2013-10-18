@@ -87,7 +87,7 @@ class AppRuntime(appID: Int,
   }
   info("Host id is " + self)
   // init msClient
-  val msClient: MessageServerClient = new MessageServerClient(messageServerHost, messageServerPort, 1000)
+  var msClient: MessageServerClient = new MessageServerClient(messageServerHost, messageServerPort, 1000)
 
   // 3. mapupdater pool is needed by ring update
   // pool depends on mucluster, mucluster depends on msClient

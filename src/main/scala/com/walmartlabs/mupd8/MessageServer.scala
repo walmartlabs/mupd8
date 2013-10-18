@@ -209,7 +209,7 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
           var nodesFailedToSend: Set[Host] = Set.empty
           ips foreach (ip =>
             // check it is still latest command and hash ring
-            if (cmdID == lastRingUpdateCmdID) {
+            if (cmdID >= lastRingUpdateCmdID) {
               info("SendNewRing: Sending cmdID " + cmdID + ", msg = " + msg + " to endpoint " + (ring.ipHostMap(ip), port))
               val lmsclient = new LocalMessageServerClient(ip, port)
               if (!lmsclient.sendMessage(msg)) {
@@ -375,6 +375,7 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
             runtime.messageServerHost = messageServer.ip
+            runtime.msClient = new MessageServerClient(runtime.messageServerHost, runtime.messageServerPort, 1000)
             lastCmdID = cmdID
             lastCommittedCmdID = -1
 
