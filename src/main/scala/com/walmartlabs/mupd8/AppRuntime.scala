@@ -130,7 +130,7 @@ class AppRuntime(appID: Int,
 
   // Start heart beat message server
   val heartBeat = new HeartBeat(this)
-  if (!Misc.isLocalHost(this.messageServerHost)) heartBeat.start()
+  heartBeat.start()
 
   // Read previous message server settings
   // check message server, (message_server_host, port), from data store

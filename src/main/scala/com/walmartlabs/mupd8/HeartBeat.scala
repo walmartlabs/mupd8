@@ -23,23 +23,35 @@ import grizzled.slf4j.Logging
 class HeartBeat(appRuntime: AppRuntime) extends Actor with Logging {
   private var keepRunning = true
   private val HEARTBEAT_INTERVAL = 2
+  private var leftSleepTime = 0
 
   def act {
     while (keepRunning) {
-      if (appRuntime.ring != null && appRuntime.messageServerHost != null) {
+      if (appRuntime.ring != null && appRuntime.messageServerHost != null && !Misc.isLocalHost(appRuntime.messageServerHost)) {
         // ping message server
         val lmsClient = new LocalMessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort + 1)
+        trace("HeartBeat - ping " + (appRuntime.messageServerHost, appRuntime.messageServerPort + 1))
         if (lmsClient.sendMessage(PING())) {
           // if ping okay, calculate sleep time and sleep
-          val sleepTime = appRuntime.rand.nextInt(HEARTBEAT_INTERVAL * appRuntime.ring.ips.size)
-          Thread.sleep(sleepTime)
+          val sleepTime = appRuntime.rand.nextInt((HEARTBEAT_INTERVAL * appRuntime.ring.ips.size) * 1000)
+          if (sleepTime + leftSleepTime > 0) {
+            Thread.sleep(sleepTime + leftSleepTime)
+            leftSleepTime = HEARTBEAT_INTERVAL * 1000 - sleepTime
+          } else {
+            leftSleepTime = 0
+          }
         } else {
           error("Heart Beat: ping " + appRuntime.messageServerHost + " fails")
           // if ping failed, check if message server changed?
           if (lmsClient.serverHost.compareTo(appRuntime.messageServerHost) != 0) {
             // if message server is changed sleep again
-            val sleepTime = appRuntime.rand.nextInt(HEARTBEAT_INTERVAL * appRuntime.ring.ips.size)
-            Thread.sleep(sleepTime)
+            val sleepTime = appRuntime.rand.nextInt((HEARTBEAT_INTERVAL * appRuntime.ring.ips.size) * 1000)
+            if (sleepTime + leftSleepTime > 0) {
+              Thread.sleep(sleepTime + leftSleepTime)
+              leftSleepTime = HEARTBEAT_INTERVAL * 1000 - sleepTime
+            } else {
+              leftSleepTime = 0
+            }
           } else {
             // if message server is not changed, pick next message server
             if (!appRuntime.nextMessageServer().isDefined) {
@@ -49,13 +61,13 @@ class HeartBeat(appRuntime: AppRuntime) extends Actor with Logging {
           }
         }
       } else {
-        Thread.sleep(5000)
+        Thread.sleep(HEARTBEAT_INTERVAL * 1000)
       }
     }
   }
 
   def stop() {
-    keepRunning = false;
+    keepRunning = false
   }
 
 }
