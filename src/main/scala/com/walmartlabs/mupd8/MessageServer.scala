@@ -153,8 +153,7 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
               // Connect source with hostToStart. If source is not accessible from
               // this actor, actor will report noderemovemessage to trigger next try
               appRun.startedSources += (sourceName -> host)
-              val localMSClient = new SendStartSource(sourceName, host.ip)
-              localMSClient.start
+              new SendStartSource(sourceName, host.ip).start
               // send ask new source information to all nodes
               SendNewRing ! SendMessageToNode(lastCmdID, ring.ips, (port + 1), NewSourceMessage(lastCmdID, host, sourceName), port)
             }
