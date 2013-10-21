@@ -37,12 +37,12 @@ import java.net.ServerSocket
 import annotation.tailrec
 
 /* Message Server for whole cluster */
-class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Source], isTest: Boolean = false) extends Thread with Logging {
+class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, Source], isTest: Boolean = false) extends Thread with Logging {
   // separate lastCmdID and lastRingUpdateCmdID in case in future
   // there may message not requiring no new ring update
   var lastCmdID = -1
   var lastRingUpdateCmdID = -1
-  var ring: HashRing = if (appRun != null) appRun.ring else null
+  var ring: HashRing = if (appRuntime != null) appRuntime.ring else null
   var keepRunning = true
 
   setName("MessageServer")
@@ -51,7 +51,7 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
   PingCheck.start
   lastCmdID = 0
   if (ring != null)
-    SendNewRing ! SendMessageToNode(lastCmdID, ring.ips, (port + 1), NewMessageServerMessage(lastCmdID, appRun.self), port)
+    SendNewRing ! SendMessageToNode(lastCmdID, ring.ips, (port + 1), NewMessageServerMessage(lastCmdID, appRuntime.self), port)
 
   /* socket server to communicate clients */
   override def run() {
@@ -94,7 +94,7 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
               // update source
               // check if hostToRemove has source on it
               val ips_to_remove1 = hosts_to_remove1.map(_.ip)
-              appRun.startedSources.foreach { source =>
+              appRuntime.startedSources.foreach { source =>
                 if (ips_to_remove1.contains(source._2.ip)) {
                   val sourceName = source._1
                   // pick another host from ring to start source on
@@ -104,7 +104,7 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
                   // if source is not started, send start message
                   // Connect source with hostToStart. If source is not accessible from
                   // this actor, actor will report noderemovemessage to trigger next try
-                  appRun.startedSources += (sourceName -> Host(ipToStart, ring.ipHostMap(ipToStart)))
+                  appRuntime.startedSources += (sourceName -> Host(ipToStart, ring.ipHostMap(ipToStart)))
                   val localMSClient = new SendStartSource(sourceName, ipToStart)
                   localMSClient.start
                 }
@@ -122,7 +122,7 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
                   msClient.sendMessage(NodeChangeMessage(Set.empty, notAckedNodes.map(ip => Host(ip, ring.ipHostMap(ip)))))
                 })
                 // reset counter
-                AckedNodeCounter ! StartCounter(lastCmdID, appRun, ring.ips, "localhost", port)
+                AckedNodeCounter ! StartCounter(lastCmdID, appRuntime, ring.ips, "localhost", port)
 
                 // Send prepare ring update message
                 SendNewRing ! SendMessageToNode(lastCmdID, ring.ips, (port + 1), PrepareNodeChangeMessage(lastCmdID, ring.hash, ring.ips, ring.ipHostMap), port)
@@ -148,14 +148,18 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
             info("MessageServer: Received AskPermitToStartSourceMessage" + (sourceName, host))
             out.writeObject(ACKMessage)
             lastCmdID = lastCmdID + 1
-            if (!appRun.startedSources.contains(sourceName)) {
+            if (!appRuntime.startedSources.contains(sourceName)) {
               // if source is not started, send start message
               // Connect source with hostToStart. If source is not accessible from
               // this actor, actor will report noderemovemessage to trigger next try
-              appRun.startedSources += (sourceName -> host)
+              appRuntime.startedSources += (sourceName -> host)
               new SendStartSource(sourceName, host.ip).start
-              // send ask new source information to all nodes
-              SendNewRing ! SendMessageToNode(lastCmdID, ring.ips, (port + 1), NewSourceMessage(lastCmdID, host, sourceName), port)
+              // convert started sources map to string
+              // by adding 0x1d between key and value and \n between each pair
+              val sources2 = appRuntime.startedSources map(p => p._1 -> p._2.ip)
+              val sources3 = sources2.foldLeft(""){ (str, p) => str + p._1 + 0x1d.toChar + p._2 + "\n" }
+              // write started sources into db store
+              appRuntime.storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, sources3)
             }
 
           case _ => error("MessageServerThread: Not a valid msg: " + msg)
@@ -252,7 +256,7 @@ class MessageServer(appRun: AppRuntime, port: Int, allSources: Map[String, Sourc
     override def act() {
       while (keepRunning) {
         var failedNodes: Set[Host] = Set.empty
-        appRun.startedSources.foreach{source =>
+        appRuntime.startedSources.foreach{source =>
           // send ping message
           val lmsClient = new LocalMessageServerClient(source._2.ip, port + 1)
           if (!lmsClient.sendMessage(PING())) {
@@ -369,7 +373,19 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
             runtime.startMessageServer()
+            // write itself as message server into db store
             runtime.storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, runtime.self.ip)
+            // load started sources from db store
+            runtime.storeIO.fetchStringValueColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES) match {
+              case None => runtime.startedSources = Map.empty
+              case Some(str) =>
+                // load started sources from db store
+                // one pair format: key + 0x1d + value + \n
+                val m = str.lines.map{ str => val arr = str.split(0x1d.toChar); arr(0) -> arr(1) }.toMap
+                val m1 = m.filter(p => runtime.ring.ips.contains(p._2))
+                runtime.startedSources = m1.map(p => p._1 -> Host(runtime.ring.ipHostMap(p._2), p._2))
+                info("LocalMessageServer: started sources from db store = " + str)
+            }
             info("LocalMessageServer: write messageserver " + self + " to data store")
 
           case NewMessageServerMessage(cmdID, messageServer) =>
@@ -379,10 +395,6 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             runtime.msClient = new MessageServerClient(runtime.messageServerHost, runtime.messageServerPort, 1000)
             lastCmdID = cmdID
             lastCommittedCmdID = -1
-
-          case NewSourceMessage(cmdID, host, sourceName) =>
-            info("LocalMessageServer: Recieved " + msg)
-            runtime.startedSources = runtime.startedSources + (sourceName -> host)
 
           case PING() =>
             trace("Received PING")

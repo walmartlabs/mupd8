@@ -45,10 +45,6 @@ case class ToBeNextMessageSeverMessage(requestedBy: Host) extends MessageWACK {
 case class NewMessageServerMessage(cmdID: Int, newMessageServer: Host) extends MessageWACK {
   override def toString() = "NewMessageServerMessage( " + newMessageServer + " )"
 }
-case class NewSourceMessage(cmdID: Int, host: Host, sourceName: String) extends MessageWOACK {
-  override def toString() = "NewSourceMessage( " + cmdID + ", " + sourceName + " on " + host + ")"
-}
-
 case class UpdateRing(cmdID: Int) extends MessageWACK
 
 //

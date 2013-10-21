@@ -62,7 +62,8 @@ class NullPool extends IoPool {
 object CassandraPool {
   val SETTINGS_CF = "settings"
   val PRIMARY_ROWKEY = "primary"
-  val MESSAGE_SERVER = "MessageServer"
+  val MESSAGE_SERVER = "message_server"
+  val STARTED_SOURCES = "started_sources"
 }
 
 class CassandraPool(

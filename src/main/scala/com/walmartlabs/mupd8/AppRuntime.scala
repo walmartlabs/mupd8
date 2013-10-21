@@ -17,8 +17,6 @@
 
 package com.walmartlabs.mupd8
 
-//import scala.collection.immutable
-//import scala.collection.mutable
 import scala.collection.breakOut
 import scala.collection.JavaConverters._
 import scala.collection.JavaConversions._
@@ -77,6 +75,10 @@ class AppRuntime(appID: Int,
         // if message server is set to this node in config file, restart message server on this node
         info("Start message server according to config file")
         startMessageServer()
+        // write itself into db store as message server
+        storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
+        // clear started source reader in db store
+        storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, "")
         Thread.sleep(500) // yield cpu to startMessageServer
         getLocalHostName(5) match {
           case None => error("Check local host name failed, exit..."); System.exit(-1); null
@@ -144,7 +146,10 @@ class AppRuntime(appID: Int,
             // cluster first time start, no message server in data store
             // then start message server, write message server config into data store
             startMessageServer()
+            // write itself into db store as message server
             storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
+            // clear started source reader in db store
+            storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, "")
             info("Set message server from config - " + (messageServerHost, messageServerPort))
             messageServerHost = appStatic.messageServerHostFromConfig
           } else {
@@ -275,7 +280,14 @@ class AppRuntime(appID: Int,
       if (ring == null) Some("null\n".getBytes)
       else Some((ring.toString + "\n").getBytes)
     } else if (tok(2) == "sources") {
-      Some((startedSources.toString + "\n").getBytes)
+      // load started sources from db store
+      storeIO.fetchStringValueColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES) match {
+        case None => None
+        case Some(str) =>
+          // load started sources from db store
+          // one pair format: key + 0x1d + value + \n
+          Some(str.replaceAll(0x1d.toChar.toString, " -> ").replaceAll("\n", "; ").getBytes)
+      }
     } else {
       // This section currently handle varnish probe -- /mupd8/config/app
       // TODO: how to handle other requests?
