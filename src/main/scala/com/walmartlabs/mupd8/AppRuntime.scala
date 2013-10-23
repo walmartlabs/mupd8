@@ -76,10 +76,10 @@ class AppRuntime(appID: Int,
         info("Start message server according to config file")
         startMessageServer()
         // write itself into db store as message server
-        storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
+        storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
         // clear started source reader in db store
-        storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, "")
-        Thread.sleep(500) // yield cpu to startMessageServer
+        storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, "")
+        Thread.sleep(5000) // yield cpu to startMessageServer and cassandra writing
         getLocalHostName(5) match {
           case None => error("Check local host name failed, exit..."); System.exit(-1); null
           case Some(host) => host
@@ -140,16 +140,16 @@ class AppRuntime(appID: Int,
     @tailrec
     def fetchMessageServerFromDataStore(): Unit = {
       info("Fetching message server address from db store")
-      storeIO.fetchStringValueColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER) match {
+      storeIO.fetchStringValueColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER) match {
         case None =>
           if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) {
             // cluster first time start, no message server in data store
             // then start message server, write message server config into data store
             startMessageServer()
             // write itself into db store as message server
-            storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
+            storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
             // clear started source reader in db store
-            storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, "")
+            storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, "")
             info("Set message server from config - " + (messageServerHost, messageServerPort))
             messageServerHost = appStatic.messageServerHostFromConfig
           } else {
@@ -281,7 +281,7 @@ class AppRuntime(appID: Int,
       else Some((ring.toString + "\n").getBytes)
     } else if (tok(2) == "sources") {
       // load started sources from db store
-      storeIO.fetchStringValueColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES) match {
+      storeIO.fetchStringValueColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES) match {
         case None => Some("No source reader started\n".getBytes)
         case Some(str) =>
           // load started sources from db store

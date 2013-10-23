@@ -159,7 +159,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
               val sources2 = appRuntime.startedSources map(p => p._1 -> p._2.ip)
               val sources3 = sources2.foldLeft(""){ (str, p) => str + p._1 + 0x1d.toChar + p._2 + "\n" }
               // write started sources into db store
-              appRuntime.storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, sources3)
+              appRuntime.storeIO.writeColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, sources3)
             }
 
           case _ => error("MessageServerThread: Not a valid msg: " + msg)
@@ -276,13 +276,13 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
 }
 
 /* Message Server for every node, which receives ring update message for now */
-class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with Logging {
+class LocalMessageServer(port: Int, appRuntime: AppRuntime) extends Runnable with Logging {
   private var lastCmdID = -1
   private var lastCommittedCmdID = -1
 
   override def run() {
     def setCandidateRingAndHostList(hash: IndexedSeq[String], hosts: (IndexedSeq[String], Map[String, String])) {
-      runtime.candidateRing = HashRing.initFromParameters(hosts._1, hash, hosts._2)
+      appRuntime.candidateRing = HashRing.initFromParameters(hosts._1, hash, hosts._2)
     }
 
     info("LocalMessageServerThread: Start listening to " + port)
@@ -301,20 +301,20 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             if (cmdID > lastCmdID) {
               // set candidate ring
               setCandidateRingAndHostList(hashInNewRing, (iPsInNewRing, iP2HostMap))
-              info("LocalMessageserver - candidateRing = " + runtime.candidateRing)
+              info("LocalMessageserver - candidateRing = " + appRuntime.candidateRing)
 
               // wait until current performer job is done
               debug("Checking current performer job")
-              runtime.waitPerformerJobsDone
+              appRuntime.waitPerformerJobsDone
 
               // flush dirty slates
               debug("PrepareNodeChangeMessage - going to flush cassandra")
-              runtime.flushFilteredDirtySlateToCassandra
+              appRuntime.flushFilteredDirtySlateToCassandra
               lastCmdID = cmdID
 
               // send ACKPrepareNodeChangeMessage back to message server7
               debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + iP2HostMap)
-              runtime.msClient.sendMessage(PrepareNodeChangeDoneMessage(cmdID, runtime.self.ip))
+              appRuntime.msClient.sendMessage(PrepareNodeChangeDoneMessage(cmdID, appRuntime.self.ip))
               info("LocalMessageServer: PrepareNodeChangeMessage - CMD " + cmdID + " - Sent ACKPrepareNodeChangeMessage to message server")
             } else
               error("LocalMessageServer: current cmd, " + cmdID + " is younger than lastCmdID, " + lastCmdID)
@@ -336,29 +336,29 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
             if (lastCommittedCmdID >= cmdID) {
               info("LocalMessageserver: cmd " + cmdID + " has already been committed")
             } else {
-              if (runtime.candidateRing != null) {
+              if (appRuntime.candidateRing != null) {
                 // send commit spam to all other nodes
-                new SendCommitSpam(runtime.candidateRing.ips, cmdID).start
+                new SendCommitSpam(appRuntime.candidateRing.ips, cmdID).start
 
-                val newIPs: Set[String] = runtime.candidateRing.ips.toSet
-                val oldIPs: Set[String] = if (runtime.appStatic.systemHosts == null) Set.empty else runtime.appStatic.systemHosts.keySet
+                val newIPs: Set[String] = appRuntime.candidateRing.ips.toSet
+                val oldIPs: Set[String] = if (appRuntime.appStatic.systemHosts == null) Set.empty else appRuntime.appStatic.systemHosts.keySet
                 val addedIPs = setAminusSetB(newIPs, oldIPs, Set.empty)
                 val removedIPs = setAminusSetB(oldIPs, newIPs, Set.empty)
                 debug("UpdateRing: addedIPs = " + addedIPs + ", removedIPs = " + removedIPs)
 
                 // Adjust nodes in cluster before switch ring
                 // o.w. events for addedIPs might be able to be sent new nodes
-                if (runtime.pool != null) {
-                  runtime.pool.cluster.addHosts(addedIPs)
-                  runtime.pool.cluster.removeHosts(removedIPs)
+                if (appRuntime.pool != null) {
+                  appRuntime.pool.cluster.addHosts(addedIPs)
+                  appRuntime.pool.cluster.removeHosts(removedIPs)
                 }
 
-                runtime.ring = runtime.candidateRing
-                runtime.appStatic.systemHosts = runtime.candidateRing.ipHostMap
-                runtime.candidateRing = null
-                runtime.flushSlatesInBufferToQueue
+                appRuntime.ring = appRuntime.candidateRing
+                appRuntime.appStatic.systemHosts = appRuntime.candidateRing.ipHostMap
+                appRuntime.candidateRing = null
+                appRuntime.flushSlatesInBufferToQueue
                 lastCommittedCmdID = cmdID
-                info("LocalMessageServer: cmdID - " + cmdID + " update ring done, new ring = " + runtime.ring)
+                info("LocalMessageServer: cmdID - " + cmdID + " update ring done, new ring = " + appRuntime.ring)
               } else {
                 warn("UpdateRing: candidate ring is null in UpdateRing")
               }
@@ -367,28 +367,28 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
           case StartSourceMessage(sourceName) =>
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
-            runtime.startSource(sourceName)
+            appRuntime.startSource(sourceName)
 
           case ToBeNextMessageSeverMessage(requestedBy) =>
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
-            val prevMessageServer = java.net.InetAddress.getByName(runtime.messageServerHost).getHostAddress()
+            val prevMessageServer = java.net.InetAddress.getByName(appRuntime.messageServerHost).getHostAddress()
             debug("LocalMessageServer: prevMessageServer = " + prevMessageServer)
-            runtime.startMessageServer()
+            appRuntime.startMessageServer()
             // write itself as message server into db store
-            runtime.storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, runtime.self.ip)
+            appRuntime.storeIO.writeColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appRuntime.self.ip)
             // load started sources from db store
-            runtime.storeIO.fetchStringValueColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES) match {
-              case None => runtime.startedSources = Map.empty
+            appRuntime.storeIO.fetchStringValueColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES) match {
+              case None => appRuntime.startedSources = Map.empty
               case Some(str) =>
                 // load started sources from db store
                 // one pair format: key + 0x1d + value + \n
                 val m = str.lines.map{ str => val arr = str.split(0x1d.toChar); arr(0) -> arr(1) }.toMap
-                val m1 = m.filter(p => runtime.ring.ips.contains(p._2))
-                runtime.startedSources = m1.map(p => p._1 -> Host(runtime.ring.ipHostMap(p._2), p._2))
-                info("LocalMessageServer: started sources from db store = " + runtime.startedSources)
+                val m1 = m.filter(p => appRuntime.ring.ips.contains(p._2))
+                appRuntime.startedSources = m1.map(p => p._1 -> Host(appRuntime.ring.ipHostMap(p._2), p._2))
+                info("LocalMessageServer: started sources from db store = " + appRuntime.startedSources)
                 // check if any sources were on previous message server
-                val sourcesOnPrevMessageServer = runtime.startedSources.filter(p => prevMessageServer.compareTo(p._2.ip) == 0)
+                val sourcesOnPrevMessageServer = appRuntime.startedSources.filter(p => prevMessageServer.compareTo(p._2.ip) == 0)
                 if (!sourcesOnPrevMessageServer.isEmpty) {
                   info("LocalMessageServer: start sources " + sourcesOnPrevMessageServer + " on new message server")
                   new SendStartSource("127.0.0.1", sourcesOnPrevMessageServer.map(p => p._1).toSeq).start()
@@ -399,8 +399,8 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
           case NewMessageServerMessage(cmdID, messageServer) =>
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
-            runtime.messageServerHost = messageServer.ip
-            runtime.msClient = new MessageServerClient(runtime.messageServerHost, runtime.messageServerPort, 1000)
+            appRuntime.messageServerHost = messageServer.ip
+            appRuntime.msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort, 1000)
             lastCmdID = cmdID
             lastCommittedCmdID = -1
 
