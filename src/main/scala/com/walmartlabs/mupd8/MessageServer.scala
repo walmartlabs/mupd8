@@ -372,6 +372,8 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
           case ToBeNextMessageSeverMessage(requestedBy) =>
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
+            val prevMessageServer = java.net.InetAddress.getByName(runtime.messageServerHost).getHostAddress()
+            debug("LocalMessageServer: prevMessageServer = " + prevMessageServer)
             runtime.startMessageServer()
             // write itself as message server into db store
             runtime.storeIO.writeColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, runtime.self.ip)
@@ -384,7 +386,13 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
                 val m = str.lines.map{ str => val arr = str.split(0x1d.toChar); arr(0) -> arr(1) }.toMap
                 val m1 = m.filter(p => runtime.ring.ips.contains(p._2))
                 runtime.startedSources = m1.map(p => p._1 -> Host(runtime.ring.ipHostMap(p._2), p._2))
-                info("LocalMessageServer: started sources from db store = " + str)
+                info("LocalMessageServer: started sources from db store = " + runtime.startedSources)
+                // check if any sources were on previous message server
+                val sourcesOnPrevMessageServer = runtime.startedSources.filter(p => prevMessageServer.compareTo(p._2.ip) == 0)
+                if (!sourcesOnPrevMessageServer.isEmpty) {
+                  info("LocalMessageServer: start sources " + sourcesOnPrevMessageServer + " on new message server")
+                  new SendStartSource("127.0.0.1", sourcesOnPrevMessageServer.map(p => p._1).toSeq).start()
+                }
             }
             info("LocalMessageServer: write messageserver " + self + " to data store")
 
@@ -419,4 +427,12 @@ class LocalMessageServer(port: Int, runtime: AppRuntime) extends Runnable with L
     }
   }
 
+  class SendStartSource(ip: String, sources: Seq[String]) extends Actor {
+    override def act() {
+      val lmsClient = new LocalMessageServerClient(ip, port)
+      sources.foreach { source =>
+        lmsClient.sendMessage(StartSourceMessage(source))
+      }
+    }
+  }
 }

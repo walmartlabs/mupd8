@@ -282,12 +282,18 @@ class AppRuntime(appID: Int,
     } else if (tok(2) == "sources") {
       // load started sources from db store
       storeIO.fetchStringValueColumn(CassandraPool.SETTINGS_CF, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES) match {
-        case None => None
+        case None => Some("No source reader started\n".getBytes)
         case Some(str) =>
           // load started sources from db store
           // one pair format: key + 0x1d + value + \n
-          Some(str.replaceAll(0x1d.toChar.toString, " -> ").replaceAll("\n", "; ").getBytes)
+          if (str.length == 0) Some("No source reader started\n".getBytes)
+          else {
+            val rlt = str.replaceAll(0x1d.toChar.toString, " -> ").replaceAll("\n", "; ").trim()
+            Some(rlt.substring(0, rlt.length - 1).concat("\n").getBytes)
+          }
       }
+    } else if (tok(2) == "messageserver") {
+      Some((messageServerHost.toString + "\n").getBytes())
     } else {
       // This section currently handle varnish probe -- /mupd8/config/app
       // TODO: how to handle other requests?
