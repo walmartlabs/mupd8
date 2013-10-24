@@ -147,6 +147,7 @@ object Mupd8Main extends Logging {
     info("start source from sys cfg")
     ssources.foreach { source =>
       if (isLocalHost(source.get("host").asInstanceOf[String])) {
+        info("Start source - " + source + " on this node")
         val sourceName = source.get("name").asInstanceOf[String]
         val askPermit = new AskPermit(sourceName)
         askPermit.start

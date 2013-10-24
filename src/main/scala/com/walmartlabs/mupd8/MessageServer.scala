@@ -91,33 +91,14 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
               }
               info("MessageServer: new ring = " + ring)
 
-              // update source
-              // check if hostToRemove has source on it
-              val ips_to_remove1 = hosts_to_remove1.map(_.ip)
-              appRuntime.startedSources.foreach { source =>
-                if (ips_to_remove1.contains(source._2.ip)) {
-                  val sourceName = source._1
-                  // pick another host from ring to start source on
-                  val ipToStart = ring(sourceName)
-                  info("NodeRemoveMessage: pick " + ring.ipHostMap(ipToStart) + " to start source" + (sourceName))
-
-                  // if source is not started, send start message
-                  // Connect source with hostToStart. If source is not accessible from
-                  // this actor, actor will report noderemovemessage to trigger next try
-                  appRuntime.startedSources += (sourceName -> Host(ipToStart, ring.ipHostMap(ipToStart)))
-                  val localMSClient = new SendStartSource(sourceName, ipToStart)
-                  localMSClient.start
-                }
-              }
-
               if (!isTest) {
                 info("NodeChangeMessage: CmdID " + lastCmdID + " - Sending " + ring + " to " + ring.ips.map(ring.ipHostMap(_)))
                 // start timer and ackcounter
                 // reset Timer
-                Timer.startTimer(lastCmdID, 2000L, () => {
+                Timer.startTimer(lastCmdID, 5000L, () => {
                   val notAckedNodes = AckedNodeCounter.nodesNotAcked
                   // not all nodes send ack message back
-                  info("NodeChangeMessage: " + (lastCmdID, notAckedNodes) + " TIMEOUT")
+                  info("NodeChangeMessage: lastCmdID - " + notAckedNodes + " TIMEOUT")
                   val msClient = new MessageServerClient("localhost", port)
                   msClient.sendMessage(NodeChangeMessage(Set.empty, notAckedNodes.map(ip => Host(ip, ring.ipHostMap(ip)))))
                 })
@@ -127,9 +108,35 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
                 // Send prepare ring update message
                 SendNewRing ! SendMessageToNode(lastCmdID, ring.ips, (port + 1), PrepareNodeChangeMessage(lastCmdID, ring.hash, ring.ips, ring.ipHostMap), port)
               }
-
             } else {
               info("Messageserver: hosts_to_add" + hosts_to_add + " and hosts_to_remove" + hosts_to_remove + " are changed already.")
+            }
+
+            // update source
+            // check if there is any node in delete list which had source reader on it before
+            val ips_to_remove = hosts_to_remove.map(_.ip)
+            appRuntime.startedSources.foreach { source =>
+              if (ips_to_remove.contains(source._2.ip)) {
+                val sourceName = source._1
+                // pick another host from ring to start source on
+                val ipToStart = ring(sourceName)
+                info("NodeChangeMessage: pick " + ring.ipHostMap(ipToStart) + " to start source" + (sourceName))
+
+                // if source is not started, send start message
+                // Connect source with hostToStart. If source is not accessible from
+                // this actor, actor will report noderemovemessage to trigger next try
+                appRuntime.startedSources += (sourceName -> Host(ipToStart, ring.ipHostMap(ipToStart)))
+
+                // convert started sources map to string
+                // by adding 0x1d between key and value and \n between each pair
+                val sources2 = appRuntime.startedSources map(p => p._1 -> p._2.ip)
+                val sources3 = sources2.foldLeft(""){ (str, p) => str + p._1 + 0x1d.toChar + p._2 + "\n" }
+                // write started sources into db store
+                appRuntime.storeIO.writeColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, sources3)
+
+                val localMSClient = new SendStartSource(sourceName, ipToStart)
+                localMSClient.start
+              }
             }
 
           case PrepareNodeChangeDoneMessage(cmdID, host) =>
@@ -261,7 +268,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
           val lmsClient = new LocalMessageServerClient(source._2.ip, port + 1)
           if (!lmsClient.sendMessage(PING())) {
             // report host fails if any exception happens
-            error("SendStartSource: report " + source._2 + " fails")
+            error("PingCheck: report " + source._2 + " fails")
             failedNodes = failedNodes + source._2
           }
         }
@@ -373,10 +380,11 @@ class LocalMessageServer(port: Int, appRuntime: AppRuntime) extends Runnable wit
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
             val prevMessageServer = java.net.InetAddress.getByName(appRuntime.messageServerHost).getHostAddress()
-            debug("LocalMessageServer: prevMessageServer = " + prevMessageServer)
+            debug("LocalMessageServer: prevMessageServer = " + (prevMessageServer, appRuntime.ring.ipHostMap(prevMessageServer)))
             appRuntime.startMessageServer()
             // write itself as message server into db store
             appRuntime.storeIO.writeColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appRuntime.self.ip)
+            Thread.sleep(5000) // yield cpu to message server thread
             // load started sources from db store
             appRuntime.storeIO.fetchStringValueColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES) match {
               case None => appRuntime.startedSources = Map.empty
@@ -385,16 +393,10 @@ class LocalMessageServer(port: Int, appRuntime: AppRuntime) extends Runnable wit
                 // one pair format: key + 0x1d + value + \n
                 val m = str.lines.map{ str => val arr = str.split(0x1d.toChar); arr(0) -> arr(1) }.toMap
                 val m1 = m.filter(p => appRuntime.ring.ips.contains(p._2))
-                appRuntime.startedSources = m1.map(p => p._1 -> Host(appRuntime.ring.ipHostMap(p._2), p._2))
+                appRuntime.startedSources = m1.map(p => p._1 -> Host(p._2, appRuntime.ring.ipHostMap(p._2)))
                 info("LocalMessageServer: started sources from db store = " + appRuntime.startedSources)
-                // check if any sources were on previous message server
-                val sourcesOnPrevMessageServer = appRuntime.startedSources.filter(p => prevMessageServer.compareTo(p._2.ip) == 0)
-                if (!sourcesOnPrevMessageServer.isEmpty) {
-                  info("LocalMessageServer: start sources " + sourcesOnPrevMessageServer + " on new message server")
-                  new SendStartSource("127.0.0.1", sourcesOnPrevMessageServer.map(p => p._1).toSeq).start()
-                }
             }
-            info("LocalMessageServer: write messageserver " + self + " to data store")
+            info("LocalMessageServer: write messageserver " + appRuntime.self.hostname + " to data store")
 
           case NewMessageServerMessage(cmdID, messageServer) =>
             info("LocalMessageServer: Received " + msg)
@@ -427,12 +429,4 @@ class LocalMessageServer(port: Int, appRuntime: AppRuntime) extends Runnable wit
     }
   }
 
-  class SendStartSource(ip: String, sources: Seq[String]) extends Actor {
-    override def act() {
-      val lmsClient = new LocalMessageServerClient(ip, port)
-      sources.foreach { source =>
-        lmsClient.sendMessage(StartSourceMessage(source))
-      }
-    }
-  }
 }

@@ -56,6 +56,10 @@ class AppRuntime(appID: Int,
                                        p => appStatic.performers(appStatic.performerName2ID(p)).ttl,
                                        appStatic.compressionCodec)
   var startedSources: Map[String, Host] = Map.empty // (source name -> source host machine)
+  // start source lock and list of started sources on this node
+  var startedSourcesOnThisNode: Set[String] = Set.empty
+  val startSourceLock = new Object()
+
   var messageServerHost: String = null
   val messageServerPort: Int = appStatic.messageServerPortFromConfig
   var startedMessageServer = false
@@ -350,16 +354,25 @@ class AppRuntime(appID: Int,
 
   // name set of sources started on this node
   def startSource(sourceName: String): Boolean = {
-    val source = appStatic.sources.asScala.toList.find(s => sourceName.compareTo(s.get("name").asInstanceOf[String]) == 0)
-    source match {
-      case Some(source: org.json.simple.JSONObject) =>
-        val sourcePerformer = source.get("performer").asInstanceOf[String]
-        val sourceClass = source.get("source").asInstanceOf[String]
-        val params = source.get("parameters").asInstanceOf[java.util.List[String]]
-        startSource(sourceName, sourcePerformer, sourceClass, params)
-      case _ =>
-        error("Source(" + sourceName + ") doesn't exist")
-        false
+    startSourceLock.synchronized {
+      if (!startedSourcesOnThisNode.contains(sourceName)) {
+        val source = appStatic.sources.asScala.toList.find(s => sourceName.compareTo(s.get("name").asInstanceOf[String]) == 0)
+        source match {
+          case Some(source: org.json.simple.JSONObject) =>
+            val sourcePerformer = source.get("performer").asInstanceOf[String]
+            val sourceClass = source.get("source").asInstanceOf[String]
+            val params = source.get("parameters").asInstanceOf[java.util.List[String]]
+            val rt = startSource(sourceName, sourcePerformer, sourceClass, params)
+            startedSourcesOnThisNode = startedSourcesOnThisNode + sourceName
+            rt
+          case _ =>
+            error("Source(" + sourceName + ") doesn't exist")
+            false
+        }
+      } else {
+        info("StartSource: " + sourceName + " is already started on this node")
+        true
+      }
     }
   }
 
