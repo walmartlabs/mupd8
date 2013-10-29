@@ -305,7 +305,7 @@ class AppRuntime(appID: Int,
     }
   })
   slateURLserver.start
-  info("slateURLserver is up on port" + appStatic.statusPort)
+  info("slateURLserver is up on port: " + appStatic.statusPort)
 
   // Try to Register host to message server and get updated hash ring from message server
   // even if hash ring is generated from system hosts already
@@ -347,6 +347,7 @@ class AppRuntime(appID: Int,
 
   // We need a separate slate server that does not redirect to prevent deadlocks
   val slateServer = new HttpServer(appStatic.statusPort + 300, maxWorkerCount, s => {
+    info("slateServer: received " + s)
     val tok = java.net.URLDecoder.decode(s, "UTF-8").split('/')
     getSlate((tok(4), Key(tok(5).map(_.toByte).toArray)))
   })

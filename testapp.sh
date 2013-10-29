@@ -5,7 +5,7 @@ messageserver_pidfile=messageserver.pid
 # XXX: assume we run the code from ../target for now
 target=`dirname $0 | pwd`/target
 cpfile=$target/classpath.txt
-mupd8jar=$target/mupd8-1.0-SNAPSHOT.jar
+mupd8jar=$target/mupd8-2.2.0.jar
 CLASSPATH=`head -1 $cpfile | tr -d '\n'`:$mupd8jar
 exitCode=0
 
