@@ -32,6 +32,10 @@ import com.walmartlabs.mupd8.Misc._
 import com.walmartlabs.mupd8.Mupd8Type._
 import com.walmartlabs.mupd8.application._
 import scala.annotation.tailrec
+import scala.util.Try
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Success
 
 class AppRuntime(appID: Int,
                  poolsize: Int,
@@ -144,8 +148,9 @@ class AppRuntime(appID: Int,
     @tailrec
     def fetchMessageServerFromDataStore(): Unit = {
       info("Fetching message server address from db store")
-      storeIO.fetchStringValueColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER) match {
-        case None =>
+      Try(storeIO.fetchStringValueColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER)) match {
+        case Failure(ex) =>
+          error("fetchMessageServerFromDataStore: failed to fetch message server config from data store")
           if (Misc.isLocalHost(appStatic.messageServerHostFromConfig)) {
             // cluster first time start, no message server in data store
             // then start message server, write message server config into data store
@@ -166,7 +171,7 @@ class AppRuntime(appID: Int,
               fetchMessageServerFromDataStore()
             }
           }
-        case Some(msgserver) =>
+        case Success(msgserver) =>
           info("Message server config from data store: " + msgserver)
           messageServerHost = msgserver
       }
@@ -285,9 +290,9 @@ class AppRuntime(appID: Int,
       else Some((ring.toString + "\n").getBytes)
     } else if (tok(2) == "sources") {
       // load started sources from db store
-      storeIO.fetchStringValueColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES) match {
-        case None => Some("No source reader started\n".getBytes)
-        case Some(str) =>
+      Try(storeIO.fetchStringValueColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES)) match {
+        case Failure(ex) => Some("No source reader started\n".getBytes)
+        case Success(str) =>
           // load started sources from db store
           // one pair format: key + 0x1d + value + \n
           if (str.length == 0) Some("No source reader started\n".getBytes)

@@ -33,6 +33,9 @@ import grizzled.slf4j.Logging
 import scala.actors.Actor
 import scala.actors.Actor._
 import scala.collection.JavaConverters._
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Try
 import java.net.ServerSocket
 import annotation.tailrec
 
@@ -386,9 +389,9 @@ class LocalMessageServer(port: Int, appRuntime: AppRuntime) extends Runnable wit
             appRuntime.storeIO.writeColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appRuntime.self.ip)
             Thread.sleep(5000) // yield cpu to message server thread
             // load started sources from db store
-            appRuntime.storeIO.fetchStringValueColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES) match {
-              case None => appRuntime.startedSources = Map.empty
-              case Some(str) =>
+            Try(appRuntime.storeIO.fetchStringValueColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES)) match {
+              case Failure(ex) => error("ToBeNextMessageServerMessage: fetch started sources failed", ex); appRuntime.startedSources = Map.empty
+              case Success(str) =>
                 // load started sources from db store
                 // one pair format: key + 0x1d + value + \n
                 val m = str.lines.map{ str => val arr = str.split(0x1d.toChar); arr(0) -> arr(1) }.toMap

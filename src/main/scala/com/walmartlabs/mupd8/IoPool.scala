@@ -20,26 +20,25 @@ package com.walmartlabs.mupd8
 import com.walmartlabs.mupd8.Misc._
 import com.walmartlabs.mupd8.GT._
 import com.walmartlabs.mupd8.Misc._
-import grizzled.slf4j.Logging
 import com.walmartlabs.mupd8.compression.CompressionFactory
-import org.scale7.cassandra.pelops.Cluster
-import org.scale7.cassandra.pelops.Pelops
-import org.scale7.cassandra.pelops.Mutator
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import scala.collection.JavaConverters._
 import scala.collection.JavaConversions._
+import scala.util.Try
+import scala.util.Failure
+import scala.util.Success
+import grizzled.slf4j.Logging
+import org.scale7.cassandra.pelops.Cluster
+import org.scale7.cassandra.pelops.Pelops
+import org.scale7.cassandra.pelops.Mutator
 import org.apache.cassandra.thrift.ConsistencyLevel
 import org.scale7.cassandra.pelops.Bytes
 import org.apache.cassandra.thrift.Column
 import org.apache.cassandra.thrift.KsDef
-import scala.util.Try
 import org.apache.cassandra.thrift.CfDef
 import org.scale7.cassandra.pelops.KeyspaceManager
-import scala.util.Failure
-import scala.util.Success
-import scala.util.Failure
 import org.scale7.cassandra.pelops.Selector
 
 trait IoPool extends Logging{
@@ -49,7 +48,7 @@ trait IoPool extends Logging{
   def flushBatchWrite: Boolean = true
   def closeBatchWrite: Unit = {}
   def pendingCount = 0
-  def fetchStringValueColumn(cfName: String, rowKey: String, colName: String): Option[String] = None
+  def fetchStringValueColumn(cfName: String, rowKey: String, colName: String): String = ""
   def writeColumn(cfName: String, rowKey: String, colName: String, value: String) {}
   def shutdown {}
 }
@@ -103,13 +102,10 @@ class CassandraPool(
     })
   }
 
-  override def fetchStringValueColumn(cfName: String, rowKey: String, colName: String): Option[String] = {
-    Try(selector.getColumnFromRow(cfName, rowKey, colName, ConsistencyLevel.QUORUM)) match {
-      case Success(col) => Some(Selector.getColumnStringValue(col))
-      case Failure(ex) =>
-        error("fetchStringValueColumn failed", ex)
-        None
-    }
+  // caller needs to handle cassandra exception
+  override def fetchStringValueColumn(cfName: String, rowKey: String, colName: String): String = {
+    val col = selector.getColumnFromRow(cfName, rowKey, colName, ConsistencyLevel.QUORUM)
+    Selector.getColumnStringValue(col)
   }
 
   var batchMutator: Mutator = null
