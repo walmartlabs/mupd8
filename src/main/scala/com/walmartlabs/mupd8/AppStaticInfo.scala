@@ -132,7 +132,6 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 
   var systemHosts: immutable.Map[String, String] = null // Map[ip -> hostname]
   val javaClassPath = Option(config.getScopedValue(Array("mupd8", "java_class_path"))).getOrElse("share/java/*").asInstanceOf[String]
-  val javaSetting = Option(config.getScopedValue(Array("mupd8", "java_setting"))).getOrElse("-Xmx200M -Xms200M").asInstanceOf[String]
 
   val sources = Option(config.getScopedValue(Array("mupd8", "sources"))).map {
     x => x.asInstanceOf[java.util.List[org.json.simple.JSONObject]]
