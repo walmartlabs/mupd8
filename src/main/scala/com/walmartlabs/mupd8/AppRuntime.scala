@@ -87,7 +87,7 @@ class AppRuntime(appID: Int,
         storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
         // clear started source reader in db store
         storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, "")
-        Thread.sleep(5000) // yield cpu to startMessageServer and cassandra writing
+        Thread.sleep(60000) // yield cpu to startMessageServer and cassandra writing
         getLocalHostName(5) match {
           case None => error("Check local host name failed, exit..."); System.exit(-1); null
           case Some(host) => host
