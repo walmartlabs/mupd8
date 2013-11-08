@@ -117,7 +117,8 @@ case class PerformerPacket(pri: Priority,
       tls.perfPacket = this
       tls.startTime = java.lang.System.nanoTime()
       (performer.mtype, tls.unifiedUpdaters(pid)) match {
-        case (Updater, true) => execute(appRun.getUnifiedUpdater(pid).update(tls, stream, slateKey.value, Array(event), Array(slate.get)))
+        case (Updater, true) => error("UnifiedUpdater is not supported anymore")
+        // execute(appRun.getUnifiedUpdater(pid).update(tls, stream, slateKey.value, Array(event), Array(slate.get)))
         case (Updater, false) => executeUpdate(tls, slate.get)
         case (Mapper, false) => execute(appRun.getMapper(pid).map(tls, stream, slateKey.value, event))
         case (x, y) => error("PerformerPacket: Wrong pair - " + (x, y))
