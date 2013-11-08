@@ -61,8 +61,10 @@ class CassandraPool(
   val thriftOperationOverheadBytes = 128
   val thriftMutatorOverheadBytes = 128
   // TODO Make configurable: Cassandra actually allows this value to be
-  //      configured as thrift_max_message_length_in_mb (default 16)
-  val thriftOperationMaximumBytes = 16*1024*1024
+  //      configured as thrift_framed_transport_size_in_mb (default 15)
+  // As of Cassandra 1.1,12, 1.2.6, thrift_max_message_length_in_mb is gone
+  // (see https://issues.apache.org/jira/browse/CASSANDRA-5529).
+  val thriftOperationMaximumBytes = 15*1024*1024
 
   val poolName = keyspace //TODO: Change this
   val cluster = new Cluster(hosts.reduceLeft(_ + "," + _), port)
@@ -123,7 +125,9 @@ class CassandraPool(
     // max-length (4-byte) UTF-8 sequence [IETF STD 63/RFC 3629]
     // Refine thisOperationSize by reducing mutator overhead, counting TTL.
     val thisOperationSize = thriftMutatorOverheadBytes + 4*columnFamily.length + key.value.size + columnNameBytes.length + columnValue.length
+    // debug("Trying to add write "+thisOperationSize+" to batch size "+batchEstimatedWriteSize)
     if (batchEstimatedWriteSize + thisOperationSize > thriftOperationMaximumBytes) {
+      // debug("Add to batch rejected")
       false
     } else {
       batchMutator.writeColumn(
@@ -131,6 +135,7 @@ class CassandraPool(
         Bytes.fromByteArray(key.value),
         // batchMutator.newColumn(Bytes.fromByteArray(columnName.getBytes), Bytes.fromByteArray(compressed), getTTL(columnName)))
         batchMutator.newColumn(columnNameBytes, columnValue, getTTL(columnName)))
+      batchEstimatedWriteSize += thisOperationSize
       true
     }
   }

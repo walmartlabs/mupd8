@@ -350,10 +350,14 @@ class AppRuntime(appID: Int,
             storeIo.closeBatchWrite
             dirtySlateList = List.empty
             storeIo.initBatchWrite
+ 
+            if (writeSlateToCassandra(i)) {
+              dirtySlateList = i :: dirtySlateList
+            } else {
+              error("flushDirtySlateToCassandra: could not write slate "+i._1+" "+i._2+" into new Cassandra operation; is Misc.SLATE_CAPACITY too large?")
+            }
           }
         }}
-        // dirtySlateList = dirtySlateList ++: items
-        // items.foreach (writeSlateToCassandra(_))
       }}
       if (storeIo.flushBatchWrite)
         dirtySlateList foreach ( _._2.dirty = false )
@@ -385,10 +389,14 @@ class AppRuntime(appID: Int,
             storeIo.closeBatchWrite
             dirtySlateList = List.empty
             storeIo.initBatchWrite
+
+            if (writeSlateToCassandra(i)) {
+              dirtySlateList = i :: dirtySlateList
+            } else {
+              error("flushFilteredDirtySlateToCassandra: could not write slate "+i._1+" "+i._2+" into new Cassandra operation; is Misc.SLATE_CAPACITY too large?")
+            }
           }
         }}
-        // dirtySlateList ++:= items
-        // items.foreach (writeSlateToCassandra(_))
       }}
       if (storeIo.flushBatchWrite)
         dirtySlateList foreach ( _._2.dirty = false )
