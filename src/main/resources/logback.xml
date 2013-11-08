@@ -5,14 +5,6 @@
   <appender name="STDOUT"
     class="ch.qos.logback.core.ConsoleAppender">
 
-    <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
-      <evaluator>
-        <expression>return logger.contains("CommonsBackedPool") || logger.contains("pelops");</expression>
-      </evaluator>
-      <OnMismatch>NEUTRAL</OnMismatch>
-      <OnMatch>DENY</OnMatch>
-    </filter>
-
     <layout class="ch.qos.logback.classic.PatternLayout">
       <pattern>
         %d [%thread] %-5level %logger{32} - %msg%n
@@ -31,14 +23,6 @@
       </FileNamePattern>
     </rollingPolicy>
 
-    <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
-      <evaluator>
-        <expression>return logger.contains("CommonsBackedPool") || logger.contains("pelops");</expression>
-      </evaluator>
-      <OnMismatch>NEUTRAL</OnMismatch>
-      <OnMatch>DENY</OnMatch>
-    </filter>
-
     <layout class="ch.qos.logback.classic.PatternLayout">
       <Pattern>
         %d [%-5level] %-32logger{32} [%thread] - %msg%n
@@ -46,12 +30,13 @@
     </layout>
   </appender>
 
+  <logger name="com.walmartlabs.mupd8" level="DEBUG"/>
+  <logger name="org.scale7.cassandra.pelops" level="ERROR"/>
+
   <root>
     <level value="INFO"/>
     <appender-ref ref="STDOUT"/>
     <appender-ref ref="FILE"/>
   </root>
-
-  <!--<include file="/tmp/logback-demo.xml"/>-->
 
 </configuration>
