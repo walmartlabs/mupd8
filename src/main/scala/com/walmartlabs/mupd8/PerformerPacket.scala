@@ -77,7 +77,7 @@ case class PerformerPacket(pri: Priority,
     }
 
     def executeUpdate(tls: TLS, slate: SlateObject) {
-      if (appRun != null) {
+      if (appRun.ring != null) {
         if (appRun.candidateRing != null
           && appRun.ring(getKey) == appRun.appStatic.self.ip
           && appRun.candidateRing(getKey) != appRun.appStatic.self.ip) {
