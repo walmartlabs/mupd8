@@ -106,7 +106,7 @@ class HttpServerHandler(mapper : String => Option[Array[Byte]]) extends SimpleCh
   private def handleHttpRequest(ctx : ChannelHandlerContext, req : HttpRequest) : Unit = {
     if (req.getMethod() == POST) {
       val res = new DefaultHttpResponse(HTTP_1_1, OK)
-      res.setHeader("Content-Type", "application/json; charset=UTF-8")
+      res.setHeader("Content-Type", "application/json")
       val content = ChannelBuffers.copiedBuffer("{}", CharsetUtil.UTF_8)
       setContentLength(res, content.readableBytes)
       res.setContent(content);
@@ -116,7 +116,7 @@ class HttpServerHandler(mapper : String => Option[Array[Byte]]) extends SimpleCh
       debug("GET " + uri)
       mapper(uri) map { response =>
         // TODO Set appropriate Content-Type (implement MIME magic).
-        val contentType = if (response.startsWith("{")) "application/json; charset-UTF-8" else "application/octet-stream"
+        val contentType = if (response.startsWith("{")) "application/json" else "application/octet-stream"
         val res = new DefaultHttpResponse(HTTP_1_1, OK)
         res.setHeader("Content-Type", contentType)
         val content = ChannelBuffers.wrappedBuffer(response)
