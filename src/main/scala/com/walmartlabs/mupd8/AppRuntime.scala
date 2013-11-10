@@ -141,6 +141,11 @@ class AppRuntime(appID: Int,
           slate
         }
       }
+    } else if (tok(2) == "ring") {
+      if (ring == null) Some("null\n".getBytes)
+      else Some((ring.toString + "\n").getBytes)
+    } else if (tok(2) == "sources") {
+      Some(startedSources.toString.getBytes())
     } else {
       // This section currently handle varnish probe -- /mupd8/config/app
       // TODO: how to handle other requests?
