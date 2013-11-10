@@ -77,17 +77,19 @@ case class PerformerPacket(pri: Priority,
     }
 
     def executeUpdate(tls: TLS, slate: SlateObject) {
-      if (appRun.candidateRing != null
-        && appRun.ring(getKey) == appRun.appStatic.self.ip
-        && appRun.candidateRing(getKey) != appRun.appStatic.self.ip) {
-        // if in ring change process and dest of this slate changes by candidate ring
-        //appRun.pool.putLocal(getKey, this)
-        appRun.eventBufferForRingChange.offer(this)
-      } else if (appRun.candidateRing == null && appRun.ring(getKey) != appRun.appStatic.self.ip) {
-        // if not in ring change process and dest of this slate is not this node
-        appRun.pool.cluster.send(appRun.ring(getKey), this)
-      } else {
-        execute(appRun.getUpdater(pid).update(tls, stream, slateKey.value, event, slate))
+      if (appRun != null) {
+        if (appRun.candidateRing != null
+          && appRun.ring(getKey) == appRun.appStatic.self.ip
+          && appRun.candidateRing(getKey) != appRun.appStatic.self.ip) {
+          // if in ring change process and dest of this slate changes by candidate ring
+          //appRun.pool.putLocal(getKey, this)
+          appRun.eventBufferForRingChange.offer(this)
+        } else if (appRun.candidateRing == null && appRun.ring(getKey) != appRun.appStatic.self.ip) {
+          // if not in ring change process and dest of this slate is not this node
+          appRun.pool.cluster.send(appRun.ring(getKey), this)
+        } else {
+          execute(appRun.getUpdater(pid).update(tls, stream, slateKey.value, event, slate))
+        }
       }
     }
 
