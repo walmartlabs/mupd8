@@ -13,8 +13,7 @@ class MUCluster[T <: MapUpdateClass[T]](self: Host,
                                         encoder: OneToOneEncoder,
                                         decoderFactory: () => ReplayingDecoder[network.common.Decoder.DecodingState],
                                         onReceipt: T => Unit,
-                                        appRun: AppRuntime,
-                                        msClient: MessageServerClient = null) extends Logging {
+                                        appRun: AppRuntime) extends Logging {
   private val callableFactory = new Callable[ReplayingDecoder[network.common.Decoder.DecodingState]] {
     override def call() = decoderFactory()
   }
@@ -59,9 +58,9 @@ class MUCluster[T <: MapUpdateClass[T]](self: Host,
   def send(dest: Host, obj: T) {
     if (!client.send(dest.ip, obj)) {
       error("Failed to send event (" + obj + ") to destination " + dest)
-      if (msClient != null) {
+      if (appRun.msClient != null) {
         error("MUCluster: Report node " + dest + " failure")
-        if (!msClient.sendMessage(NodeChangeMessage(Set.empty, Set(dest)))) {
+        if (!appRun.msClient.sendMessage(NodeChangeMessage(Set.empty, Set(dest)))) {
           error("MUCluster: message server is not reachable")
           if (!appRun.nextMessageServer().isDefined) {
             error("MUCluster: couldn't find next messagese, exit...")

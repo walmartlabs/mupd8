@@ -87,7 +87,7 @@ class AppRuntime(appID: Int,
         storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
         // clear started source reader in db store
         storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, "")
-        Thread.sleep(60000) // yield cpu to startMessageServer and cassandra writing
+        Thread.sleep(5000) // yield cpu to startMessageServer and cassandra writing
         getLocalHostName(5) match {
           case None => error("Check local host name failed, exit..."); System.exit(-1); null
           case Some(host) => host
@@ -107,7 +107,7 @@ class AppRuntime(appID: Int,
     action => new MUCluster[PerformerPacket](self, appStatic.statusPort + 100,
                                              PerformerPacket(0, 0, Key(new Array[Byte](0)), Array(), "", this),
                                              () => { new Decoder(this) },
-                                             action, this, msClient))
+                                             action, this))
   val slateRAM: Long = Runtime.getRuntime.maxMemory / 5
   info("Memory available for use by Slate Cache is " + slateRAM + " bytes")
   val slateBuilders = appStatic.slateBuilderFactory.map(_.map(_.apply()))
@@ -130,7 +130,7 @@ class AppRuntime(appID: Int,
 
   trySendNodeJoinMessageToMessageServer(10000)  // try to send join message to message server for 10 sec
   info("Send node join message to message server")
-  waitHashRing(5000) // wait hash ring from message server for 5 sec
+  waitHashRing(60000) // wait hash ring from message server for 5 sec
   info("Update ring from Message server")
 
   if (ring == null) {
@@ -181,10 +181,7 @@ class AppRuntime(appID: Int,
   }
 
   def startMessageServer() {
-    if (startedMessageServer) {
-      info("Message server has been started on this node")
-      return
-    } else startedMessageServer = true
+    startedMessageServer = true
 
     info("Start message server at " + appStatic.messageServerPortFromConfig)
     // save all listed sources
@@ -213,7 +210,7 @@ class AppRuntime(appID: Int,
       else {
         setMessageServerFromDataStore()
         new MessageServerClient(messageServerHost, messageServerPort, 1000).checkIP() match {
-          case None => Thread.sleep(3000); warn("getHostName again"); _getLocalHostName(retryCount + 1)
+          case None => Thread.sleep(5000); warn("getHostName again"); _getLocalHostName(retryCount + 1)
           case Some(host) => Some(host)
         }
       }
@@ -577,4 +574,5 @@ class AppRuntime(appID: Int,
 
     _checkNode(ring.ips);
   }
+
 }

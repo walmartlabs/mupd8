@@ -382,24 +382,29 @@ class LocalMessageServer(port: Int, appRuntime: AppRuntime) extends Runnable wit
           case ToBeNextMessageSeverMessage(requestedBy) =>
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
-            val prevMessageServer = java.net.InetAddress.getByName(appRuntime.messageServerHost).getHostAddress()
-            debug("LocalMessageServer: prevMessageServer = " + (prevMessageServer, appRuntime.ring.ipHostMap(prevMessageServer)))
-            appRuntime.startMessageServer()
-            // write itself as message server into db store
-            appRuntime.storeIO.writeColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appRuntime.self.ip)
-            Thread.sleep(5000) // yield cpu to message server thread
-            // load started sources from db store
-            Try(appRuntime.storeIO.fetchStringValueColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES)) match {
-              case Failure(ex) => error("ToBeNextMessageServerMessage: fetch started sources failed", ex); appRuntime.startedSources = Map.empty
-              case Success(str) =>
-                // load started sources from db store
-                // one pair format: key + 0x1d + value + \n
-                val m = str.lines.map{ str => val arr = str.split(0x1d.toChar); arr(0) -> arr(1) }.toMap
-                val m1 = m.filter(p => appRuntime.ring.ips.contains(p._2))
-                appRuntime.startedSources = m1.map(p => p._1 -> Host(p._2, appRuntime.ring.ipHostMap(p._2)))
-                info("LocalMessageServer: started sources from db store = " + appRuntime.startedSources)
+            if (appRuntime.startedMessageServer) {
+              info("Message server has been started on this node")
+            } else {
+              val prevMessageServer = java.net.InetAddress.getByName(appRuntime.messageServerHost).getHostAddress()
+              debug("LocalMessageServer: prevMessageServer = " + (prevMessageServer, appRuntime.ring.ipHostMap(prevMessageServer)))
+              appRuntime.startMessageServer()
+              // write itself as message server into db store
+              appRuntime.storeIO.writeColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appRuntime.self.ip)
+              Thread.sleep(5000) // yield cpu to message server thread
+              // load started sources from db store
+              Try(appRuntime.storeIO.fetchStringValueColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES)) match {
+                case Failure(ex) =>
+                  error("ToBeNextMessageServerMessage: fetch started sources failed", ex); appRuntime.startedSources = Map.empty
+                case Success(str) =>
+                  // load started sources from db store
+                  // one pair format: key + 0x1d + value + \n
+                  val m = str.lines.map { str => val arr = str.split(0x1d.toChar); arr(0) -> arr(1) }.toMap
+                  val m1 = m.filter(p => appRuntime.ring.ips.contains(p._2))
+                  appRuntime.startedSources = m1.map(p => p._1 -> Host(p._2, appRuntime.ring.ipHostMap(p._2)))
+                  info("LocalMessageServer: started sources from db store = " + appRuntime.startedSources)
+              }
+              info("LocalMessageServer: write messageserver " + appRuntime.self.hostname + " to data store")
             }
-            info("LocalMessageServer: write messageserver " + appRuntime.self.hostname + " to data store")
 
           case NewMessageServerMessage(cmdID, messageServer) =>
             info("LocalMessageServer: Received " + msg)
@@ -408,6 +413,7 @@ class LocalMessageServer(port: Int, appRuntime: AppRuntime) extends Runnable wit
             appRuntime.msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort, 1000)
             lastCmdID = cmdID
             lastCommittedCmdID = -1
+            debug("LocalMessageServer: set messageServerHost to " + messageServer)
 
           case PING() =>
             trace("Received PING")
