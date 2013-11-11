@@ -24,15 +24,15 @@ import java.net.NetworkInterface
 import java.util.concurrent.Semaphore
 import java.util.Arrays
 import scala.collection.JavaConverters._
-import org.apache.http.client.ClientProtocolException
-import org.apache.http.client.methods.HttpGet
-import org.apache.http.impl.client.CloseableHttpClient
-import org.apache.http.impl.client.HttpClients
-import org.apache.http.util.EntityUtils
+// import org.apache.http.client.ClientProtocolException
+// import org.apache.http.client.methods.HttpGet
+// import org.apache.http.impl.client.CloseableHttpClient
+// import org.apache.http.impl.client.HttpClients
+// import org.apache.http.util.EntityUtils
 import grizzled.slf4j.Logging
 
 object Misc extends Logging {
-  val HTTPCLIENT = HttpClients.createDefault();
+//  val HTTPCLIENT = HttpClients.createDefault();
 
   val SLATE_CAPACITY = 1048576 // 1M size
   val COMPRESSED_CAPACITY = 205824  // 201K
@@ -148,8 +148,24 @@ object Misc extends Logging {
 
   def fetchURL(urlStr: String): Option[Array[Byte]] = {
     excToOptionWithLog {
-      val httpget = new HttpGet(urlStr);
-      EntityUtils.toByteArray(HTTPCLIENT.execute(httpget).getEntity())
+      // val httpget = new HttpGet(urlStr);
+      // EntityUtils.toByteArray(HTTPCLIENT.execute(httpget).getEntity())
+
+      val url = new java.net.URL(urlStr)
+      val urlConn = url.openConnection
+      urlConn.setRequestProperty("connection", "Keep-Alive")
+      urlConn.connect
+      val is: InputStream = urlConn.getInputStream
+      // XXX: as long as we enforce SLATE_CAPACITY, buffer will not overflow
+      val buffer = new java.io.ByteArrayOutputStream(Misc.SLATE_CAPACITY)
+      val bbuf = new Array[Byte](8192)
+      var c = is.read(bbuf, 0, 8192)
+      while (c >= 0) {
+        buffer.write(bbuf, 0, c)
+        c = is.read(bbuf, 0, 8192)
+      }
+      is.close
+      buffer.toByteArray()
     }
   }
 }
