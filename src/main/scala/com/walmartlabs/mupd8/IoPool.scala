@@ -53,6 +53,19 @@ class CassandraPool(
   val getTTL: String => Int,
   val compressionCodec: String) extends IoPool {
 
+  // Internal constants help estimate the size of a Thrift operation,
+  // which has a hard upper limit.
+  //
+  // These overhead values are overestimates, not inspections of the
+  // actual Thrift protocol:
+  val thriftOperationOverheadBytes = 128
+  val thriftMutatorOverheadBytes = 128
+  // TODO Make configurable: Cassandra actually allows this value to be
+  //      configured as thrift_framed_transport_size_in_mb (default 15)
+  // As of Cassandra 1.1,12, 1.2.6, thrift_max_message_length_in_mb is gone
+  // (see https://issues.apache.org/jira/browse/CASSANDRA-5529).
+  val thriftOperationMaximumBytes = 15*1024*1024
+
   val poolName = keyspace //TODO: Change this
   val cluster = new Cluster(hosts.reduceLeft(_ + "," + _), port)
   val cService = CompressionFactory.getService(compressionCodec)
@@ -72,7 +85,7 @@ class CassandraPool(
 
   if (!dbIsConnected) java.lang.System.exit(1)
 
-  Pelops.addPool(poolName, cluster, keyspace)
+  Pelops.addPool(poolName, cluster, keyspace);
   val selector = Pelops.createSelector(poolName) // TODO: Should this be per thread?
   val pool = new ThreadPoolExecutor(10, 50, 5, TimeUnit.SECONDS, new LinkedBlockingQueue[Runnable]) // TODO: We can drop events unless we have a Rejection Handler or LinkedQueue
 
@@ -90,23 +103,41 @@ class CassandraPool(
   }
 
   var batchMutator: Mutator = null
+  var batchEstimatedWriteSize = 0
   override def initBatchWrite: Boolean = {
     // since writerthread and changing ring might want to flush dirty slates
     // at the same time, use batchMutator as mutex flag
     this.synchronized {
       while (batchMutator != null) this.wait
       batchMutator = Pelops.createMutator(poolName)
+      batchEstimatedWriteSize = thriftOperationOverheadBytes
       true
     }
   }
 
   override def batchWrite(columnName: String, key: Key, slate: Array[Byte]): Boolean = {
     val compressed = cService.compress(slate)
-    batchMutator.writeColumn(
-      getCF(columnName),
-      Bytes.fromByteArray(key.value),
-      batchMutator.newColumn(Bytes.fromByteArray(columnName.getBytes), Bytes.fromByteArray(compressed), getTTL(columnName)))
-    true
+    val columnFamily = getCF(columnName)
+    val columnNameBytes = Bytes.fromByteArray(columnName.getBytes)
+    val columnValue = Bytes.fromByteArray(compressed)
+
+    // Overestimate columnFamily by imagining each character as a
+    // max-length (4-byte) UTF-8 sequence [IETF STD 63/RFC 3629]
+    // Refine thisOperationSize by reducing mutator overhead, counting TTL.
+    val thisOperationSize = thriftMutatorOverheadBytes + 4*columnFamily.length + key.value.size + columnNameBytes.length + columnValue.length
+    // debug("Trying to add write "+thisOperationSize+" to batch size "+batchEstimatedWriteSize)
+    if (batchEstimatedWriteSize + thisOperationSize > thriftOperationMaximumBytes) {
+      // debug("Add to batch rejected")
+      false
+    } else {
+      batchMutator.writeColumn(
+        columnFamily,
+        Bytes.fromByteArray(key.value),
+        // batchMutator.newColumn(Bytes.fromByteArray(columnName.getBytes), Bytes.fromByteArray(compressed), getTTL(columnName)))
+        batchMutator.newColumn(columnNameBytes, columnValue, getTTL(columnName)))
+      batchEstimatedWriteSize += thisOperationSize
+      true
+    }
   }
 
   override def flushBatchWrite: Boolean = {

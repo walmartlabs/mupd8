@@ -336,11 +336,33 @@ class AppRuntime(appID: Int,
       var dirtySlateList: List[((String, Key), SlateValue)] = List.empty
       threadVect foreach { tls => {
         val items: List[((String, Key), SlateValue)] = tls.slateCache.getDirtyItems
-        dirtySlateList = dirtySlateList ++: items
-        items.foreach (writeSlateToCassandra(_))
+        items.foreach { i => {
+          if (writeSlateToCassandra(i)) {
+            dirtySlateList = i :: dirtySlateList
+          } else {
+            debug("flushDirtySlateToCassandra: forcing partial flush")
+
+            if (storeIo.flushBatchWrite)
+              dirtySlateList foreach ( _._2.dirty = false )
+            else
+              error("flushDirtySlateToCassandra: flush failed; slates left dirty for retry")
+
+            storeIo.closeBatchWrite
+            dirtySlateList = List.empty
+            storeIo.initBatchWrite
+ 
+            if (writeSlateToCassandra(i)) {
+              dirtySlateList = i :: dirtySlateList
+            } else {
+              error("flushDirtySlateToCassandra: could not write slate "+i._1+" "+i._2+" into new Cassandra operation; is Misc.SLATE_CAPACITY too large?")
+            }
+          }
+        }}
       }}
       if (storeIo.flushBatchWrite)
         dirtySlateList foreach ( _._2.dirty = false )
+      else
+        error("flushDirtySlateToCassandra: flush failed, slates left dirty for retry")
       storeIo.closeBatchWrite
     }
   }
@@ -353,11 +375,33 @@ class AppRuntime(appID: Int,
       var dirtySlateList: List[((String, Key), SlateValue)] = List.empty
       threadVect foreach { tls => {
         val items = tls.slateCache.getFilteredDirtyItems
-        dirtySlateList ++:= items
-        items.foreach (writeSlateToCassandra(_))
+        items.foreach { i => {
+          if (writeSlateToCassandra(i)) {
+            dirtySlateList = i :: dirtySlateList
+          } else {
+            debug("flushFilteredDirtySlateToCassandra: forcing partial flush")
+
+            if (storeIo.flushBatchWrite)
+              dirtySlateList foreach ( _._2.dirty = false )
+            else
+              error("flushFilteredDirtySlateToCassandra: flush failed; slates left dirty for retry")
+
+            storeIo.closeBatchWrite
+            dirtySlateList = List.empty
+            storeIo.initBatchWrite
+
+            if (writeSlateToCassandra(i)) {
+              dirtySlateList = i :: dirtySlateList
+            } else {
+              error("flushFilteredDirtySlateToCassandra: could not write slate "+i._1+" "+i._2+" into new Cassandra operation; is Misc.SLATE_CAPACITY too large?")
+            }
+          }
+        }}
       }}
       if (storeIo.flushBatchWrite)
         dirtySlateList foreach ( _._2.dirty = false )
+      else
+        error("flushFilteredDirtySlateToCassandra: flush failed; slates left dirty for retry")
       storeIo.closeBatchWrite
       info("flushFilteredDirtySlateToCassandra: flush slates is done")
     }
