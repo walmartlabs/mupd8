@@ -139,6 +139,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 
   val messageServerHost = Option(config.getScopedValue(Array("mupd8", "messageserver", "host")))
   val messageServerPort = Option(config.getScopedValue(Array("mupd8", "messageserver", "port")))
+  info("AppStaticInfo: message server = " + (messageServerHost, messageServerPort))
 
   // Try to detect node's hostname and ipaddress by connecting to message server
   private def getHostName(retryCount: Int): Host = {
