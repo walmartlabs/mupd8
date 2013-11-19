@@ -457,9 +457,9 @@ class AppRuntime(appID: Int,
   val writerThread = new Thread(run {
     while (true) {
       val startTime = java.lang.System.currentTimeMillis
-      debug("writeThread: start to flush dirty slates")
+      trace("writeThread: start to flush dirty slates")
       flushDirtySlateToCassandra()
-      debug("writeThread: flush dirty slates is done")
+      trace("writeThread: flush dirty slates is done")
       val exeuteTime = java.lang.System.currentTimeMillis - startTime
       // add around 2 seconds random sleep time
       val sleepTime = appStatic.cassWriteInterval * 1000 - exeuteTime + (if (rand.nextBoolean) -(rand.nextInt & 0x7ff) else rand.nextInt & 0x7ff)
