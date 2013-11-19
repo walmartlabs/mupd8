@@ -86,14 +86,14 @@ class LocalMessageServerClient(serverHost: String, serverPort: Int, timeout: Int
   def sendMessage(msg: Message): Boolean = synchronized {
     try {
       msg match {
-        case PING() => debug("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
-        case _ => info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort) 
+        case PING() => trace("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
+        case _ => info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
       }
       val socket = new Socket(serverHost, serverPort)
       val out = new ObjectOutputStream(socket.getOutputStream)
       val in = new ObjectInputStream(socket.getInputStream)
       socket.setSoTimeout(timeout)
-      debug("LocalMessageServerClient: connected")
+      trace("LocalMessageServerClient: connected")
       out.writeObject(msg)
       msg match {
         case m: MessageWOACK =>

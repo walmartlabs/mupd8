@@ -70,8 +70,8 @@ class MUCluster[T <: MapUpdateClass[T]](app: AppStaticInfo,
   }
 
   def send(destip: String, obj: T) {
-    if ( _send(6, destip, obj)) {
-      error("Failed to send event (" + obj + ") to destination " + destip)
+    if (! _send(6, destip, obj)) {
+      error("Failed 1 to send event (" + obj + ") to destination " + destip)
       if (msClient != null) {
         error("MUCluster: Report node " + destip + " failure")
         msClient.sendMessage(NodeRemoveMessage(Set(destip)))

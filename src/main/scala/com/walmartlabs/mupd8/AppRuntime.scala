@@ -155,6 +155,14 @@ class AppRuntime(appID: Int,
   slateURLserver.start
   info("slateURLserver is up on port" + appStatic.statusPort)
 
+  // We need a separate slate server that does not redirect to prevent deadlocks
+  val slateServer = new HttpServer(appStatic.statusPort + 300, maxWorkerCount, s => {
+    val tok = java.net.URLDecoder.decode(s, "UTF-8").split('/')
+    getSlate((tok(4), Key(tok(5).map(_.toByte).toArray)))
+  })
+  slateServer.start
+  info("Internal slateServer started on port: " + appStatic.statusPort + 300)
+
   /* generate Hash Ring */
   private var _ring: HashRing = null
   def ring = _ring // getter
@@ -213,13 +221,6 @@ class AppRuntime(appID: Int,
     getSlateBuilder(performerId).toBytes(future.get(), bytes)
     Option(bytes.toByteArray())
   }
-
-  // We need a separate slate server that does not redirect to prevent deadlocks
-  val slateServer = new HttpServer(appStatic.statusPort + 300, maxWorkerCount, s => {
-    val tok = java.net.URLDecoder.decode(s, "UTF-8").split('/')
-    getSlate((tok(4), Key(tok(5).map(_.toByte).toArray)))
-  })
-  slateServer.start
 
   // name set of sources started on this node
   var startedSources: Set[String] = immutable.Set.empty
