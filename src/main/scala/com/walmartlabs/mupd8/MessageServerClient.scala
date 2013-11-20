@@ -26,32 +26,41 @@ import grizzled.slf4j.Logging
 class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 2000) extends Logging {
 
   def sendMessage(msg: Message): Boolean = synchronized {
-    try {
-      debug("MessageServerClient: send " + msg + " to Message Server: " + serverHost + ", " + serverPort)
-      // have to use socket, not Channel. Since channel doesn't support so_timeout
-      // http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=4614802
-      val socket = new Socket()
-      socket.connect(new InetSocketAddress(serverHost, serverPort), timeout)
-      val out = new ObjectOutputStream(socket.getOutputStream)
-      val in = new ObjectInputStream(socket.getInputStream)
-      socket.setSoTimeout(timeout)
-      trace("MessageServerClient: connected")
-      out.writeObject(msg)
-      msg match {
-        case m: MessageWOACK =>
+    def _sendMessage(retryCount: Int, msg: Message): Boolean = {
+      if (retryCount == 0) {
+        false
+      } else {
+        try {
+          debug("MessageServerClient: send " + msg + " to Message Server: " + serverHost + ", " + serverPort)
+          // have to use socket, not Channel. Since channel doesn't support so_timeout
+          // http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=4614802
+          val socket = new Socket()
+          socket.connect(new InetSocketAddress(serverHost, serverPort), timeout)
+          val out = new ObjectOutputStream(socket.getOutputStream)
+          val in = new ObjectInputStream(socket.getInputStream)
+          socket.setSoTimeout(timeout)
+          trace("MessageServerClient: connected")
+          out.writeObject(msg)
+          msg match {
+            case m: MessageWOACK =>
 
-        case m: MessageWACK =>
-          val ack = in.readObject
-          info("MessageServerClient: received " + ack)
+            case m: MessageWACK =>
+              val ack = in.readObject
+              info("MessageServerClient: received " + ack)
+          }
+          out.close
+          in.close
+          socket.close
+          true
+        } catch {
+          case e: Exception =>
+            error("MessageServerClient sendMessage exception. MSG = " + msg.toString, e)
+            _sendMessage(retryCount - 1, msg)
+        }
       }
-      out.close
-      in.close
-      socket.close
-      true
-    } catch {
-      case e: Exception => error("MessageServerClient sendMessage exception. MSG = " + msg.toString, e)
-      false
     }
+
+    _sendMessage(6, msg)
   }
 
   // check host ip address and hostname by connecting message server
@@ -77,33 +86,43 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 20
 class LocalMessageServerClient(val serverHost: String, serverPort: Int, timeout: Int = 2000) extends Logging {
 
   def sendMessage(msg: Message): Boolean = synchronized {
-    try {
-      msg match {
-        case PING() => trace("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
-        case _ => info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
-      }
-      val socket = new Socket()
-      socket.connect(new InetSocketAddress(serverHost, serverPort), timeout)
-      val out = new ObjectOutputStream(socket.getOutputStream)
-      val in = new ObjectInputStream(socket.getInputStream)
-      socket.setSoTimeout(timeout)
-      trace("LocalMessageServerClient: connected")
-      out.writeObject(msg)
-      msg match {
-        case m: MessageWOACK =>
+    def _sendMessage(retryCount: Int, msg: Message): Boolean = {
+      if (retryCount == 0) {
+        false
+      } else {
+        try {
+          msg match {
+            case PING() => trace("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
+            case _ => info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
+          }
+          val socket = new Socket()
+          socket.connect(new InetSocketAddress(serverHost, serverPort), timeout)
+          val out = new ObjectOutputStream(socket.getOutputStream)
+          val in = new ObjectInputStream(socket.getInputStream)
+          socket.setSoTimeout(timeout)
+          trace("LocalMessageServerClient: connected")
+          out.writeObject(msg)
+          msg match {
+            case m: MessageWOACK =>
 
-        case m: MessageWACK =>
-          val ack = in.readObject
-          info("LocalMessageServerClient: received " + ack)
+            case m: MessageWACK =>
+              val ack = in.readObject
+              info("LocalMessageServerClient: received " + ack)
+          }
+          in.close
+          out.close
+          socket.close
+          true
+        } catch {
+          case e: Exception =>
+            warn("LocalMessageServerClient sendMessage exception. MSG = " + msg.toString + ", dest = " + (serverHost, serverPort), e)
+            Thread.sleep(10000)
+            _sendMessage(retryCount - 1, msg)
+        }
       }
-      in.close
-      out.close
-      socket.close
-      true
-    } catch {
-      case e: Exception => error("LocalMessageServerClient sendMessage exception. MSG = " + msg.toString + ", dest = " + (serverHost , serverPort), e)
-      false
     }
+
+    _sendMessage(6, msg)
   }
 
 }

@@ -55,21 +55,21 @@ class MUCluster[T <: MapUpdateClass[T]](self: Host,
     hosts.foreach(removeHost(_))
   }
 
-  private def _send(retryCount: Int, destip: String, obj: T): Boolean = {
-    if (retryCount == 0) {
-      false
-    } else {
-      if (!client.send(destip, obj)) {
-        warn("Failed to send event (" + obj + ") to destination " + destip + " at retry : " + retryCount)
-        Thread.sleep(10000)
-        _send(retryCount - 1, destip, obj)
+  def send(dest: Host, obj: T) {
+    def _send(retryCount: Int, destip: String, obj: T): Boolean = {
+      if (retryCount == 0) {
+        false
       } else {
-        true
+        if (!client.send(destip, obj)) {
+          warn("Failed to send event (" + obj + ") to destination " + destip + " at retry : " + retryCount)
+          Thread.sleep(10000)
+          _send(retryCount - 1, destip, obj)
+        } else {
+          true
+        }
       }
     }
-  }
 
-  def send(dest: Host, obj: T) {
     if (!_send(6, dest.ip, obj)) {
       error("Failed to send event (" + obj + ") to destination " + dest)
       if (appRun.msClient != null) {
