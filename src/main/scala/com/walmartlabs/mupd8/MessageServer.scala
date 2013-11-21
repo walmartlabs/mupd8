@@ -101,7 +101,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
                 info("NodeRemoveMessage: CmdID " + lastCmdID + " - Sending " + ring2 + " to " + ring2.iPs.map(ring2.ipHostMap(_)))
 
                 // reset Timer
-                Timer.startTimer(lastCmdID, 2000L, () => {
+                Timer.startTimer(lastCmdID, 120000L, () => {
                   val notAckedNodes = AckedNodeCounter.nodesNotAcked
                   // not all nodes send ack message back
                   info("NodeRemoveMessage: " + (lastCmdID, notAckedNodes) + " TIMEOUT")
@@ -136,7 +136,7 @@ class MessageServer(port: Int, allSources: immutable.Map[String, Source], isTest
               // Local message server's port is always port + 1
               info("NodeJoinMessage: cmdID " + lastCmdID + " - Sending " + ring2 + " to " + ring2.iPs.map(ring2.ipHostMap(_)))
               // reset Timer
-              Timer.startTimer(lastCmdID, 2000L, () => {
+              Timer.startTimer(lastCmdID, 120000L, () => {
                 val notAckedNodes = AckedNodeCounter.nodesNotAcked
                 // not all nodes send ack message back
                 info("NodeJoinMessage: " + (lastCmdID, notAckedNodes) + " TIMEOUT")
