@@ -69,6 +69,7 @@ object AckedNodeCounter extends Actor with Logging {
           currentCmdID = cmdID
           nodesNotAcked = null
           nodesNotAcked = hosts.toSet
+          debug("CountPrepareACK: cmdID " + cmdID + " - nodesNotAcked = " + nodesNotAcked)
           mshost = _mshost
           msport = _msport
         }

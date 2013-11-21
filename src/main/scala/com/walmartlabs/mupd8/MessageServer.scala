@@ -69,6 +69,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
     while (keepRunning) {
       try {
         val channel = serverSocketChannel.accept()
+        val remote = channel.socket().getRemoteSocketAddress()
         debug("Channel - " + channel + " is opened")
         val in = new ObjectInputStream(Channels.newInputStream(channel))
         val out = new ObjectOutputStream(Channels.newOutputStream(channel))
@@ -76,10 +77,11 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
         msg match {
           case NodeChangeMessage(hosts_to_add, hosts_to_remove) =>
             out.writeObject(ACKMessage)
-            info("MessageServer: received " + msg)
+            info("MessageServer: received " + msg + " from " + remote)
 
             // remove completed node changes in request
             val (hosts_to_add1, hosts_to_remove1) = removeChangedHosts(hosts_to_add, hosts_to_remove)
+            info("MessageServer: hosts to add = " + hosts_to_add1 + ", hosts to remove = " + hosts_to_remove1)
             if (!hosts_to_add1.isEmpty || !hosts_to_remove1.isEmpty) {
               // if there are still some nodes left
               lastCmdID += 1
@@ -98,7 +100,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
                 info("NodeChangeMessage: CmdID " + lastCmdID + " - Sending " + ring + " to " + ring.ips.map(ring.ipHostMap(_)))
                 // start timer and ackcounter
                 // reset Timer
-                Timer.startTimer(lastCmdID, 5000L, () => {
+                Timer.startTimer(lastCmdID, 120000L, () => {
                   val notAckedNodes = AckedNodeCounter.nodesNotAcked
                   // not all nodes send ack message back
                   info("NodeChangeMessage: lastCmdID - " + notAckedNodes + " TIMEOUT")
@@ -143,7 +145,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
             }
 
           case PrepareNodeChangeDoneMessage(cmdID, host) =>
-            info("MessageServer: Receive PrepareNodeChangeDoneMessage - " + (cmdID, ring.ipHostMap(host)))
+            info("MessageServer: Receive PrepareNodeChangeDoneMessage - " + (cmdID, host) + " from " + remote)
             AckedNodeCounter ! CountPrepareACK(cmdID, host)
 
           case AllNodesACKedPrepareMessage(cmdID: Int) =>
@@ -155,7 +157,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
             info("MessageServer: IP CHECK received")
 
           case AskPermitToStartSourceMessage(sourceName, host) =>
-            info("MessageServer: Received AskPermitToStartSourceMessage" + (sourceName, host))
+            info("MessageServer: Received AskPermitToStartSourceMessage" + (sourceName, host) + " from " + remote)
             out.writeObject(ACKMessage)
             lastCmdID = lastCmdID + 1
             if (!appRuntime.startedSources.contains(sourceName)) {
@@ -302,12 +304,13 @@ class LocalMessageServer(port: Int, appRuntime: AppRuntime) extends Runnable wit
     while (true) {
       try {
         val channel = serverSocketChannel.accept()
+        val remote = channel.socket().getRemoteSocketAddress()
         val in = new ObjectInputStream(Channels.newInputStream(channel))
         val out = new ObjectOutputStream(Channels.newOutputStream(channel))
         val msg = in.readObject
         msg match {
           case PrepareNodeChangeMessage(cmdID, hashInNewRing, iPsInNewRing, iP2HostMap) =>
-            info("LocalMessageServer: Received " + msg)
+            info("LocalMessageServer: Received " + msg + " from " + remote)
             if (cmdID > lastCmdID) {
               // set candidate ring
               setCandidateRingAndHostList(hashInNewRing, (iPsInNewRing, iP2HostMap))
