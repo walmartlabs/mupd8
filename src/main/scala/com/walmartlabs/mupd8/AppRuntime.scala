@@ -84,7 +84,7 @@ class AppRuntime(appID: Int,
         info("Start message server according to config file")
         startMessageServer()
         // write itself into db store as message server
-        storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
+        storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, InetAddress.getByName(appStatic.messageServerHostFromConfig).getHostAddress())
         // clear started source reader in db store
         storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, "")
         Thread.sleep(5000) // yield cpu to startMessageServer and cassandra writing
