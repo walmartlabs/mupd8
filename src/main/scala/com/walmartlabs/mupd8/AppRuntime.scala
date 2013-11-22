@@ -41,6 +41,13 @@ class AppRuntime(appID: Int,
                  poolsize: Int,
                  val appStatic: AppStaticInfo,
                  useNullPool: Boolean = false) extends Logging {
+  val timer = new java.util.Timer()
+  timer.scheduleAtFixedRate(new java.util.TimerTask() {
+    override def run() {
+      java.lang.System.gc()
+    }
+  }, 60 * 1000, 60 * 1000)
+
   /*
    * Startup sequence
    * 1. init storeIO
