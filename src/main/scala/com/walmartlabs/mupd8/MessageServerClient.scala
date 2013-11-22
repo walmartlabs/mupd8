@@ -54,7 +54,7 @@ class MessageServerClient(serverHost: Host, serverPort: Int, timeout: Int = 2000
           true
         } catch {
           case e: Exception =>
-            error("MessageServerClient sendMessage exception. MSG = " + msg.toString, e)
+            error("MessageServerClient sendMessage exception. MSG = " + msg.toString + " with retryCount " + retryCount, e)
             _sendMessage(retryCount - 1, msg)
         }
       }
@@ -115,7 +115,7 @@ class LocalMessageServerClient(val serverHost: String, serverPort: Int, timeout:
           true
         } catch {
           case e: Exception =>
-            warn("LocalMessageServerClient sendMessage exception. MSG = " + msg.toString + ", dest = " + (serverHost, serverPort), e)
+            warn("LocalMessageServerClient sendMessage exception. MSG = " + msg.toString + ", dest = " + (serverHost, serverPort) + " with retryCount = " + retryCount, e)
             Thread.sleep(10000)
             _sendMessage(retryCount - 1, msg)
         }

@@ -61,7 +61,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
   PingCheck.start
   lastCmdID = 0
   if (ring != null)
-    MessageSender ! SendMessageToNode(lastCmdID, ring.ips.filter(ip => (lastMessageServer == null || ip.compareTo(lastMessageServer.ip) != 0) && ip.compareTo(appRuntime.self.ip) != 0), (port + 1), NewMessageServerMessage(lastCmdID, appRuntime.self), port)
+    MessageSender ! SendMessageToNode(lastCmdID, ring.ips.filter(ip => lastMessageServer == null || ip.compareTo(lastMessageServer.ip) != 0), (port + 1), NewMessageServerMessage(lastCmdID, appRuntime.self), port)
 
   /* socket server to communicate clients */
   override def run() {
@@ -397,7 +397,7 @@ class LocalMessageServer(port: Int, appRuntime: AppRuntime) extends Runnable wit
               info("Message server has been started on this node")
             } else {
               val prevMessageServer = appRuntime.messageServerHost.ip
-              debug("LocalMessageServer: prevMessageServer = " + (prevMessageServer, appRuntime.ring.ipHostMap(prevMessageServer)))
+              debug("LocalMessageServer: prevMessageServer = " + prevMessageServer + ", ipHostMap = " + appRuntime.ring.ipHostMap)
               appRuntime.startMessageServer()
               // write itself as message server into db store
               appRuntime.storeIO.writeColumn(appRuntime.appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appRuntime.self.ip)
