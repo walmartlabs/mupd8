@@ -64,7 +64,7 @@ class AppRuntime(appID: Int,
   var startedSourcesOnThisNode: Set[String] = Set.empty
   val startSourceLock = new Object()
 
-  var messageServerHost: String = null
+  var messageServerHost: Host = null
   val messageServerPort: Int = appStatic.messageServerPortFromConfig
   var startedMessageServer = false
 
@@ -155,12 +155,12 @@ class AppRuntime(appID: Int,
             // cluster first time start, no message server in data store
             // then start message server, write message server config into data store
             startMessageServer()
-            // write itself into db store as message server
-            storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, appStatic.messageServerHostFromConfig)
+            // write ip address into db store as message server
+            storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.MESSAGE_SERVER, InetAddress.getByName(appStatic.messageServerHostFromConfig).getHostAddress())
             // clear started source reader in db store
             storeIO.writeColumn(appStatic.cassColumnFamily, CassandraPool.PRIMARY_ROWKEY, CassandraPool.STARTED_SOURCES, "")
+            messageServerHost = Host(InetAddress.getByName(appStatic.messageServerHostFromConfig).getHostAddress(), appStatic.messageServerHostFromConfig)
             info("Set message server from config - " + (messageServerHost, messageServerPort))
-            messageServerHost = appStatic.messageServerHostFromConfig
           } else {
             if (System.currentTimeMillis() - sysStartTime > appStatic.startupTimeout * 1000) {
               error("fetchMessageServer timeout, exiting...")
@@ -173,7 +173,7 @@ class AppRuntime(appID: Int,
           }
         case Success(msgserver) =>
           info("Message server config from data store: " + msgserver)
-          messageServerHost = msgserver
+          messageServerHost = Host(msgserver, InetAddress.getByName(msgserver).getHostName())
       }
     }
 
@@ -561,7 +561,7 @@ class AppRuntime(appID: Int,
         None
       } else {
         val next = nodes.head
-        if (next.compareTo(messageServerHost) == 0) _checkNode(nodes.tail)
+        if (next.compareTo(messageServerHost.ip) == 0) _checkNode(nodes.tail)
         else {
           val lmsclient = new LocalMessageServerClient(next, messageServerPort + 1)
           if (!lmsclient.sendMessage(ToBeNextMessageSeverMessage(self))) {

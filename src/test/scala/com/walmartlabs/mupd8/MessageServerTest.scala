@@ -23,6 +23,7 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest.FunSuite
 import scala.util.Random
 import scala.collection.JavaConverters._
+import java.net.InetAddress
 
 @RunWith(classOf[JUnitRunner])
 class MessageServerTest extends FunSuite {
@@ -34,7 +35,7 @@ class MessageServerTest extends FunSuite {
     server.start
     Thread.sleep(500)
 
-    val client = new MessageServerClient("localhost", 4568, 50)
+    val client = new MessageServerClient(Host(InetAddress.getByName("localhost").getHostAddress, "localhost"), 4568, 50)
     Thread.sleep(2000)
     val nodes = Vector.range(0, 5) map (i => Host("192.168.1." + i.toString, "machine" + (random.nextInt(10) + i * 10) + ".example.com"))
     for (node <- nodes) client.sendMessage(NodeChangeMessage(Set(node), Set.empty))

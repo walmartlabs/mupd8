@@ -23,7 +23,7 @@ import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import grizzled.slf4j.Logging
 
-class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 2000) extends Logging {
+class MessageServerClient(serverHost: Host, serverPort: Int, timeout: Int = 2000) extends Logging {
 
   def sendMessage(msg: Message): Boolean = synchronized {
     def _sendMessage(retryCount: Int, msg: Message): Boolean = {
@@ -35,7 +35,7 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 20
           // have to use socket, not Channel. Since channel doesn't support so_timeout
           // http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=4614802
           val socket = new Socket()
-          socket.connect(new InetSocketAddress(serverHost, serverPort), timeout)
+          socket.connect(new InetSocketAddress(serverHost.ip, serverPort), timeout)
           val out = new ObjectOutputStream(socket.getOutputStream)
           val in = new ObjectInputStream(socket.getInputStream)
           socket.setSoTimeout(timeout)
@@ -67,7 +67,7 @@ class MessageServerClient(serverHost: String, serverPort: Int, timeout: Int = 20
   def checkIP(): Option[Host] = {
     try {
       info("MSClient - Check Ip with " + (serverHost, serverPort))
-      val s = new java.net.Socket(serverHost, serverPort)
+      val s = new java.net.Socket(serverHost.ip, serverPort)
       val host = Host(s.getLocalAddress.getHostAddress, s.getLocalAddress.getHostName)
       val out = new ObjectOutputStream(s.getOutputStream)
       out.writeObject(IPCHECKDONE)

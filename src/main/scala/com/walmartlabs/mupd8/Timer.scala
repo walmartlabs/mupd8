@@ -48,12 +48,12 @@ object Timer extends Logging {
 // AckedNodeCounter counts how many nodes already ACK Prepare[Add|Remove]HostMessage
 // and Update[Add|Remove]HostMessage. And if left nodes to ACK set is empty, pin message server
 abstract class AckedNodeCounterMessage
-case class StartCounter(cmdID: Int, appruntime: AppRuntime, hosts: IndexedSeq[String], _mshost: String, _msport: Int) extends AckedNodeCounterMessage
+case class StartCounter(cmdID: Int, appruntime: AppRuntime, hosts: IndexedSeq[String], _mshost: Host, _msport: Int) extends AckedNodeCounterMessage
 case class CountPrepareACK(cmdID: Int, ip: String) extends AckedNodeCounterMessage
 object AckedNodeCounter extends Actor with Logging {
   private var currentCmdID = -1
   var nodesNotAcked = scala.collection.immutable.Set[String]()
-  private var mshost: String = null
+  private var mshost: Host = null
   private var msport: Int = -1
   private var appRuntime: AppRuntime = null
 
