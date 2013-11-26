@@ -23,7 +23,10 @@ import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import grizzled.slf4j.Logging
 
-class MessageServerClient(serverHost: Host, serverPort: Int, timeout: Int = 2000) extends Logging {
+class MessageServerClient(appRuntime: AppRuntime, timeout: Int = 2000, server: Host = null, port: Int = 0) extends Logging {
+
+  def serverHost = if (appRuntime != null) appRuntime.messageServerHost else server
+  def serverPort = if (appRuntime != null) appRuntime.messageServerPort else port
 
   def sendMessage(msg: Message): Boolean = synchronized {
     def _sendMessage(retryCount: Int, msg: Message): Boolean = {
@@ -54,7 +57,12 @@ class MessageServerClient(serverHost: Host, serverPort: Int, timeout: Int = 2000
           true
         } catch {
           case e: Exception =>
-            error("MessageServerClient sendMessage exception. MSG = " + msg.toString + " with retryCount " + retryCount, e)
+            error("MessageServerClient sendMessage exception. MSG = %s to %s with retryCount %d".format(msg.toString, (serverHost, serverPort), retryCount), e)
+            try {
+              Thread.sleep(10000)
+            } catch {
+              case e: Exception => info("MessageServerClient: interrupted from sleep" +  e.getMessage())
+            }
             _sendMessage(retryCount - 1, msg)
         }
       }
@@ -118,7 +126,11 @@ class LocalMessageServerClient(val serverHost: String, serverPort: Int, timeout:
         } catch {
           case e: Exception =>
             warn("LocalMessageServerClient sendMessage exception. MSG = " + msg.toString + ", dest = " + (serverHost, serverPort) + " with retryCount = " + retryCount, e)
-            Thread.sleep(10000)
+            try {
+              Thread.sleep(10000)
+            } catch {
+              case e: Exception => info("LocalMessageServerClient: interrupted from sleep" +  e.getMessage())
+            }
             _sendMessage(retryCount - 1, msg)
         }
       }
