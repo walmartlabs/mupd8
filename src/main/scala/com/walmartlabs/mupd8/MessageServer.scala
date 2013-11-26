@@ -235,7 +235,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
       if (!client.sendMessage(StartSourceMessage(sourceName))) {
         // report host fails if any exception happens
         error("SendStartSource: report " + ipToStart + " fails")
-        val msClient = new MessageServerClient(appRuntime.messageServerHost, port)
+        val msClient = new MessageServerClient(appRuntime)
         msClient.sendMessage(NodeChangeMessage(Set.empty, Set(Host(ipToStart, ring.ipHostMap(ipToStart)))))
       }
     }
@@ -257,7 +257,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
           }
         }
         if (!failedNodes.isEmpty) {
-          val msClient = new MessageServerClient(appRuntime.messageServerHost, port)
+          val msClient = new MessageServerClient(appRuntime)
           msClient.sendMessage(NodeChangeMessage(Set.empty, failedNodes))
         }
         Thread.sleep(2000)
@@ -392,7 +392,7 @@ class LocalMessageServer(port: Int, appRuntime: AppRuntime) extends Runnable wit
             info("LocalMessageServer: Received " + msg)
             out.writeObject(ACKMessage)
             appRuntime.messageServerHost = messageServer
-            appRuntime.msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort, 1000)
+            appRuntime.msClient = new MessageServerClient(appRuntime, 1000)
             lastCmdID = cmdID
             lastCommittedCmdID = -1
             debug("LocalMessageServer: set messageServerHost to " + messageServer)

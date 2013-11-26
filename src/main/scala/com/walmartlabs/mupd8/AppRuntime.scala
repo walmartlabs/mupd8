@@ -106,7 +106,7 @@ class AppRuntime(appID: Int,
   }
   info("Host id is " + self)
   // init msClient
-  var msClient: MessageServerClient = new MessageServerClient(messageServerHost, messageServerPort, 1000)
+  var msClient: MessageServerClient = new MessageServerClient(this, 1000)
 
   // 4. mapupdater pool is needed by ring update
   // pool depends on mucluster, mucluster depends on msClient
@@ -216,7 +216,7 @@ class AppRuntime(appID: Int,
       if (retryCount >= retryTimes) None
       else {
         setMessageServerFromDataStore()
-        new MessageServerClient(messageServerHost, messageServerPort, 1000).checkIP() match {
+        new MessageServerClient(this, 1000).checkIP() match {
           case None => Thread.sleep(5000); warn("getHostName again"); _getLocalHostName(retryCount + 1)
           case Some(host) => Some(host)
         }
@@ -279,7 +279,7 @@ class AppRuntime(appID: Int,
           if (slate == None) {
             warn("Can't reach dest(" + dest + "); going to report " + dest + " fails.")
             if (!msClient.sendMessage(NodeChangeMessage(Set.empty, Set(Host(dest, ring.ipHostMap(dest)))))) {
-              error("SlateUrlServer: message server is done")
+              error("SlateUrlServer: message server is down")
               if (!nextMessageServer().isDefined) {
                 error("SlateUrlServer: cannot find node to be next message server, exit...")
                 System.exit(-1)

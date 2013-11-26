@@ -138,7 +138,7 @@ object Mupd8Main extends Logging {
   def startSources(app: AppStaticInfo, runtime: AppRuntime) {
     class AskPermit(sourceName: String) extends Actor {
       def act() {
-        val client: MessageServerClient = new MessageServerClient(runtime.messageServerHost, runtime.messageServerPort, 1000)
+        val client: MessageServerClient = new MessageServerClient(runtime, 1000)
         client.sendMessage(AskPermitToStartSourceMessage(sourceName, runtime.self))
       }
     }

@@ -45,7 +45,7 @@ class SendMessage(appRuntime: AppRuntime, ring: HashRing, cmdID: Int, ips: Index
           timer.cancel()
           if (!nodesFailed.isEmpty) {
             // send allDone to message server
-            val msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort)
+            val msClient = new MessageServerClient(appRuntime)
             if (!msClient.sendMessage(AllNodesACKedPrepareMessage(cmdID))) {
               // cannot reach itself, exit
               error("SendMessage: message server is not reachable, exit...")
@@ -73,7 +73,7 @@ class SendMessage(appRuntime: AppRuntime, ring: HashRing, cmdID: Int, ips: Index
 
           if (!nodesToRemove.isEmpty) {
             info("SendNewRing: failed to send new ring to couple node, send NodeChangeMessage to messageserver")
-            val msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort)
+            val msClient = new MessageServerClient(appRuntime)
             if (!msClient.sendMessage(NodeChangeMessage(Set.empty, nodesToRemove map (ip => Host(ip, ip2HostMap(ip)))))) {
               // cannot reach message server on same node
               error("SendMessage: system is in a very wrong status, exit...")
@@ -107,7 +107,7 @@ class AckCounter(appRuntime: AppRuntime, ring: HashRing, cmdID: Int, ips: Seq[St
         } else if (!nodesNotAcked.isEmpty) {
           isDone = true
           info("AckCounter: failed to receive Ack from " + nodesNotAcked)
-          val msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort)
+          val msClient = new MessageServerClient(appRuntime)
           if (!msClient.sendMessage(NodeChangeMessage(Set.empty, nodesNotAcked map (ip => Host(ip, ip2HostMap(ip)))))) {
             // cannot reach message server on same node
             error("SendMessage: system is in a very wrong status, exit...")
@@ -142,7 +142,7 @@ class AckCounter(appRuntime: AppRuntime, ring: HashRing, cmdID: Int, ips: Seq[St
 
           scala.actors.Actor.actor {
             // pin message server
-            val msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort)
+            val msClient = new MessageServerClient(appRuntime)
             if (!msClient.sendMessage(AllNodesACKedPrepareMessage(cmdID))) {
               error("AckedNodeCounter: message server is not reachable")
               if (!appRuntime.nextMessageServer.isDefined) {
