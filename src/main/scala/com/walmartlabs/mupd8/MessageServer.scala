@@ -62,7 +62,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
   PingCheck.start
   lastCmdID = 0
   if (ring != null) {
-    sender = new SendMessage(appRuntime, lastCmdID, ring.ips.filter(ip => lastMessageServer == null || ip.compareTo(lastMessageServer.ip) != 0), (port + 1), NewMessageServerMessage(lastCmdID, appRuntime.self), 90 * 1000)
+    sender = new SendMessage(appRuntime, ring, lastCmdID, ring.ips.filter(ip => lastMessageServer == null || ip.compareTo(lastMessageServer.ip) != 0), (port + 1), NewMessageServerMessage(lastCmdID, appRuntime.self), 90 * 1000)
     sender.send()
   }
 
@@ -110,12 +110,12 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
               if (!isTest) {
                 info("NodeChangeMessage: CmdID " + lastCmdID + " - Sending " + ring + " to " + ring.ips.map(ring.ipHostMap(_)))
                 if (ackCounter != null) ackCounter.stop()
-                ackCounter = new AckCounter(appRuntime, lastCmdID, ring.ips)
+                ackCounter = new AckCounter(appRuntime, ring, lastCmdID, ring.ips)
                 ackCounter.startCount()
 
                 // Send prepare ring update message
-                if (sender == null) sender.stop()
-                sender = new SendMessage(appRuntime, lastCmdID, ring.ips, (port + 1), PrepareNodeChangeMessage(lastCmdID, ring.hash, ring.ips, ring.ipHostMap), 90 * 1000)
+                if (sender != null) sender.stop()
+                sender = new SendMessage(appRuntime, ring, lastCmdID, ring.ips, (port + 1), PrepareNodeChangeMessage(lastCmdID, ring.hash, ring.ips, ring.ipHostMap), 90 * 1000)
                 sender.send()
               }
             } else {
@@ -164,7 +164,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
             } else {
               // send update ring message to Nodes
               if (sender != null) sender.stop()
-              sender = new SendMessage(appRuntime, cmdID, ring.ips, port + 1, UpdateRing(cmdID), 90 * 1000)
+              sender = new SendMessage(appRuntime, ring, cmdID, ring.ips, port + 1, UpdateRing(cmdID), 90 * 1000)
               sender.send()
             }
 
@@ -305,7 +305,7 @@ class LocalMessageServer(port: Int, appRuntime: AppRuntime) extends Runnable wit
               lastCmdID = cmdID
 
               // send ACKPrepareNodeChangeMessage back to message server7
-              debug("LocalMessageServer: CMD " + cmdID + " - Update Ring with " + iP2HostMap)
+              debug("PrepareNodeChangeMessage - Update Candidate Ring with " + iP2HostMap)
               appRuntime.msClient.sendMessage(PrepareNodeChangeDoneMessage(cmdID, appRuntime.self.ip))
               info("LocalMessageServer: PrepareNodeChangeMessage - CMD " + cmdID + " - Sent ACKPrepareNodeChangeMessage to message server")
             } else

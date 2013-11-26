@@ -20,12 +20,13 @@ package com.walmartlabs.mupd8
 import grizzled.slf4j.Logging
 import java.util.TimerTask
 
-class SendMessage(appRuntime: AppRuntime, cmdID: Int, ips: IndexedSeq[String], port: Int, msg: Message, timeout: Int) extends Logging {
+// ring: ring in message server, which differs to ring in appruntime
+class SendMessage(appRuntime: AppRuntime, ring: HashRing, cmdID: Int, ips: IndexedSeq[String], port: Int, msg: Message, timeout: Int) extends Logging {
   val timer = new java.util.Timer()
-  val ip2HostMap = appRuntime.ring.ipHostMap // keep a copy of map in case it is changed
+  val ip2HostMap = ring.ipHostMap // keep a copy of map in case it is changed
   val lock = new Object()
   var nodesNotResponsed: Set[String] = ips.toSet
-  var nodesFailed: Set[String] = null
+  var nodesFailed: Set[String] = Set.empty
 
   class Sender(val ip: String) extends Runnable {
     val lmsclient = new LocalMessageServerClient(ip, port)
@@ -91,10 +92,11 @@ class SendMessage(appRuntime: AppRuntime, cmdID: Int, ips: IndexedSeq[String], p
   }
 }
 
-class AckCounter(appRuntime: AppRuntime, cmdID: Int, ips: Seq[String]) extends Logging {
+// ring: ring in message server, which differs to ring in appruntime
+class AckCounter(appRuntime: AppRuntime, ring: HashRing, cmdID: Int, ips: Seq[String]) extends Logging {
   val timer = new java.util.Timer()
   var nodesNotAcked = ips.toSet
-  val ip2HostMap = appRuntime.ring.ipHostMap
+  val ip2HostMap = ring.ipHostMap
   var isDone = false
 
   def startCount() {
@@ -135,15 +137,17 @@ class AckCounter(appRuntime: AppRuntime, cmdID: Int, ips: Seq[String]) extends L
         // if all nodes acked cmdID, pin message server
         if (nodesNotAcked.isEmpty) {
           isDone = true
-          info("AckedNodeCounter: cmdID, " + cmdID + ", all nodes acked")
+          info("AckedNodeCounter: cmdID - %d all nodes acked".format(cmdID))
           stop()
 
-          // pin message server
-          val msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort)
-          if (!msClient.sendMessage(AllNodesACKedPrepareMessage(cmdID))) {
-            error("AckedNodeCounter: message server is not reachable")
-            if (!appRuntime.nextMessageServer.isDefined) {
-              error("AckedNodeCounter: couldn't find next message server, exit...");
+          scala.actors.Actor.actor {
+            // pin message server
+            val msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort)
+            if (!msClient.sendMessage(AllNodesACKedPrepareMessage(cmdID))) {
+              error("AckedNodeCounter: message server is not reachable")
+              if (!appRuntime.nextMessageServer.isDefined) {
+                error("AckedNodeCounter: couldn't find next message server, exit...");
+              }
             }
           }
         }
