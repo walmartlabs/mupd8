@@ -85,9 +85,11 @@ class MessageServerClient(serverHost: Host, serverPort: Int, timeout: Int = 2000
 
 class LocalMessageServerClient(val serverHost: String, serverPort: Int, timeout: Int = 2000) extends Logging {
 
+  var stopFlag = false
+
   def sendMessage(msg: Message): Boolean = synchronized {
     def _sendMessage(retryCount: Int, msg: Message): Boolean = {
-      if (retryCount == 0) {
+      if (stopFlag || retryCount == 0) {
         false
       } else {
         try {
@@ -123,6 +125,10 @@ class LocalMessageServerClient(val serverHost: String, serverPort: Int, timeout:
     }
 
     _sendMessage(6, msg)
+  }
+
+  def stop() = {
+    stopFlag = true
   }
 
 }

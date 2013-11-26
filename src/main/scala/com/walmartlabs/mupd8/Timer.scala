@@ -17,96 +17,139 @@
 
 package com.walmartlabs.mupd8
 
-import scala.actors._
-import scala.actors.Actor._
 import grizzled.slf4j.Logging
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
+import java.util.TimerTask
 
-object Timer extends Logging {
-  private var _timeout = -1L
-  private var _cmdID = -1
-  private var future: ScheduledFuture[_] = null
+class SendMessage(appRuntime: AppRuntime, cmdID: Int, ips: IndexedSeq[String], port: Int, msg: Message, timeout: Int) extends Logging {
+  val timer = new java.util.Timer()
+  val ip2HostMap = appRuntime.ring.ipHostMap // keep a copy of map in case it is changed
+  val lock = new Object()
+  var nodesNotResponsed: Set[String] = ips.toSet
+  var nodesFailed: Set[String] = null
 
-  private val timerScheduler = Executors.newScheduledThreadPool(0);
+  class Sender(val ip: String) extends Runnable {
+    val lmsclient = new LocalMessageServerClient(ip, port)
 
-  def startTimer(cmdID: Int, timeout: Long, f: () => Unit) {
-    _timeout = timeout
-    _cmdID = cmdID
-    info("Timer starts: cmdID = " + _cmdID + ", timeout = " + _timeout)
-    if (future != null && !future.isDone()) future.cancel(true)
-    future = timerScheduler.schedule(new Runnable() {def run() {f()}}, timeout, TimeUnit.MILLISECONDS)
-  }
-
-  def stopTimer(cmdID: Int, reason: AnyRef) {
-    info("Timer stops: cmdID = " + _cmdID + ", reason = " + reason)
-    future.cancel(false)
-  }
-}
-
-// AckedNodeCounter counts how many nodes already ACK Prepare[Add|Remove]HostMessage
-// and Update[Add|Remove]HostMessage. And if left nodes to ACK set is empty, pin message server
-abstract class AckedNodeCounterMessage
-case class StartCounter(cmdID: Int, appruntime: AppRuntime, hosts: IndexedSeq[String], _mshost: Host, _msport: Int) extends AckedNodeCounterMessage
-case class CountPrepareACK(cmdID: Int, ip: String) extends AckedNodeCounterMessage
-object AckedNodeCounter extends Actor with Logging {
-  private var currentCmdID = -1
-  var nodesNotAcked = scala.collection.immutable.Set[String]()
-  private var mshost: Host = null
-  private var msport: Int = -1
-  private var appRuntime: AppRuntime = null
-
-  def act {
-    react {
-      // reset/start counter
-      case StartCounter(cmdID, app, hosts, _mshost, _msport) =>
-        appRuntime = app
-        if (cmdID < currentCmdID)
-          error("AckedNodeCounter: cmdID, " + cmdID + ", expired; current cmdID = " + currentCmdID)
-        else {
-          info("AckedNodeCounter: Start counter for cmdID, " + cmdID)
-          currentCmdID = cmdID
-          nodesNotAcked = null
-          nodesNotAcked = hosts.toSet
-          debug("CountPrepareACK: cmdID " + cmdID + " - nodesNotAcked = " + nodesNotAcked)
-          mshost = _mshost
-          msport = _msport
+    override def run() = {
+      if (!lmsclient.sendMessage(msg)) {
+        val t = if (ip2HostMap.contains(ip)) ip2HostMap(ip) else ip
+        info("SendNewRing: cmdID " + cmdID + " - send " + msg + " to " + t + " fails")
+        lock.synchronized {
+          nodesFailed = nodesFailed + ip
         }
-        act
-
-      // count acked node
-      case CountPrepareACK(cmdID, ip) =>
-        if (cmdID < currentCmdID)
-          error("AckedNodeCounter: cmdID, " + cmdID + ", expired; current cmdID = " + currentCmdID)
-        else if (cmdID > currentCmdID)
-          warn("AckedNodeCounter: cmdID, " + cmdID + ", hasn't been started")
-        else {
-          // clear host
-          nodesNotAcked = nodesNotAcked - ip
-          info("AckedNodeCounter: CountPrepareACK - updated nodesNotAcked = " + nodesNotAcked)
-
-          // if all nodes acked cmdID, pin message server
-          if (nodesNotAcked.isEmpty) {
-            info("AckedNodeCounter: cmdID, " + cmdID + ", all nodes acked")
-            // Stop timer
-            Timer.stopTimer(cmdID, "Prepare update ring is done")
-
-            // pin message server
-            val msClient = new MessageServerClient(mshost, msport)
+      }
+      lock.synchronized {
+        nodesNotResponsed = nodesNotResponsed - ip
+        if (nodesNotResponsed.isEmpty) {
+          timer.cancel()
+          if (!nodesFailed.isEmpty) {
+            // send allDone to message server
+            val msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort)
             if (!msClient.sendMessage(AllNodesACKedPrepareMessage(cmdID))) {
-              error("AckedNodeCounter: message server is not reachable")
-              if (!appRuntime.nextMessageServer.isDefined) {
-                error("AckedNodeCounter: couldn't find next message server, exit...");
-              }
+              // cannot reach itself, exit
+              error("SendMessage: message server is not reachable, exit...")
+              System.exit(-1)
             }
-            currentCmdID = -1
           }
         }
-        act
+      }
+    }
 
-      case "EXIT" =>
-        info("Exit AckedNodeCounter")
+    def stop() {
+      lmsclient.stop()
     }
   }
+  val senders = ips map { new Sender(_) }
+  val senderThreads = senders map { new Thread(_) }
+
+  def send() {
+    senderThreads.foreach(_.start())
+
+    if (timeout > 0) {
+      timer.schedule(new TimerTask() {
+        override def run() {
+          val nodesToRemove = nodesFailed ++ nodesNotResponsed
+
+          if (!nodesToRemove.isEmpty) {
+            info("SendNewRing: failed to send new ring to couple node, send NodeChangeMessage to messageserver")
+            val msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort)
+            if (!msClient.sendMessage(NodeChangeMessage(Set.empty, nodesToRemove map (ip => Host(ip, ip2HostMap(ip)))))) {
+              // cannot reach message server on same node
+              error("SendMessage: system is in a very wrong status, exit...")
+              System.exit(-1)
+            }
+          }
+        }
+      }, timeout)
+    }
+  }
+
+  def stop() {
+    timer.cancel()
+    senders.foreach(_.stop())
+    senderThreads.foreach(_.interrupt())
+  }
 }
+
+class AckCounter(appRuntime: AppRuntime, cmdID: Int, ips: Seq[String]) extends Logging {
+  val timer = new java.util.Timer()
+  var nodesNotAcked = ips.toSet
+  val ip2HostMap = appRuntime.ring.ipHostMap
+  var isDone = false
+
+  def startCount() {
+    timer.schedule(new TimerTask() {
+      override def run() {
+        if (isDone) {
+          info("AckCounter - %d is already done".format(cmdID))
+        } else if (!nodesNotAcked.isEmpty) {
+          isDone = true
+          info("AckCounter: failed to receive Ack from " + nodesNotAcked)
+          val msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort)
+          if (!msClient.sendMessage(NodeChangeMessage(Set.empty, nodesNotAcked map (ip => Host(ip, ip2HostMap(ip)))))) {
+            // cannot reach message server on same node
+            error("SendMessage: system is in a very wrong status, exit...")
+            System.exit(-1)
+          }
+        }
+      }
+    }, 90 * 1000)
+  }
+
+  def stop() {
+    timer.cancel()
+  }
+
+  def count(cmd: Int, ip: String) {
+    if (cmd < cmdID) {
+      error("AckCounter: cmdID, " + cmd + ", expired; current cmdID = " + cmdID)
+    } else if (cmd > cmdID) {
+      warn("AckCounter: cmdID, " + cmd + ", hasn't been started")
+    } else if (isDone) {
+      info("AckCounter: cmdID: %d - this counter is finished".format(cmdID))
+    } else {
+      this.synchronized {
+        nodesNotAcked = nodesNotAcked - ip
+        debug("AckCounter: CountPrepareACK - updated nodesNotAcked = " + nodesNotAcked)
+
+        // if all nodes acked cmdID, pin message server
+        if (nodesNotAcked.isEmpty) {
+          isDone = true
+          info("AckedNodeCounter: cmdID, " + cmdID + ", all nodes acked")
+          stop()
+
+          // pin message server
+          val msClient = new MessageServerClient(appRuntime.messageServerHost, appRuntime.messageServerPort)
+          if (!msClient.sendMessage(AllNodesACKedPrepareMessage(cmdID))) {
+            error("AckedNodeCounter: message server is not reachable")
+            if (!appRuntime.nextMessageServer.isDefined) {
+              error("AckedNodeCounter: couldn't find next message server, exit...");
+            }
+          }
+        }
+      }
+    }
+  }
+
+}
+

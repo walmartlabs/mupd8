@@ -38,6 +38,7 @@ import scala.util.Success
 import scala.util.Try
 import java.net.ServerSocket
 import annotation.tailrec
+import java.util.TimerTask
 
 /* Message Server for whole cluster */
 class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, Source], isTest: Boolean = false) extends Thread with Logging {
@@ -48,6 +49,8 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
   var ring: HashRing = if (appRuntime != null) appRuntime.ring else null
   var lastMessageServer: Host = null
   var keepRunning = true
+  var sender: SendMessage = null
+  var ackCounter: AckCounter = null
 
   setName("MessageServer")
 
@@ -56,12 +59,12 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
     appRuntime.messageServerHost = appRuntime.self
   }
 
-  MessageSender.start
-  AckedNodeCounter.start
   PingCheck.start
   lastCmdID = 0
-  if (ring != null)
-    MessageSender ! SendMessageToNode(lastCmdID, ring.ips.filter(ip => lastMessageServer == null || ip.compareTo(lastMessageServer.ip) != 0), (port + 1), NewMessageServerMessage(lastCmdID, appRuntime.self), port)
+  if (ring != null) {
+    sender = new SendMessage(appRuntime, lastCmdID, ring.ips.filter(ip => lastMessageServer == null || ip.compareTo(lastMessageServer.ip) != 0), (port + 1), NewMessageServerMessage(lastCmdID, appRuntime.self), 90 * 1000)
+    sender.send()
+  }
 
   /* socket server to communicate clients */
   override def run() {
@@ -106,20 +109,14 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
 
               if (!isTest) {
                 info("NodeChangeMessage: CmdID " + lastCmdID + " - Sending " + ring + " to " + ring.ips.map(ring.ipHostMap(_)))
-                // start timer and ackcounter
-                // reset Timer
-                Timer.startTimer(lastCmdID, 120000L, () => {
-                  val notAckedNodes = AckedNodeCounter.nodesNotAcked
-                  // not all nodes send ack message back
-                  info("NodeChangeMessage: lastCmdID - " + notAckedNodes + " TIMEOUT")
-                  val msClient = new MessageServerClient(appRuntime.messageServerHost, port)
-                  msClient.sendMessage(NodeChangeMessage(Set.empty, notAckedNodes.map(ip => Host(ip, ring.ipHostMap(ip)))))
-                })
-                // reset counter
-                AckedNodeCounter ! StartCounter(lastCmdID, appRuntime, ring.ips, appRuntime.messageServerHost, port)
+                if (ackCounter != null) ackCounter.stop()
+                ackCounter = new AckCounter(appRuntime, lastCmdID, ring.ips)
+                ackCounter.startCount()
 
                 // Send prepare ring update message
-                MessageSender ! SendMessageToNode(lastCmdID, ring.ips, (port + 1), PrepareNodeChangeMessage(lastCmdID, ring.hash, ring.ips, ring.ipHostMap), port)
+                if (sender == null) sender.stop()
+                sender = new SendMessage(appRuntime, lastCmdID, ring.ips, (port + 1), PrepareNodeChangeMessage(lastCmdID, ring.hash, ring.ips, ring.ipHostMap), 90 * 1000)
+                sender.send()
               }
             } else {
               info("Messageserver: hosts_to_add" + hosts_to_add + " and hosts_to_remove" + hosts_to_remove + " are changed already.")
@@ -152,14 +149,24 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
               }
             }
 
-          case PrepareNodeChangeDoneMessage(cmdID, host) =>
-            info("MessageServer: Receive PrepareNodeChangeDoneMessage - " + (cmdID, host) + " from " + remote)
-            AckedNodeCounter ! CountPrepareACK(cmdID, host)
+          case PrepareNodeChangeDoneMessage(cmdID, hostip) =>
+            info("MessageServer: Receive PrepareNodeChangeDoneMessage - " + (cmdID, hostip) + " from " + remote)
+            if (cmdID < lastCmdID) {
+              info("PrepareNodeChangeDoneMessage is too old, igore it. - " + cmdID)
+            } else {
+              ackCounter.count(cmdID, hostip)
+            }
 
           case AllNodesACKedPrepareMessage(cmdID: Int) =>
             info("MessageServer: AllNodesACKedPrepareMessage received, cmdID = " + cmdID)
-            // send update ring message to Nodes
-            MessageSender ! SendMessageToNode(cmdID, ring.ips, port + 1, UpdateRing(cmdID), port)
+            if (cmdID < lastCmdID) {
+              info("AllNodesAckedPrepareMessage %d received, but lastcmdID is %d".format(cmdID, lastCmdID))
+            } else {
+              // send update ring message to Nodes
+              if (sender != null) sender.stop()
+              sender = new SendMessage(appRuntime, cmdID, ring.ips, port + 1, UpdateRing(cmdID), 90 * 1000)
+              sender.send()
+            }
 
           case IPCHECKDONE =>
             info("MessageServer: IP CHECK received")
@@ -211,7 +218,6 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
 
   def shutdown() = {
     info("Initiate shutdown")
-    MessageSender ! "EXIT"
     try {
       keepRunning = false
       interrupt
@@ -220,42 +226,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
   }
 
   /* actor sending new ring to nodes in cluster */
-  abstract class ToNodeMessage
-  case class SendMessageToNode(cmdID: Int, ips: IndexedSeq[String], port: Int, msg: Message, msport: Int) extends ToNodeMessage
-  object MessageSender extends Actor {
-    private val stop = false
-
-    override def act() {
-      react {
-        // msport: port of message server
-        case SendMessageToNode(cmdID, ips, port, msg, msport) => // TODO: Make send message async
-          var nodesFailedToSend: Set[Host] = Set.empty
-          ips foreach (ip =>
-            // check it is still latest command and hash ring
-            if (cmdID >= lastRingUpdateCmdID) {
-              info("SendNewRing: Sending cmdID " + cmdID + ", msg = " + msg + " to endpoint " + (ring.ipHostMap(ip), port))
-              val lmsclient = new LocalMessageServerClient(ip, port)
-              if (!lmsclient.sendMessage(msg)) {
-                // collect host fails
-                info("SendNewRing: report " + ring.ipHostMap(ip) + " fails")
-                nodesFailedToSend = nodesFailedToSend + Host(ip, ring.ipHostMap(ip))
-              }
-            } else info("SendNewRing: skip non-currernt command - " + lastRingUpdateCmdID + ", " + ring))
-          if (!nodesFailedToSend.isEmpty){
-            info("SendNewRing: failed to send new ring to couple node, send NodeChangeMessage to messageserver")
-            val msClient = new MessageServerClient(appRuntime.messageServerHost, msport)
-            if (!msClient.sendMessage(NodeChangeMessage(Set.empty, nodesFailedToSend))) {
-
-            }
-          }
-          act()
-        case "EXIT" =>
-          info("SendNewRing receive EXIT")
-        case msg =>
-          error("MSG - " + msg + " is not supported now")
-      }
-    }
-  }
+  /* send message async and timeout */
 
   class SendStartSource(sourceName: String, ipToStart: String) extends Actor {
     override def act() {
