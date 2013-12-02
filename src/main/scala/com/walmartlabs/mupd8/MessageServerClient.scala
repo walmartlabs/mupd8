@@ -44,6 +44,7 @@ class MessageServerClient(appRuntime: AppRuntime, timeout: Int = 2000, server: H
           socket.setSoTimeout(timeout)
           trace("MessageServerClient: connected")
           out.writeObject(msg)
+          out.flush()
           msg match {
             case m: MessageWOACK =>
 
@@ -79,8 +80,9 @@ class MessageServerClient(appRuntime: AppRuntime, timeout: Int = 2000, server: H
       val host = Host(s.getLocalAddress.getHostAddress, s.getLocalAddress.getHostName)
       val out = new ObjectOutputStream(s.getOutputStream)
       out.writeObject(IPCHECKDONE)
-      out.close
-      s.close
+      out.flush()
+      s.shutdownOutput()
+      s.close()
       Some(host)
     } catch {
       case e: Exception =>
@@ -112,6 +114,7 @@ class LocalMessageServerClient(val serverHost: String, serverPort: Int, timeout:
           socket.setSoTimeout(timeout)
           trace("LocalMessageServerClient: connected")
           out.writeObject(msg)
+          out.flush()
           msg match {
             case m: MessageWOACK =>
 
