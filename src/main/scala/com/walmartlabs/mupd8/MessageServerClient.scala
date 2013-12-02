@@ -107,6 +107,7 @@ class LocalMessageServerClient(val serverHost: String, serverPort: Int, timeout:
             case PING() => trace("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
             case _ => info("LocalMessageServerClient: send " + msg + " to server: " + serverHost + ", " + serverPort)
           }
+          // have to use socket instead of nio here to support timeout
           val socket = new Socket()
           socket.connect(new InetSocketAddress(serverHost, serverPort), timeout)
           val out = new ObjectOutputStream(socket.getOutputStream)
