@@ -276,17 +276,18 @@ class AppRuntime(appID: Int,
           getSlate(key)
         else {
           val slate = fetchURL("http://" + dest + ":" + (appStatic.statusPort + 300) + s)
-          if (slate == None) {
-            warn("Can't reach dest(" + dest + "); going to report " + dest + " fails.")
-            if (!msClient.sendMessage(NodeChangeMessage(Set.empty, Set(Host(dest, ring.ipHostMap(dest)))))) {
-              error("SlateUrlServer: message server is down")
-              if (!nextMessageServer().isDefined) {
-                error("SlateUrlServer: cannot find node to be next message server, exit...")
-                System.exit(-1)
-              }
-            }
+          slate match {
+            case None =>
+              warn("Can't reach dest(" + dest + "); going to report " + dest + " fails.")
+              val performerId = appStatic.performerName2ID(key._1)
+              val host = ring(PerformerPacket.getKey(performerId, key._2))
+              val future = new Later[SlateObject]
+              storeIO.fetchSlates(key._1, key._2, p => future.set(p))
+              val bytes = new ByteArrayOutputStream()
+              getSlateBuilder(performerId).toBytes(future.get(), bytes)
+              Some(bytes.toByteArray())
+            case Some(s) => Some(s)
           }
-          slate
         }
       }
     } else if (tok(2) == "ring") {
