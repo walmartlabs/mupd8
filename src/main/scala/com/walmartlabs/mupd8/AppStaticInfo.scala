@@ -32,6 +32,7 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
 
   val config = configDir map { p => new application.Config(new File(p)) } getOrElse new application.Config(sysConfig.get, appConfig.get)
   val performers = loadConfig.convertPerformers(config.workerJSONs)
+  debug("performers = " + performers)
   val statusPort = Option(config.getScopedValue(Array("mupd8", "mupd8_status", "http_port"))).getOrElse(new java.lang.Integer(6001)).asInstanceOf[Number].intValue()
   val performerName2ID = Map(performers.map(_.name).zip(0 until performers.size): _*)
   debug("performerName2ID = " + performerName2ID)

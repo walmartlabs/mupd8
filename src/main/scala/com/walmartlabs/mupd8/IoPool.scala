@@ -54,8 +54,8 @@ trait IoPool extends Logging{
 }
 
 class NullPool extends IoPool {
-  def fetchSlates(name: String, key: Key, next: Option[Array[Byte]] => Unit) { next(None) }
-  def batchWrite(columnName: String, key: Key, slate: Array[Byte]): Boolean = true
+  override def fetchSlates(name: String, key: Key, next: Option[Array[Byte]] => Unit) { next(None) }
+  override def batchWrite(columnName: String, key: Key, slate: Array[Byte]): Boolean = true
 }
 
 object CassandraPool {
@@ -103,6 +103,8 @@ class CassandraPool(
   val pool = new ThreadPoolExecutor(10, 50, 5, TimeUnit.SECONDS, new LinkedBlockingQueue[Runnable]) // TODO: We can drop events unless we have a Rejection Handler or LinkedQueue
 
   // fetch slates and call next on slates
+  // name: performer name
+  // key: slate key
   override def fetchSlates(name: String, key: Key, next: Option[Array[Byte]] => Unit) {
     pool.submit(run {
       val start = java.lang.System.nanoTime()

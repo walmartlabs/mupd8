@@ -96,6 +96,7 @@ class UpdaterFactory[U <: binary.Updater](val updaterType : Class[U]) {
 object Mupd8Main extends Logging {
 
   def main(args: Array[String]) {
+    info("Mupd8 is starting ...")
     Thread.setDefaultUncaughtExceptionHandler(new Misc.TerminatingExceptionHandler())
 
     val syntax = Map("-s" -> (1, "Sys config file name"),
