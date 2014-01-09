@@ -43,7 +43,7 @@ class AppRuntime(appID: Int,
     override def run() {
       java.lang.System.gc()
     }
-  }, 60 * 1000, 60 * 1000)
+  }, 5 * 60 * 1000, 5 * 60 * 1000)
 
   val rand = new Random(System.currentTimeMillis())
   private val sourceThreads: mutable.ListBuffer[(String, List[java.lang.Thread])] = new mutable.ListBuffer
