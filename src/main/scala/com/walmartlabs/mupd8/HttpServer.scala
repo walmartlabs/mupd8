@@ -116,7 +116,7 @@ class HttpServerHandler(mapper : String => Option[Array[Byte]]) extends SimpleCh
       debug("GET " + uri)
       mapper(uri) map { response =>
         // TODO Set appropriate Content-Type (implement MIME magic).
-        val contentType = if (response.startsWith("{")) "application/json; charset-UTF-8" else "application/octet-stream"
+        val contentType = if (response.startsWith("{")) "application/json" else "application/octet-stream"
         val res = new DefaultHttpResponse(HTTP_1_1, OK)
         res.setHeader("Content-Type", contentType)
         val content = ChannelBuffers.wrappedBuffer(response)
