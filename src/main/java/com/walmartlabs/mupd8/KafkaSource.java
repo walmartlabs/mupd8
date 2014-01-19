@@ -1,9 +1,5 @@
 package com.walmartlabs.mupd8;
 
-/**
- * Created by aanand1 on 14/01/14.
- */
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +16,13 @@ import org.slf4j.LoggerFactory;
 import com.walmartlabs.mupd8.application.Mupd8DataPair;
 import com.walmartlabs.mupd8.application.Mupd8Source;
 
+/* Implements Mupd8Source to consume data from Kafka
+   KafkaSource requires
+   1. Cluster zookeeper connect string (eg: "host1:2181,host2:2181)
+   2. Consumer Group Name
+   3. Kafka topic name
+   4.[Optional]Key to be extracted from a json message
+ */
 public class KafkaSource implements Mupd8Source  {
 
     private static final Logger LOG = LoggerFactory.getLogger(KafkaSource.class);
@@ -31,23 +34,20 @@ public class KafkaSource implements Mupd8Source  {
     private String key = null;
     ConsumerConnector consumerConnector = null;
     ObjectMapper objMapper = null;
-    public KafkaSource(List<String> args){
+    public KafkaSource(List<String> args) throws Exception{
         zkConnect = args.get(0);
         groupId = args.get(1);
         topic = args.get(2);
-        key = args.get(3);
+        if(args.size() > 3){
+            key = args.get(3);
+        }
         consumerIterator = getIterator();
         objMapper=new ObjectMapper();
     }
 
     @Override
     public boolean hasNext() {
-        try{
-            return consumerIterator.hasNext();
-        }catch(ConsumerTimeoutException e){
-            LOG.error("Consumer timed out",e);
-        }
-        return false;
+        return consumerIterator.hasNext();
     }
 
     @Override
@@ -60,20 +60,22 @@ public class KafkaSource implements Mupd8Source  {
     }
 
     private String getValue(String key, byte[] msg){
-        try{
-            JsonNode jsonNode = objMapper.readTree(msg);
-            String[] keyArr = key.split(":");
-            for(String field: keyArr){
-                jsonNode = jsonNode.get(field);
+        if(key != null){
+            try{
+                JsonNode jsonNode = objMapper.readTree(msg);
+                String[] keyArr = key.split(":");
+                for(String field: keyArr){
+                    jsonNode = jsonNode.get(field);
+                }
+                return jsonNode.asText();
+            }catch(Exception e){
+                LOG.info("Failed to get value:", e);
             }
-            return jsonNode.asText();
-        }catch(Exception e){
-            LOG.info("Failed to get value:", e);
         }
         return null;
     }
 
-    private ConsumerIterator<byte[],byte[]> getIterator(){
+    private ConsumerIterator<byte[],byte[]> getIterator() throws Exception{
         consumerConnector = Consumer.createJavaConsumerConnector(getConsumerConfig());
         Map<String,Integer> topicCountMap = new HashMap<String, Integer>();
         topicCountMap.put(topic, 1);
@@ -81,10 +83,14 @@ public class KafkaSource implements Mupd8Source  {
         List<KafkaStream<byte[], byte[]>> streams = topicStreamMap.get(topic);
         if(streams != null && streams.size() > 0){
             return streams.get(0).iterator();
+        }else{
+            String mesg = "Couldn't create a consumer iterator. No topic found";
+            LOG.error(mesg);
+            throw new Exception(mesg);
         }
-        return null;
     }
 
+    //TODO Add option to configure consumer through a config file
 
     private ConsumerConfig getConsumerConfig(){
         Properties props = new Properties();

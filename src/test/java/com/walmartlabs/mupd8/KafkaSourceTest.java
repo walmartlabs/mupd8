@@ -17,6 +17,7 @@ import java.util.Properties;
 import kafka.server.KafkaServerStartable;
 import kafka.utils.Time;
 import org.apache.curator.test.TestingServer;
+import org.junit.Test;
 
 public class KafkaSourceTest extends TestCase {
     private int port = 9092;
@@ -25,16 +26,16 @@ public class KafkaSourceTest extends TestCase {
     private KafkaServerStartable kafkaServer;
     private KafkaSource kafkaSource;
     private File logDir;
+    private String topic = "mupd8-test-topic";
     private String key = "Kf1";
     private String val = "data1";
     private String mesg = "{ \"" + key + "\" : \"" + val + "\" }";
-    private String topic = "mupd8-test-topic";
 
     public void setUp() throws Exception{
         zkServer = new TestingServer();
         logDir = Files.createTempDir();
         kafkaServer = startKafkaServer(zkServer.getConnectString(), logDir.getAbsolutePath());
-        produceMessage(topic,mesg);
+        produceJsonMessage();
         kafkaSource = getKafkaSource();
     }
 
@@ -45,19 +46,22 @@ public class KafkaSourceTest extends TestCase {
         logDir.delete();
     }
 
-    public void testHasNext(){
+    public void testHasNext() throws Exception {
         assertTrue("HasNext should return true when data", kafkaSource.hasNext());
         assertTrue("HasNext should not consume data",kafkaSource.hasNext());
-        assertTrue("HasNext should not consume data",kafkaSource.hasNext());
-
     }
 
-    public void testNext(){
+    public void testNext() throws Exception{
+        assertTrue("HasNext should return true when data", kafkaSource.hasNext());
         Mupd8DataPair mupd8DataPair = kafkaSource.getNextDataPair();
         assertEquals("Next should return the correct message",val,mupd8DataPair._key.toString());
+        produceNonJsonMessage();
+        mupd8DataPair = kafkaSource.getNextDataPair();
+        assertEquals("Next should return the next correct message",val, new String(mupd8DataPair._value));
+        assertNull("Next should return the null val for missing key", mupd8DataPair._key);
     }
 
-    private KafkaSource getKafkaSource(){
+    private KafkaSource getKafkaSource() throws Exception {
         List<String> argsList = new ArrayList<String>();
         argsList.add(zkServer.getConnectString());
         argsList.add("test-mupd8-consumer");
@@ -78,6 +82,15 @@ public class KafkaSourceTest extends TestCase {
         return server;
     }
 
+    private void produceJsonMessage(){
+        produceMessage(topic,mesg);
+    }
+
+    private void produceNonJsonMessage(){
+        produceMessage(topic,val);
+    }
+
+    //Produces messages and also creates topic if not already created
     private void produceMessage(String topic, String mesg){
         Properties props = new Properties();
         props.put("metadata.broker.list", "localhost:9092");
