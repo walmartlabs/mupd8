@@ -31,7 +31,7 @@ public class KafkaSourceTest extends TestCase {
     private String val = "data1";
     private String mesg = "{ \"" + key + "\" : \"" + val + "\" }";
 
-    public void setUp() throws Exception{
+    public void setUp() throws Exception {
         zkServer = new TestingServer();
         logDir = Files.createTempDir();
         kafkaServer = startKafkaServer(zkServer.getConnectString(), logDir.getAbsolutePath());
@@ -39,19 +39,19 @@ public class KafkaSourceTest extends TestCase {
         kafkaSource = getKafkaSource();
     }
 
-    public void tearDown() throws Exception{
+    public void tearDown() throws Exception {
         kafkaSource.closeSource();
         kafkaServer.shutdown();
         zkServer.stop();
         logDir.delete();
     }
 
-    public void testHasNext() throws Exception {
+    public void testHasNext()  {
         assertTrue("HasNext should return true when data", kafkaSource.hasNext());
         assertTrue("HasNext should not consume data",kafkaSource.hasNext());
     }
 
-    public void testNext() throws Exception{
+    public void testNext() {
         assertTrue("HasNext should return true when data", kafkaSource.hasNext());
         Mupd8DataPair mupd8DataPair = kafkaSource.getNextDataPair();
         assertEquals("Next should return the correct message",val,mupd8DataPair._key.toString());
@@ -61,7 +61,7 @@ public class KafkaSourceTest extends TestCase {
         assertNull("Next should return the null val for missing key", mupd8DataPair._key);
     }
 
-    private KafkaSource getKafkaSource() throws Exception {
+    private KafkaSource getKafkaSource()  {
         List<String> argsList = new ArrayList<String>();
         argsList.add(zkServer.getConnectString());
         argsList.add("test-mupd8-consumer");
