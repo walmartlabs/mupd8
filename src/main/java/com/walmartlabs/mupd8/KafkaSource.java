@@ -44,13 +44,31 @@ public class KafkaSource implements Mupd8Source  {
         if(args.size() > 3){
             key = args.get(3);
         }
-        initialize(0);
+        initialize();
         objMapper=new ObjectMapper();
     }
 
     @Override
     public boolean hasNext() {
-        return hasNext(0);
+        boolean done = false;
+        boolean ret = false;
+        int retry = 0;
+        while(!done){
+            if(retry>MAX_RETRY){
+                initialize();
+                retry = 0;
+            }
+            try {
+                ret = consumerIterator.hasNext();
+                done = true;
+            } catch (Exception e) {
+                String mesg = "Consumer iterator hasNext throws exception";
+                LOG.error(mesg, e);
+                threadSleep(retry++,mesg);
+                done = false;
+            }
+        }
+        return ret;
     }
 
     @Override
@@ -119,36 +137,25 @@ public class KafkaSource implements Mupd8Source  {
         return new ConsumerConfig(props);
     }
 
-    private boolean hasNext(int retry){
-        try {
-            return consumerIterator.hasNext();
-        } catch (Exception e) {
-            String mesg = "Error thrown by consumer iterator has next";
-            LOG.error(mesg, e);
-            threadSleep(retry,mesg);
-            return hasNext(retry+1);
-        }
-    }
 
-    private void initialize(int retry){
+    private void initialize(){
+        int retry=0;
         consumerIterator = getIterator();
-        if(consumerIterator == null){
-            threadSleep(retry, "Failed to initialize consumer iterator");
-            initialize(retry + 1);
+        while(consumerIterator == null){
+            threadSleep(retry++, "Failed to initialize consumer iterator");
+            closeSource();
+            consumerIterator = getIterator();
         }
     }
 
     private void threadSleep(int retry, String mesg){
-        int retCount = (retry < MAX_RETRY) ? retry:MAX_RETRY;
-        double sleepTimeinMs = sleepTime*Math.pow(2,retCount);
+        int retCount = (retry < MAX_RETRY) ? retry : MAX_RETRY;
+        double sleepTimeinMs = sleepTime*(1 << retCount);
         LOG.error(mesg + " retrying.. in " + sleepTimeinMs + " retry count ");
         try {
             Thread.sleep((long) sleepTimeinMs);
         } catch (InterruptedException e) {
             LOG.error("Thread sleep interrupted",e);
-        }
-        if(retry == MAX_RETRY){
-            initialize(0);
         }
     }
 

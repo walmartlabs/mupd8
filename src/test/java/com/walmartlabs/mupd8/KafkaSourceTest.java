@@ -7,7 +7,6 @@ import junit.framework.TestCase;
 import kafka.producer.KeyedMessage;
 import kafka.producer.ProducerConfig;
 import kafka.server.KafkaConfig;
-import kafka.server.KafkaServer;
 import kafka.javaapi.producer.Producer;
 
 import java.util.List;
@@ -15,9 +14,7 @@ import java.util.ArrayList;
 import java.util.Properties;
 
 import kafka.server.KafkaServerStartable;
-import kafka.utils.Time;
 import org.apache.curator.test.TestingServer;
-import org.junit.Test;
 
 public class KafkaSourceTest extends TestCase {
     private int port = 9092;
