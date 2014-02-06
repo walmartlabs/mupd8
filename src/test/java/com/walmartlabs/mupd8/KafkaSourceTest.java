@@ -1,24 +1,23 @@
 package com.walmartlabs.mupd8;
 
 import java.io.File;
-import com.google.common.io.Files;
-import com.walmartlabs.mupd8.application.Mupd8DataPair;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+
 import junit.framework.TestCase;
+import kafka.javaapi.producer.Producer;
 import kafka.producer.KeyedMessage;
 import kafka.producer.ProducerConfig;
 import kafka.server.KafkaConfig;
-import kafka.javaapi.producer.Producer;
-
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Properties;
-
 import kafka.server.KafkaServerStartable;
+
 import org.apache.curator.test.TestingServer;
 
+import com.google.common.io.Files;
+import com.walmartlabs.mupd8.application.Mupd8DataPair;
+
 public class KafkaSourceTest extends TestCase {
-    private int port = 9092;
-    private int brokerId = 1;
     private TestingServer zkServer;
     private KafkaServerStartable kafkaServer;
     private KafkaSource kafkaSource;
@@ -28,6 +27,7 @@ public class KafkaSourceTest extends TestCase {
     private String val = "data1";
     private String mesg = "{ \"" + key + "\" : \"" + val + "\" }";
 
+    @Override
     public void setUp() throws Exception {
         zkServer = new TestingServer();
         logDir = Files.createTempDir();
@@ -36,6 +36,7 @@ public class KafkaSourceTest extends TestCase {
         kafkaSource = getKafkaSource();
     }
 
+    @Override
     public void tearDown() throws Exception {
         kafkaSource.closeSource();
         kafkaServer.shutdown();
@@ -95,8 +96,8 @@ public class KafkaSourceTest extends TestCase {
         props.put("producer.type", "async");
         props.put("batch.size", "1");
         ProducerConfig config = new ProducerConfig(props);
-        Producer producer = new Producer<String, String>(config);
-        producer.send(new KeyedMessage(topic,mesg));
+        Producer<String, String> producer = new Producer<String, String>(config);
+        producer.send(new KeyedMessage<String, String>(topic,mesg));
     }
 
 }
