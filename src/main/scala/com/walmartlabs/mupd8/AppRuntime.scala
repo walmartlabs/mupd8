@@ -318,7 +318,7 @@ class AppRuntime(appID: Int,
       error("Failed to send join message to message server, exiting...")
       System.exit(-1)
     } else {
-      if (!msClient.sendMessage(NodeChangeMessage(Set(self), Set.empty))) {
+      if (!msClient.sendMessage(NodeChangeMessage(Set(self), Set.empty, self + " wants to join cluster"))) {
         warn("Connecting to message server failed")
         Thread.sleep(500)
         trySendNodeJoinMessageToMessageServer(time - 500)

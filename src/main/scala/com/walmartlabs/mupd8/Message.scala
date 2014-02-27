@@ -23,7 +23,7 @@ abstract class MessageWACK extends Message // message needs ACK
 case class ACKMessage() extends MessageWOACK
 
 // To message server
-case class NodeChangeMessage(nodes_to_add: Set[Host], nodes_to_remove: Set[Host]) extends MessageWACK  // node: Host(ip, hostname)
+case class NodeChangeMessage(nodes_to_add: Set[Host], nodes_to_remove: Set[Host], reason: String) extends MessageWACK  // node: Host(ip, hostname)
 case class PrepareNodeChangeDoneMessage(cmdID: Int, hostip: String) extends MessageWOACK         // hostToAdd: ip
 case class AllNodesACKedPrepareMessage(cmdID: Int) extends MessageWOACK
 case class ACKTIMEOUTMessage(cmdID: Int) extends MessageWACK

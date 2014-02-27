@@ -85,7 +85,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
         val out = new ObjectOutputStream(Channels.newOutputStream(channel))
         val msg = in.readObject()
         msg match {
-          case NodeChangeMessage(hosts_to_add, hosts_to_remove) =>
+          case NodeChangeMessage(hosts_to_add, hosts_to_remove, reason) =>
             out.writeObject(ACKMessage)
             info("MessageServer: received " + msg + " from " + remote)
 
@@ -108,7 +108,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
               }
 
               if (!isTest) {
-                info("NodeChangeMessage: CmdID " + lastCmdID + " - Sending " + ring + " to " + ring.ips.map(ring.ipHostMap(_)))
+                info("NodeChangeMessage: CmdID " + lastCmdID + " - Sending " + ring + " to " + ring.ips.map(ring.ipHostMap(_)) + ", " + reason)
                 if (ackCounter != null) ackCounter.stop()
                 ackCounter = new AckCounter(appRuntime, ring, lastCmdID, ring.ips)
                 ackCounter.startCount()
@@ -236,7 +236,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
         // report host fails if any exception happens
         error("SendStartSource: report " + ipToStart + " fails")
         val msClient = new MessageServerClient(appRuntime)
-        msClient.sendMessage(NodeChangeMessage(Set.empty, Set(Host(ipToStart, ring.ipHostMap(ipToStart)))))
+        msClient.sendMessage(NodeChangeMessage(Set.empty, Set(Host(ipToStart, ring.ipHostMap(ipToStart))), "SendStartSource failure"))
       }
     }
   }
@@ -258,7 +258,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
         }
         if (!failedNodes.isEmpty) {
           val msClient = new MessageServerClient(appRuntime)
-          msClient.sendMessage(NodeChangeMessage(Set.empty, failedNodes))
+          msClient.sendMessage(NodeChangeMessage(Set.empty, failedNodes, "Ping timeout"))
         }
         Thread.sleep(2000)
       }

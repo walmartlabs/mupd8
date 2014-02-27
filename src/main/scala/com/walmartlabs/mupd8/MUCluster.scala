@@ -74,7 +74,7 @@ class MUCluster[T <: MapUpdateClass[T]](self: Host,
       error("Failed to send event (" + obj + ") to destination " + dest)
       if (appRun.msClient != null) {
         error("MUCluster: Report node " + dest + " failure")
-        if (!appRun.msClient.sendMessage(NodeChangeMessage(Set.empty, Set(dest)))) {
+        if (!appRun.msClient.sendMessage(NodeChangeMessage(Set.empty, Set(dest), "MUCluster send fail"))) {
           error("MUCluster: message server is not reachable")
           if (!appRun.nextMessageServer().isDefined) {
             error("MUCluster: couldn't find next messagese, exit...")

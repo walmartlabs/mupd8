@@ -74,7 +74,7 @@ class SendMessage(appRuntime: AppRuntime, ring: HashRing, cmdID: Int, ips: Index
           if (!nodesToRemove.isEmpty) {
             info("SendNewRing: failed to send new ring to couple node, send NodeChangeMessage to messageserver")
             val msClient = new MessageServerClient(appRuntime)
-            if (!msClient.sendMessage(NodeChangeMessage(Set.empty, nodesToRemove map (ip => Host(ip, ip2HostMap(ip)))))) {
+            if (!msClient.sendMessage(NodeChangeMessage(Set.empty, nodesToRemove map (ip => Host(ip, ip2HostMap(ip))), "Send new ring failure"))) {
               // cannot reach message server on same node
               error("SendMessage: system is in a very wrong status, exit...")
               System.exit(-1)
@@ -106,9 +106,9 @@ class AckCounter(appRuntime: AppRuntime, ring: HashRing, cmdID: Int, ips: Seq[St
           info("AckCounter - %d is already done".format(cmdID))
         } else if (!nodesNotAcked.isEmpty) {
           isDone = true
-          info("AckCounter: failed to receive Ack from " + nodesNotAcked)
+          error("AckCounter: failed to receive Ack from " + nodesNotAcked)
           val msClient = new MessageServerClient(appRuntime)
-          if (!msClient.sendMessage(NodeChangeMessage(Set.empty, nodesNotAcked map (ip => Host(ip, ip2HostMap(ip)))))) {
+          if (!msClient.sendMessage(NodeChangeMessage(Set.empty, nodesNotAcked map (ip => Host(ip, ip2HostMap(ip))), "ACKCounter timeout"))) {
             // cannot reach message server on same node
             error("SendMessage: system is in a very wrong status, exit...")
             System.exit(-1)
