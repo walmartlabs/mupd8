@@ -36,6 +36,8 @@ import scala.collection.JavaConverters._
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
+import scala.concurrent._
+import ExecutionContext.Implicits.global
 import java.net.ServerSocket
 import annotation.tailrec
 import java.util.TimerTask
@@ -59,7 +61,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
     appRuntime.messageServerHost = appRuntime.self
   }
 
-  PingCheck.start
+  if (!isTest) PingCheck.start
   lastCmdID = 0
   if (ring != null) {
     sender = new SendMessage(appRuntime, ring, lastCmdID, ring.ips.filter(ip => lastMessageServer == null || ip.compareTo(lastMessageServer.ip) != 0), (port + 1), NewMessageServerMessage(lastCmdID, appRuntime.self), 90 * 1000)
@@ -244,23 +246,65 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
   // For now it only check node with sources on it
   // From there those nodes can detect other nodes' failure
   object PingCheck extends Actor {
+    private var pings: Map[Host, scala.concurrent.Future[Boolean]] = appRuntime.startedSources map { source => (source._2, future{false}) }
+    private var failureCounter: Map[Host, Int] = Map.empty
+    private var sourceNodeSet: Set[Host] = Set.empty
+    private var notFinishedNodeSet: Set[Host] = Set.empty
+
     override def act() {
       while (keepRunning) {
-        var failedNodes: Set[Host] = Set.empty
-        appRuntime.startedSources.foreach{source =>
-          // send ping message
-          val lmsClient = new LocalMessageServerClient(source._2.ip, port + 1)
-          if (!lmsClient.sendMessage(PING())) {
-            // report host fails if any exception happens
-            error("PingCheck: report " + source._2 + " fails")
-            failedNodes = failedNodes + source._2
+        // source node set can be updated after last ping check run
+        // add newly added sources
+        appRuntime.startedSources.foreach(source =>
+          if (!sourceNodeSet.contains(source._2)) {
+            sourceNodeSet += source._2
+            failureCounter += (source._2 -> 0)
+            pings += (source._2 -> future{false})})
+        // remove outdated sources
+        val stoppedSources = sourceNodeSet filter(host => appRuntime.startedSources contains host.hostname)
+        stoppedSources foreach {host => sourceNodeSet -= host; failureCounter -= host; pings -= host}
+
+        // send out PINGs
+        sourceNodeSet foreach {source =>
+          if (!notFinishedNodeSet.contains(source)) {
+            pings = pings + (source -> future{
+              val lmsClient = new LocalMessageServerClient(source.ip, port + 1)
+              if (lmsClient.sendMessage(PING())) false else true
+            })
           }
         }
+
+        // sleep 10 seconds
+        Thread.sleep(10000);
+
+        // collect PING results
+        notFinishedNodeSet = Set.empty
+        pings foreach {ping =>
+          if (!ping._2.isCompleted) {
+            failureCounter += (ping._1 -> (failureCounter(ping._1) + 1))
+            notFinishedNodeSet += ping._1
+          } else {
+            ping._2 onComplete {
+              case Success(result) =>
+                failureCounter += (if (result) (ping._1 -> 0) else (ping._1 -> (failureCounter(ping._1) + 1)))
+              case Failure(t) => print(t.getMessage)
+                failureCounter += (ping._1 -> (failureCounter(ping._1) + 1))
+            }
+          }
+        }
+
+        // analyze PING results
+        var failedNodes: Set[Host] = failureCounter.filter(counter => counter._2 > 6).map(_._1).toSet
+
+        // report failed source nodes
         if (!failedNodes.isEmpty) {
           val msClient = new MessageServerClient(appRuntime)
           msClient.sendMessage(NodeChangeMessage(Set.empty, failedNodes, "Ping timeout"))
+          // clean count for failed nodes
+          failedNodes foreach(node => failureCounter += (node -> 0))
+          // if there are nodes failed, sleep sometime for cluster adjustment
+          Thread.sleep(10000)
         }
-        Thread.sleep(2000)
       }
     }
   }
