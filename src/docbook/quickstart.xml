@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright 2011-2012 @WalmartLabs, a division of Wal-Mart Stores, Inc.
+  Copyright 2011-2014 @WalmartLabs, a division of Wal-Mart Stores, Inc.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -20,6 +20,10 @@
   <title>Starting a New Application in MUPD8</title>
   <section>
     <title>Introduction</title>
+    <para>
+        <emphasis></emphasis>
+    </para>
+    
     <para>
       Getting a new application started in the JVM <application>MUPD8</application>
       is easy.
@@ -45,9 +49,10 @@
 
     <note>
       <para>
-	The commands that follow use the following software:
+	The commands that follow use the software listed below, and were last tested against a fresh install of Mac OS X 10.9.2. If you already have the listed software installed, please skip to the section titled "Start Cassandra (4 minutes)".
 	  <itemizedlist>
-	    <listitem><para>Maven 3.0+ (already ships with Mac OS X 10.6.8)</para></listitem>
+        <listitem><para>Java</para></listitem>
+	    <listitem><para>Maven 3.0+</para></listitem>
 	    <listitem><para>Git</para></listitem>
 	    <listitem><para>curl (already ships with Mac OS X)</para></listitem>
 	  </itemizedlist>
@@ -56,48 +61,136 @@
     </note>
   </section>
   <section>
+      <title>Install Java (10 minutes, incl download time)</title>
+    <para>
+        To check if you have Java installed:
+<screen>
+<prompt>$</prompt> <userinput>java -version</userinput>
+<computeroutput>java version "1.7.0_51"
+Java(TM) SE Runtime Environment (build 1.7.0_51-b13)
+Java HotSpot(TM) 64-Bit Server VM (build 24.51-b03, mixed mode)</computeroutput>
+</screen>
+    </para>
+    <para>
+        If you do not have Java installed, you'll get a pop-up notification. Click the "More Info" button to go to the Java downloads page, and download the JDK for Mac OS X. Once the download completes, install the JDK.
+    </para>
+  </section>
+  <section>
+      <title>Install Git (8 minutes, incl download time)</title>
+      <para>
+          To check if you have Git installed. This can be done while Java is downloading.
+<screen>
+<prompt>$</prompt> <userinput>git --version</userinput>
+<computeroutput>git version 1.8.5.2 (Apple Git-48)</computeroutput>
+</screen>
+      </para>
+      <para>
+          If you do not have Git installed, you'll get a pop-up notification. Click the "Install" button to download and install the Apple Command Line Tools, which includes Git.
+      </para>
+  </section>
+  <section>
+      <title>Install Maven 3.0+ (3 minutes)</title>
+      <para>
+          Once you've verified that Java is installed, check if you have Maven installed. Java is required for Maven to run, so do not start this section if Java isn't yet fully installed.
+<screen>
+<prompt>$</prompt> <userinput>mvn -v</userinput>
+<computeroutput>Apache Maven 3.0.5 (r01de14724cdef164cd33c7c8c2fe155faf9602da; 2013-02-19 05:51:28-0800)
+:</computeroutput>
+</screen>
+      </para>
+      <para>
+          If you do not have Maven installed, you'll see "command not found". Follow the directions below to install Maven.
+      </para>
+      <note>
+          <para>
+              Be sure your JAVA_HOME is not blank.
+<screen>
+<prompt>$</prompt> <userinput>echo $JAVA_HOME</userinput>
+<computeroutput>/Library/Java/JavaVirtualMachines/jdk1.7.0_51.jdk/Contents/Home</computeroutput>
+</screen>
+        </para>
+        <para>
+            If "echo $JAVA_HOME" shows an empty path, you need to set your JAVA_HOME. Set your JAVA_HOME with these commands:
+<screen>
+<prompt>$</prompt> <userinput>printf "\nexport JAVA_HOME=$(/usr/libexec/java_home)\n\n" >> ~/.profile</userinput>
+<prompt>$</prompt> <userinput>source ~/.profile</userinput>
+</screen>
+        </para>
+      </note>
+      <para>
+          To install Maven globally for your system, start by downloading Maven from an Apache mirror
+<screen>
+<prompt>$</prompt> <userinput>curl -L 'http://www.apache.org/dyn/closer.cgi?path=/maven/maven-3/3.0.5/binaries/apache-maven-3.0.5-bin.tar.gz' |\
+grep '&lt;strong>' | head -1 | sed 's/.*&lt;strong>\(.*\)&lt;\/strong>.*/\1/' |\
+xargs -0 sudo curl -o '/usr/share/apache-maven-3.0.5-bin.tar.gz' -L</userinput>
+</screen>
+      </para>
+      <para>
+          Verify the download hash
+<screen>
+<prompt>$</prompt> <userinput>openssl md5 /usr/share/apache-maven-3.0.5-bin.tar.gz</userinput>
+<computeroutput>MD5(apache-maven-3.0.5-bin.tar.gz)= 94c51f0dd139b4b8549204d0605a5859</computeroutput>
+</screen>
+      </para>
+      <para>
+          Decompress the download
+<screen>
+<prompt>$</prompt> <userinput>(cd /usr/share &amp;&amp; sudo tar xf apache-maven-3.0.5-bin.tar.gz)</userinput>
+</screen>
+      </para>
+      <para>
+          Create a symlink to the Maven executable in a PATH-included location
+<screen>
+<prompt>$</prompt> <userinput>sudo ln -s /usr/share/apache-maven-3.0.5/bin/mvn /usr/bin</userinput>
+</screen>
+      </para>
+      <para>
+          Verify the install
+<screen>
+<prompt>$</prompt> <userinput>mvn -v</userinput>
+<computeroutput>Apache Maven 3.0.5 (r01de14724cdef164cd33c7c8c2fe155faf9602da; 2013-02-19 05:51:28-0800)
+:</computeroutput>
+</screen>
+      </para>
+  </section>
+  <section>
     <title>Start Cassandra (4 minutes)</title>
     <para>
-       In the directory where we'd like to fetch and install Cassandra locally, we can download the Cassandra distribution from an Apache mirror:
+       In the directory where we'd like to fetch and install Cassandra locally (your home directory works fine), we can download the Cassandra distribution from an Apache mirror:
 <screen>
-<prompt>$</prompt> <userinput>curl -L 'http://www.apache.org/dyn/closer.cgi?path=/cassandra/1.1.2/apache-cassandra-1.1.2-bin.tar.gz' |\
+<prompt>$</prompt> <userinput>curl -L 'http://www.apache.org/dyn/closer.cgi?path=/cassandra/2.0.6/apache-cassandra-2.0.6-bin.tar.gz' |\
   grep '&lt;strong>' | head -1 | sed 's/.*&lt;strong>\(.*\)&lt;\/strong>.*/\1/' | xargs curl -L -O</userinput>
 
-<prompt>$</prompt> <userinput>openssl md5 apache-cassandra-1.1.2-bin.tar.gz</userinput>
-<computeroutput>MD5(apache-cassandra-1.1.2-bin.tar.gz)= 9811e8aa7af459db824e03489ac7ca3a</computeroutput>
+<prompt>$</prompt> <userinput>openssl md5 apache-cassandra-2.0.6-bin.tar.gz</userinput>
+<computeroutput>MD5(apache-cassandra-2.0.6-bin.tar.gz)= c8da1f4f546ea31ab85cfb236374863b</computeroutput>
 </screen>
     </para>
     <para>
       Configure Cassandra to write in the local directory (which does not require root as writing in /var would):
 <screen>
-<prompt>$</prompt> <userinput>tar xf apache-cassandra-1.1.2-bin.tar.gz</userinput>
-<prompt>$</prompt> <userinput>sed -i.original "s#/var#$PWD/var#" apache-cassandra-1.1.2/conf/{cassandra.yaml,log4j-server.properties}</userinput>
+<prompt>$</prompt> <userinput>tar xf apache-cassandra-2.0.6-bin.tar.gz</userinput>
+<prompt>$</prompt> <userinput>sed -i.original "s#/var#$PWD/var#" apache-cassandra-2.0.6/conf/{cassandra.yaml,log4j-server.properties}</userinput>
 </screen>
     </para>
     <para>
       Run Cassandra in one terminal (or run Cassandra in the background if you prefer)&mdash;
 <screen>
-<prompt>$</prompt> <userinput>(cd apache-cassandra-1.1.2 &amp;&amp; bin/cassandra -f)</userinput>
+<prompt>$</prompt> <userinput>(cd apache-cassandra-2.0.6 &amp;&amp; bin/cassandra -f)</userinput>
 </screen>
       &mdash;and create a keyspace for our MUPD8-application data in another terminal:
 <screen>
-<prompt>$</prompt> <userinput>(cd apache-cassandra-1.1.2 &amp;&amp; echo 'create keyspace Mupd8;' | bin/cassandra-cli --host localhost )</userinput>
-<computeroutput>
-Connected to: "Test Cluster" on localhost/9160
-Welcome to Cassandra CLI version 1.1.2
+<prompt>$</prompt> <userinput>(cd apache-cassandra-2.0.6 &amp;&amp; echo 'create keyspace Mupd8;' | bin/cassandra-cli --host localhost )</userinput>
+<computeroutput>Connected to: "Test Cluster" on localhost/9160
+Welcome to Cassandra CLI version 2.0.6
+
+The CLI is deprecated and will be removed in Cassandra 3.0.  Consider migrating to cqlsh.
+CQL is fully backwards compatible with Thrift data; see http://www.datastax.com/dev/blog/thrift-to-cql3
 
 Type 'help;' or '?' for help.
 Type 'quit;' or 'exit;' to quit.
 
-[default@unknown] create keyspace Mupd8;
-</computeroutput>
-:
-<computeroutput>
-INFO 20:19:10,645 Completed flushing [...]/var/lib/cassandra/data/system/Schema-hc-1-Data.db (3121 bytes)
-9ecde970-77bb-11e1-0000-242d50cf1ffd
-Waiting for schema agreement...
-... schemas agree across the cluster
-</computeroutput>
+[default@unknown] create keyspace Mupd8;</computeroutput>
+<computeroutput>9ecde970-77bb-11e1-0000-242d50cf1ffd</computeroutput>
 </screen>
     </para>
   </section>
@@ -107,8 +200,7 @@ Waiting for schema agreement...
       Users of Maven 3.0+
 <screen>
 <prompt>$</prompt> <userinput>mvn -v</userinput>
-<computeroutput>
-Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</computeroutput>
+<computeroutput>Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</computeroutput>
 :
 </screen>
       can simply fetch and build MUPD8 source:
@@ -131,11 +223,6 @@ Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</computeroutput>
     <para>
       Set up the build for a new application <userinput>mupd8_demo</userinput> in package namespace <userinput>com.walmartlabs.example</userinput> (this example application uses SLF4J, as shown in the code below):
 <screen>
-<prompt>$</prompt> <userinput>mvn -v</userinput>
-<computeroutput>
-Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</computeroutput>
-:
-
 <prompt>$</prompt> <userinput>mvn archetype:generate \
   -DinteractiveMode=false \
   -DarchetypeGroupId=org.apache.maven.archetypes \
@@ -143,21 +230,34 @@ Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</computeroutput>
   -DgroupId=com.walmartlabs.example \
   -DartifactId=mupd8_demo \
   -Dpackage=com.walmartlabs.example \
-  -Dversion=1.0-SNAPSHOT
-</userinput>
+  -Dversion=1.0-SNAPSHOT</userinput>
 
 <prompt>$</prompt> <userinput>cd mupd8_demo/</userinput>
 <prompt>$</prompt> <userinput>patch pom.xml &lt;&lt;EOF
---- pom.xml	2012-04-06 02:18:51.000000000 -0700
-+++ pom.xml	2012-04-10 15:25:23.000000000 -0700
-@@ -21,5 +21,20 @@
+--- pom.xml	2014-03-28 19:33:21.000000000 -0700
++++ pom.xml	2014-03-30 18:07:04.000000000 -0700
+@@ -21,5 +21,34 @@
        &lt;version>3.8.1&lt;/version>
        &lt;scope>test&lt;/scope>
      &lt;/dependency>
 +    &lt;dependency>
 +      &lt;groupId>com.walmartlabs.mupd8&lt;/groupId>
 +      &lt;artifactId>mupd8&lt;/artifactId>
-+      &lt;version>1.0-SNAPSHOT&lt;/version>
++      &lt;version>2.2.0&lt;/version>
++      &lt;exclusions>
++        &lt;exclusion>
++          &lt;groupId>com.sun.jmx&lt;/groupId>
++          &lt;artifactId>jmxri&lt;/artifactId>
++        &lt;/exclusion>
++        &lt;exclusion>
++          &lt;groupId>com.sun.jdmk&lt;/groupId>
++          &lt;artifactId>jmxtools&lt;/artifactId>
++        &lt;/exclusion>
++        &lt;exclusion>
++          &lt;groupId>javax.jms&lt;/groupId>
++          &lt;artifactId>jms&lt;/artifactId>
++        &lt;/exclusion>
++      &lt;/exclusions>
 +    &lt;/dependency>
 +    &lt;dependency>
 +      &lt;groupId>org.slf4j&lt;/groupId>
@@ -171,8 +271,7 @@ Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</computeroutput>
 +    &lt;/dependency>
    &lt;/dependencies>
  &lt;/project>
-EOF
-</userinput>
+EOF</userinput>
 </screen>
     </para>
     <para>
@@ -321,8 +420,7 @@ EOF
       "port"           : 9160,
       "keyspace"       : "Mupd8",
       "hosts"          : [ "localhost" ],
-      "#write_interval" : 15,
-      "#compression"    : "gzip"
+      "#write_interval" : 15
     },
     "system_hosts"     : [ "localhost" ],
     "#java_class_path"  : "share/java/*",
@@ -338,8 +436,7 @@ EOF
     ]
   }
 }
-EOF
-</userinput>
+EOF</userinput>
 </screen>
     </para>
     <note>
@@ -355,15 +452,13 @@ EOF
 <screen>
 <prompt>$</prompt> <userinput>mvn package</userinput>
 :
-<computeroutput>
-[INFO] ------------------------------------------------------------------------
+<computeroutput>[INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: 5.924s
 [INFO] Finished at: Tue Apr 10 20:13:12 PDT 2012
 [INFO] Final Memory: 20M/305M
-[INFO] ------------------------------------------------------------------------
-</computeroutput>
+[INFO] ------------------------------------------------------------------------</computeroutput>
 </screen>
       </para>
     </section>
@@ -383,7 +478,7 @@ EOF
     <para>
       Tell Cassandra about the new application before running the application for the first time:
 <screen>
-<prompt>$</prompt> <userinput>(cd ../apache-cassandra-1.1.2 &amp;&amp; \
+<prompt>$</prompt> <userinput>(cd ../apache-cassandra-2.0.6 &amp;&amp; \
       echo 'create column family mupd8_demo;' | \
       bin/cassandra-cli --host localhost --keyspace Mupd8 )</userinput>
 </screen>
@@ -391,8 +486,8 @@ EOF
     <para>
       Run MUPD8:
 <screen>
-<prompt>$</prompt> <userinput>java -cp ~/.m2/repository/org/slf4j/slf4j-simple/1.6.4/slf4j-simple-1.6.4.jar:~/.m2/repository/org/slf4j/slf4j-api/1.6.4/slf4j-api-1.6.4.jar:../mupd8/target/mupd8-1.0-SNAPSHOT.jar:../mupd8/target/mupd8-1.0-SNAPSHOT-jar-with-dependencies.jar:target/mupd8_demo-1.0-SNAPSHOT.jar \
-    com.walmartlabs.mupd8.Mupd8Main -d etc/ -pidFile mupd8.pid</userinput>
+    <prompt>$</prompt> <userinput>java -cp ~/.m2/repository/org/slf4j/slf4j-simple/1.6.4/slf4j-simple-1.6.4.jar:~/.m2/repository/org/slf4j/slf4j-api/1.6.4/slf4j-api-1.6.4.jar:../mupd8/target/mupd8-2.2.0.jar:../mupd8/target/mupd8-2.2.0-jar-with-dependencies.jar:target/mupd8_demo-1.0-SNAPSHOT.jar \
+        com.walmartlabs.mupd8.Mupd8Main -d etc/ -pidFile mupd8.pid</userinput>
 </screen>
     </para>
     <para>
