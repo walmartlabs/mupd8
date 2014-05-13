@@ -345,7 +345,7 @@ public class Counter implements Updater {
         try {
             submitter.replaceSlate(updatedSlate);
         } catch (SlateSizeException e) {
-            System.err.println("Slate update for slate ["+updatedSlate+"] failed.");
+            logger.error("Slate update for slate ["+ new String(slate, charset) +"] failed.");
         }
     }
 }
