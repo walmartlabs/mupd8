@@ -1,8 +1,12 @@
 <html><head>
       <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
-   <title>Starting a New Application in MUPD8</title><meta name="generator" content="DocBook XSL-NS Stylesheets V1.76.1"></head><body bgcolor="white" text="black" link="#0000FF" vlink="#840084" alink="#0000FF"><div class="article" title="Starting a New Application in MUPD8"><div class="titlepage"><div><div><h2 class="title"><a name="d5e1"></a>Starting a New Application in MUPD8</h2></div></div><hr></div><div class="toc"><p><b>Table of Contents</b></p><dl><dt><span class="section"><a href="#d5e3">Introduction</a></span></dt><dt><span class="section"><a href="#d5e20">Start Cassandra (4 minutes)</a></span></dt><dt><span class="section"><a href="#d5e44">Build MUPD8 (4 minutes)</a></span></dt><dt><span class="section"><a href="#d5e56">Write Application (2 minutes)</a></span></dt><dt><span class="section"><a href="#d5e101">Run Application (1 minute)</a></span></dt><dt><span class="section"><a href="#d5e128">In Review</a></span></dt></dl></div>
+   <title>Starting a New Application in MUPD8</title><meta name="generator" content="DocBook XSL-NS Stylesheets V1.76.1"></head><body bgcolor="white" text="black" link="#0000FF" vlink="#840084" alink="#0000FF"><div class="article" title="Starting a New Application in MUPD8"><div class="titlepage"><div><div><h2 class="title"><a name="d5e1"></a>Starting a New Application in MUPD8</h2></div></div><hr></div><div class="toc"><p><b>Table of Contents</b></p><dl><dt><span class="section"><a href="#d5e3">Introduction</a></span></dt><dt><span class="section"><a href="#d5e24">Install Java (10 minutes, incl download time)</a></span></dt><dt><span class="section"><a href="#d5e32">Install Git (8 minutes, incl download time)</a></span></dt><dt><span class="section"><a href="#d5e40">Install Maven 3.0+ (3 minutes)</a></span></dt><dt><span class="section"><a href="#d5e82">Start Cassandra (4 minutes)</a></span></dt><dt><span class="section"><a href="#d5e106">Build MUPD8 (4 minutes)</a></span></dt><dt><span class="section"><a href="#d5e118">Write Application (2 minutes)</a></span></dt><dt><span class="section"><a href="#d5e160">Run Application (1 minute)</a></span></dt><dt><span class="section"><a href="#d5e187">In Review</a></span></dt></dl></div>
   
   <div class="section" title="Introduction"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e3"></a>Introduction</h2></div></div></div>
+    
+    <p>
+        <span class="emphasis"><em></em></span>
+    </p>
     
     <p>
       Getting a new application started in the JVM <span class="application">MUPD8</span>
@@ -29,66 +33,153 @@
 
     <div class="note" title="Note" style="margin-left: 0.5in; margin-right: 0.5in;"><h3 class="title">Note</h3>
       <p>
-	The commands that follow use the following software:
-	  </p><div class="itemizedlist"><ul class="itemizedlist" type="disc"><li class="listitem"><p>Maven 3.0+ (already ships with Mac OS X 10.6.8)</p></li><li class="listitem"><p>Git</p></li><li class="listitem"><p>curl (already ships with Mac OS X)</p></li></ul></div><p>
+	The commands that follow use the software listed below, and were last tested against a fresh install of Mac OS X 10.9.2. If you already have the listed software installed, please skip to the section titled "Start Cassandra (4 minutes)".
+	  </p><div class="itemizedlist"><ul class="itemizedlist" type="disc"><li class="listitem"><p>Java</p></li><li class="listitem"><p>Maven 3.0+</p></li><li class="listitem"><p>Git</p></li><li class="listitem"><p>curl (already ships with Mac OS X)</p></li></ul></div><p>
 	You may wish to have three terminals open at the directory where you'd like to run the following commands.  (One terminal can run Cassandra, one can run MUPD8, and one can fetch slates to inspect results.)  The steps that follow will populate the directory with Cassandra, MUPD8, and an example application written from scratch.
       </p>
     </div>
   </div>
-  <div class="section" title="Start Cassandra (4 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e20"></a>Start Cassandra (4 minutes)</h2></div></div></div>
+  <div class="section" title="Install Java (10 minutes, incl download time)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e24"></a>Install Java (10 minutes, incl download time)</h2></div></div></div>
+      
+    <p>
+        To check if you have Java installed:
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>java -version</code></strong>
+<code class="computeroutput">java version "1.7.0_51"
+Java(TM) SE Runtime Environment (build 1.7.0_51-b13)
+Java HotSpot(TM) 64-Bit Server VM (build 24.51-b03, mixed mode)</code>
+</pre><p>
+    </p>
+    <p>
+        If you do not have Java installed, you'll get a pop-up notification. Click the "More Info" button to go to the Java downloads page, and download the JDK for Mac OS X. Once the download completes, install the JDK.
+    </p>
+  </div>
+  <div class="section" title="Install Git (8 minutes, incl download time)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e32"></a>Install Git (8 minutes, incl download time)</h2></div></div></div>
+      
+      <p>
+          To check if you have Git installed. This can be done while Java is downloading.
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>git --version</code></strong>
+<code class="computeroutput">git version 1.8.5.2 (Apple Git-48)</code>
+</pre><p>
+      </p>
+      <p>
+          If you do not have Git installed, you'll get a pop-up notification. Click the "Install" button to download and install the Apple Command Line Tools, which includes Git.
+      </p>
+  </div>
+  <div class="section" title="Install Maven 3.0+ (3 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e40"></a>Install Maven 3.0+ (3 minutes)</h2></div></div></div>
+      
+      <p>
+          Once you've verified that Java is installed, check if you have Maven installed. Java is required for Maven to run, so do not start this section if Java isn't yet fully installed.
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>mvn -v</code></strong>
+<code class="computeroutput">Apache Maven 3.0.5 (r01de14724cdef164cd33c7c8c2fe155faf9602da; 2013-02-19 05:51:28-0800)
+:</code>
+</pre><p>
+      </p>
+      <p>
+          If you do not have Maven installed, you'll see "command not found". Follow the directions below to install Maven.
+      </p>
+      <div class="note" title="Note" style="margin-left: 0.5in; margin-right: 0.5in;"><h3 class="title">Note</h3>
+          <p>
+              Be sure your JAVA_HOME is not blank.
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>echo $JAVA_HOME</code></strong>
+<code class="computeroutput">/Library/Java/JavaVirtualMachines/jdk1.7.0_51.jdk/Contents/Home</code>
+</pre><p>
+        </p>
+        <p>
+            If "echo $JAVA_HOME" shows an empty path, you need to set your JAVA_HOME. Set your JAVA_HOME with these commands:
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>printf "\nexport JAVA_HOME=$(/usr/libexec/java_home)\n\n" &gt;&gt; ~/.profile</code></strong>
+<code class="prompt">$</code> <strong class="userinput"><code>source ~/.profile</code></strong>
+</pre><p>
+        </p>
+      </div>
+      <p>
+          To install Maven globally for your system, start by downloading Maven from an Apache mirror
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>curl -L 'http://www.apache.org/dyn/closer.cgi?path=/maven/maven-3/3.0.5/binaries/apache-maven-3.0.5-bin.tar.gz' |\
+grep '&lt;strong&gt;' | head -1 | sed 's/.*&lt;strong&gt;\(.*\)&lt;\/strong&gt;.*/\1/' |\
+xargs -0 sudo curl -o '/usr/share/apache-maven-3.0.5-bin.tar.gz' -L</code></strong>
+</pre><p>
+      </p>
+      <p>
+          Verify the download hash
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>openssl md5 /usr/share/apache-maven-3.0.5-bin.tar.gz</code></strong>
+<code class="computeroutput">MD5(apache-maven-3.0.5-bin.tar.gz)= 94c51f0dd139b4b8549204d0605a5859</code>
+</pre><p>
+      </p>
+      <p>
+          Decompress the download
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>(cd /usr/share &amp;&amp; sudo tar xf apache-maven-3.0.5-bin.tar.gz)</code></strong>
+</pre><p>
+      </p>
+      <p>
+          Create a symlink to the Maven executable in a PATH-included location
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>sudo ln -s /usr/share/apache-maven-3.0.5/bin/mvn /usr/bin</code></strong>
+</pre><p>
+      </p>
+      <p>
+          Verify the install
+</p><pre class="screen">
+<code class="prompt">$</code> <strong class="userinput"><code>mvn -v</code></strong>
+<code class="computeroutput">Apache Maven 3.0.5 (r01de14724cdef164cd33c7c8c2fe155faf9602da; 2013-02-19 05:51:28-0800)
+:</code>
+</pre><p>
+      </p>
+  </div>
+  <div class="section" title="Start Cassandra (4 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e82"></a>Start Cassandra (4 minutes)</h2></div></div></div>
     
     <p>
-       In the directory where we'd like to fetch and install Cassandra locally, we can download the Cassandra distribution from an Apache mirror:
+       In the directory where we'd like to fetch and install Cassandra locally (your home directory works fine), we can download the Cassandra distribution from an Apache mirror:
 </p><pre class="screen">
-<code class="prompt">$</code> <strong class="userinput"><code>curl -L 'http://www.apache.org/dyn/closer.cgi?path=/cassandra/1.1.2/apache-cassandra-1.1.2-bin.tar.gz' |\
+<code class="prompt">$</code> <strong class="userinput"><code>curl -L 'http://www.apache.org/dyn/closer.cgi?path=/cassandra/2.0.6/apache-cassandra-2.0.6-bin.tar.gz' |\
   grep '&lt;strong&gt;' | head -1 | sed 's/.*&lt;strong&gt;\(.*\)&lt;\/strong&gt;.*/\1/' | xargs curl -L -O</code></strong>
 
-<code class="prompt">$</code> <strong class="userinput"><code>openssl md5 apache-cassandra-1.1.2-bin.tar.gz</code></strong>
-<code class="computeroutput">MD5(apache-cassandra-1.1.2-bin.tar.gz)= 9811e8aa7af459db824e03489ac7ca3a</code>
+<code class="prompt">$</code> <strong class="userinput"><code>openssl md5 apache-cassandra-2.0.6-bin.tar.gz</code></strong>
+<code class="computeroutput">MD5(apache-cassandra-2.0.6-bin.tar.gz)= c8da1f4f546ea31ab85cfb236374863b</code>
 </pre><p>
     </p>
     <p>
       Configure Cassandra to write in the local directory (which does not require root as writing in /var would):
 </p><pre class="screen">
-<code class="prompt">$</code> <strong class="userinput"><code>tar xf apache-cassandra-1.1.2-bin.tar.gz</code></strong>
-<code class="prompt">$</code> <strong class="userinput"><code>sed -i.original "s#/var#$PWD/var#" apache-cassandra-1.1.2/conf/{cassandra.yaml,log4j-server.properties}</code></strong>
+<code class="prompt">$</code> <strong class="userinput"><code>tar xf apache-cassandra-2.0.6-bin.tar.gz</code></strong>
+<code class="prompt">$</code> <strong class="userinput"><code>sed -i.original "s#/var#$PWD/var#" apache-cassandra-2.0.6/conf/{cassandra.yaml,log4j-server.properties}</code></strong>
 </pre><p>
     </p>
     <p>
       Run Cassandra in one terminal (or run Cassandra in the background if you prefer)&#8212;
 </p><pre class="screen">
-<code class="prompt">$</code> <strong class="userinput"><code>(cd apache-cassandra-1.1.2 &amp;&amp; bin/cassandra -f)</code></strong>
+<code class="prompt">$</code> <strong class="userinput"><code>(cd apache-cassandra-2.0.6 &amp;&amp; bin/cassandra -f)</code></strong>
 </pre><p>
       &#8212;and create a keyspace for our MUPD8-application data in another terminal:
 </p><pre class="screen">
-<code class="prompt">$</code> <strong class="userinput"><code>(cd apache-cassandra-1.1.2 &amp;&amp; echo 'create keyspace Mupd8;' | bin/cassandra-cli --host localhost )</code></strong>
-<code class="computeroutput">
-Connected to: "Test Cluster" on localhost/9160
-Welcome to Cassandra CLI version 1.1.2
+<code class="prompt">$</code> <strong class="userinput"><code>(cd apache-cassandra-2.0.6 &amp;&amp; echo 'create keyspace Mupd8;' | bin/cassandra-cli --host localhost )</code></strong>
+<code class="computeroutput">Connected to: "Test Cluster" on localhost/9160
+Welcome to Cassandra CLI version 2.0.6
+
+The CLI is deprecated and will be removed in Cassandra 3.0.  Consider migrating to cqlsh.
+CQL is fully backwards compatible with Thrift data; see http://www.datastax.com/dev/blog/thrift-to-cql3
 
 Type 'help;' or '?' for help.
 Type 'quit;' or 'exit;' to quit.
 
-[default@unknown] create keyspace Mupd8;
-</code>
-:
-<code class="computeroutput">
-INFO 20:19:10,645 Completed flushing [...]/var/lib/cassandra/data/system/Schema-hc-1-Data.db (3121 bytes)
-9ecde970-77bb-11e1-0000-242d50cf1ffd
-Waiting for schema agreement...
-... schemas agree across the cluster
-</code>
+[default@unknown] create keyspace Mupd8;</code>
+<code class="computeroutput">9ecde970-77bb-11e1-0000-242d50cf1ffd</code>
 </pre><p>
     </p>
   </div>
-  <div class="section" title="Build MUPD8 (4 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e44"></a>Build MUPD8 (4 minutes)</h2></div></div></div>
+  <div class="section" title="Build MUPD8 (4 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e106"></a>Build MUPD8 (4 minutes)</h2></div></div></div>
     
     <p>
       Users of Maven 3.0+
 </p><pre class="screen">
 <code class="prompt">$</code> <strong class="userinput"><code>mvn -v</code></strong>
-<code class="computeroutput">
-Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</code>
+<code class="computeroutput">Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</code>
 :
 </pre><p>
       can simply fetch and build MUPD8 source:
@@ -99,7 +190,7 @@ Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</code>
 </pre><p>
     </p>
   </div>
-  <div class="section" title="Write Application (2 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e56"></a>Write Application (2 minutes)</h2></div></div></div>
+  <div class="section" title="Write Application (2 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e118"></a>Write Application (2 minutes)</h2></div></div></div>
     
     <p>
       To make the process of writing an application concrete, we write
@@ -111,11 +202,6 @@ Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</code>
     <p>
       Set up the build for a new application <strong class="userinput"><code>mupd8_demo</code></strong> in package namespace <strong class="userinput"><code>com.walmartlabs.example</code></strong> (this example application uses SLF4J, as shown in the code below):
 </p><pre class="screen">
-<code class="prompt">$</code> <strong class="userinput"><code>mvn -v</code></strong>
-<code class="computeroutput">
-Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</code>
-:
-
 <code class="prompt">$</code> <strong class="userinput"><code>mvn archetype:generate \
   -DinteractiveMode=false \
   -DarchetypeGroupId=org.apache.maven.archetypes \
@@ -123,14 +209,13 @@ Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</code>
   -DgroupId=com.walmartlabs.example \
   -DartifactId=mupd8_demo \
   -Dpackage=com.walmartlabs.example \
-  -Dversion=1.0-SNAPSHOT
-</code></strong>
+  -Dversion=1.0-SNAPSHOT</code></strong>
 
 <code class="prompt">$</code> <strong class="userinput"><code>cd mupd8_demo/</code></strong>
 <code class="prompt">$</code> <strong class="userinput"><code>patch pom.xml &lt;&lt;EOF
---- pom.xml	2012-04-06 02:18:51.000000000 -0700
-+++ pom.xml	2012-04-10 15:25:23.000000000 -0700
-@@ -21,5 +21,20 @@
+--- pom.xml	2014-03-28 19:33:21.000000000 -0700
++++ pom.xml	2014-03-30 18:07:04.000000000 -0700
+@@ -21,5 +21,34 @@
        &lt;version&gt;3.8.1&lt;/version&gt;
        &lt;scope&gt;test&lt;/scope&gt;
      &lt;/dependency&gt;
@@ -138,6 +223,20 @@ Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</code>
 +      &lt;groupId&gt;com.walmartlabs.mupd8&lt;/groupId&gt;
 +      &lt;artifactId&gt;mupd8&lt;/artifactId&gt;
 +      &lt;version&gt;2.2.0&lt;/version&gt;
++      &lt;exclusions&gt;
++        &lt;exclusion&gt;
++          &lt;groupId&gt;com.sun.jmx&lt;/groupId&gt;
++          &lt;artifactId&gt;jmxri&lt;/artifactId&gt;
++        &lt;/exclusion&gt;
++        &lt;exclusion&gt;
++          &lt;groupId&gt;com.sun.jdmk&lt;/groupId&gt;
++          &lt;artifactId&gt;jmxtools&lt;/artifactId&gt;
++        &lt;/exclusion&gt;
++        &lt;exclusion&gt;
++          &lt;groupId&gt;javax.jms&lt;/groupId&gt;
++          &lt;artifactId&gt;jms&lt;/artifactId&gt;
++        &lt;/exclusion&gt;
++      &lt;/exclusions&gt;
 +    &lt;/dependency&gt;
 +    &lt;dependency&gt;
 +      &lt;groupId&gt;org.slf4j&lt;/groupId&gt;
@@ -151,8 +250,7 @@ Apache Maven 3.0.3 (r1075438; 2011-02-28 09:31:09-0800)</code>
 +    &lt;/dependency&gt;
    &lt;/dependencies&gt;
  &lt;/project&gt;
-EOF
-</code></strong>
+EOF</code></strong>
 </pre><p>
     </p>
     <p>
@@ -301,8 +399,7 @@ EOF
       "port"           : 9160,
       "keyspace"       : "Mupd8",
       "hosts"          : [ "localhost" ],
-      "#write_interval" : 15,
-      "#compression"    : "gzip"
+      "#write_interval" : 15
     },
     "system_hosts"     : [ "localhost" ],
     "#java_class_path"  : "share/java/*",
@@ -318,8 +415,7 @@ EOF
     ]
   }
 }
-EOF
-</code></strong>
+EOF</code></strong>
 </pre><p>
     </p>
     <div class="note" title="Note" style="margin-left: 0.5in; margin-right: 0.5in;"><h3 class="title">Note</h3>
@@ -335,19 +431,17 @@ EOF
 </p><pre class="screen">
 <code class="prompt">$</code> <strong class="userinput"><code>mvn package</code></strong>
 :
-<code class="computeroutput">
-[INFO] ------------------------------------------------------------------------
+<code class="computeroutput">[INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: 5.924s
 [INFO] Finished at: Tue Apr 10 20:13:12 PDT 2012
 [INFO] Final Memory: 20M/305M
-[INFO] ------------------------------------------------------------------------
-</code>
+[INFO] ------------------------------------------------------------------------</code>
 </pre><p>
       </p>
     </div>
-    <div class="section" title="Run Application (1 minute)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e101"></a>Run Application (1 minute)</h2></div></div></div>
+    <div class="section" title="Run Application (1 minute)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e160"></a>Run Application (1 minute)</h2></div></div></div>
       
       <p>
 	Provide a little input for the application to verify its effect when run:
@@ -363,7 +457,7 @@ EOF
     <p>
       Tell Cassandra about the new application before running the application for the first time:
 </p><pre class="screen">
-<code class="prompt">$</code> <strong class="userinput"><code>(cd ../apache-cassandra-1.1.2 &amp;&amp; \
+<code class="prompt">$</code> <strong class="userinput"><code>(cd ../apache-cassandra-2.0.6 &amp;&amp; \
       echo 'create column family mupd8_demo;' | \
       bin/cassandra-cli --host localhost --keyspace Mupd8 )</code></strong>
 </pre><p>
@@ -371,8 +465,8 @@ EOF
     <p>
       Run MUPD8:
 </p><pre class="screen">
-<code class="prompt">$</code> <strong class="userinput"><code>java -cp ~/.m2/repository/org/slf4j/slf4j-simple/1.6.4/slf4j-simple-1.6.4.jar:~/.m2/repository/org/slf4j/slf4j-api/1.6.4/slf4j-api-1.6.4.jar:../mupd8/target/mupd8-2.2.0.jar:../mupd8/target/mupd8-2.2.0-jar-with-dependencies.jar:target/mupd8_demo-1.0-SNAPSHOT.jar \
-    com.walmartlabs.mupd8.Mupd8Main -d etc/ -pidFile mupd8.pid</code></strong>
+    <code class="prompt">$</code> <strong class="userinput"><code>java -cp ~/.m2/repository/org/slf4j/slf4j-simple/1.6.4/slf4j-simple-1.6.4.jar:~/.m2/repository/org/slf4j/slf4j-api/1.6.4/slf4j-api-1.6.4.jar:../mupd8/target/mupd8-2.2.0.jar:../mupd8/target/mupd8-2.2.0-jar-with-dependencies.jar:target/mupd8_demo-1.0-SNAPSHOT.jar \
+        com.walmartlabs.mupd8.Mupd8Main -d etc/ -pidFile mupd8.pid</code></strong>
 </pre><p>
     </p>
     <p>
@@ -389,7 +483,7 @@ EOF
       In this case, the "entire" stream of one event (<code class="uri">file:stream.txt</code>) is fully processed so the count is stable.  When connected to a live input stream (as <strong class="userinput"><code>hostname:port</code></strong>), the count would vary with each fetch as a reflection of the current slate contents.
     </p>
   </div>
-  <div class="section" title="In Review"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e128"></a>In Review</h2></div></div></div>
+  <div class="section" title="In Review"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e187"></a>In Review</h2></div></div></div>
     
     <p>
       What did this example application do?
