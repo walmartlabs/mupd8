@@ -7,7 +7,7 @@
     <p>
         <span class="emphasis"><em></em></span>
     </p>
-    
+
     <p>
       Getting a new application started in the JVM <span class="application">MUPD8</span>
       is easy.
@@ -99,9 +99,7 @@ Java HotSpot(TM) 64-Bit Server VM (build 24.51-b03, mixed mode)</code>
       <p>
           To install Maven globally for your system, start by downloading Maven from an Apache mirror
 </p><pre class="screen">
-<code class="prompt">$</code> <strong class="userinput"><code>curl -L 'http://www.apache.org/dyn/closer.cgi?path=/maven/maven-3/3.0.5/binaries/apache-maven-3.0.5-bin.tar.gz' |\
-grep '&lt;strong&gt;' | head -1 | sed 's/.*&lt;strong&gt;\(.*\)&lt;\/strong&gt;.*/\1/' |\
-xargs -0 sudo curl -o '/usr/share/apache-maven-3.0.5-bin.tar.gz' -L</code></strong>
+<code class="prompt">$</code> <strong class="userinput"><code>curl -L 'http://archive.apache.org/dist/maven/binaries/apache-maven-3.0.5-bin.tar.gz' -O</code></strong>
 </pre><p>
       </p>
       <p>
@@ -137,8 +135,7 @@ xargs -0 sudo curl -o '/usr/share/apache-maven-3.0.5-bin.tar.gz' -L</code></stro
     <p>
        In the directory where we'd like to fetch and install Cassandra locally (your home directory works fine), we can download the Cassandra distribution from an Apache mirror:
 </p><pre class="screen">
-<code class="prompt">$</code> <strong class="userinput"><code>curl -L 'http://www.apache.org/dyn/closer.cgi?path=/cassandra/2.0.6/apache-cassandra-2.0.6-bin.tar.gz' |\
-  grep '&lt;strong&gt;' | head -1 | sed 's/.*&lt;strong&gt;\(.*\)&lt;\/strong&gt;.*/\1/' | xargs curl -L -O</code></strong>
+<code class="prompt">$</code> <strong class="userinput"><code>curl -L 'http://archive.apache.org/dist/cassandra/2.0.6/apache-cassandra-2.0.6-bin.tar.gz' -O</code></strong>
 
 <code class="prompt">$</code> <strong class="userinput"><code>openssl md5 apache-cassandra-2.0.6-bin.tar.gz</code></strong>
 <code class="computeroutput">MD5(apache-cassandra-2.0.6-bin.tar.gz)= c8da1f4f546ea31ab85cfb236374863b</code>
