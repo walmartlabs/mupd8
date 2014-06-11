@@ -120,7 +120,7 @@ Java HotSpot(TM) 64-Bit Server VM (build 24.51-b03, mixed mode)</computeroutput>
       <para>
           To install Maven globally for your system, start by downloading Maven from an Apache mirror
 <screen>
-<prompt>$</prompt> <userinput>curl -L 'http://archive.apache.org/dist/maven/binaries/apache-maven-3.0.5-bin.tar.gz' -O</userinput>
+<prompt>$</prompt> <userinput>(cd /usr/share &amp;&amp; sudo curl -L 'http://archive.apache.org/dist/maven/binaries/apache-maven-3.0.5-bin.tar.gz' -O)</userinput>
 </screen>
       </para>
       <para>
