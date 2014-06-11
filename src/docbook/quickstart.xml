@@ -163,9 +163,14 @@ Java HotSpot(TM) 64-Bit Server VM (build 24.51-b03, mixed mode)</computeroutput>
 </screen>
     </para>
     <para>
-      Configure Cassandra to write in the local directory (which does not require root as writing in /var would):
+      Decompress the file:
 <screen>
 <prompt>$</prompt> <userinput>tar xf apache-cassandra-2.0.6-bin.tar.gz</userinput>
+</screen>
+    </para>
+    <para>
+      Configure Cassandra to write in the local directory (which does not require root as writing in /var would):
+<screen>
 <prompt>$</prompt> <userinput>sed -i.original "s#/var#$PWD/var#" apache-cassandra-2.0.6/conf/{cassandra.yaml,log4j-server.properties}</userinput>
 </screen>
     </para>
