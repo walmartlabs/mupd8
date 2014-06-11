@@ -1,13 +1,13 @@
 <html><head>
       <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
-   <title>Starting a New Application in MUPD8</title><meta name="generator" content="DocBook XSL-NS Stylesheets V1.76.1"></head><body bgcolor="white" text="black" link="#0000FF" vlink="#840084" alink="#0000FF"><div class="article" title="Starting a New Application in MUPD8"><div class="titlepage"><div><div><h2 class="title"><a name="d5e1"></a>Starting a New Application in MUPD8</h2></div></div><hr></div><div class="toc"><p><b>Table of Contents</b></p><dl><dt><span class="section"><a href="#d5e3">Introduction</a></span></dt><dt><span class="section"><a href="#d5e24">Install Java (10 minutes, incl download time)</a></span></dt><dt><span class="section"><a href="#d5e32">Install Git (8 minutes, incl download time)</a></span></dt><dt><span class="section"><a href="#d5e40">Install Maven 3.0+ (3 minutes)</a></span></dt><dt><span class="section"><a href="#d5e82">Start Cassandra (4 minutes)</a></span></dt><dt><span class="section"><a href="#d5e106">Build MUPD8 (4 minutes)</a></span></dt><dt><span class="section"><a href="#d5e118">Write Application (2 minutes)</a></span></dt><dt><span class="section"><a href="#d5e160">Run Application (1 minute)</a></span></dt><dt><span class="section"><a href="#d5e187">In Review</a></span></dt></dl></div>
+   <title>Starting a New Application in MUPD8</title><meta name="generator" content="DocBook XSL-NS Stylesheets V1.76.1"></head><body bgcolor="white" text="black" link="#0000FF" vlink="#840084" alink="#0000FF"><div class="article" title="Starting a New Application in MUPD8"><div class="titlepage"><div><div><h2 class="title"><a name="d5e1"></a>Starting a New Application in MUPD8</h2></div></div><hr></div><div class="toc"><p><b>Table of Contents</b></p><dl><dt><span class="section"><a href="#d5e3">Introduction</a></span></dt><dt><span class="section"><a href="#d5e24">Install Java (10 minutes, incl download time)</a></span></dt><dt><span class="section"><a href="#d5e32">Install Git (8 minutes, incl download time)</a></span></dt><dt><span class="section"><a href="#d5e40">Install Maven 3.0+ (3 minutes)</a></span></dt><dt><span class="section"><a href="#d5e82">Start Cassandra (4 minutes)</a></span></dt><dt><span class="section"><a href="#d5e108">Build MUPD8 (4 minutes)</a></span></dt><dt><span class="section"><a href="#d5e120">Write Application (2 minutes)</a></span></dt><dt><span class="section"><a href="#d5e162">Run Application (1 minute)</a></span></dt><dt><span class="section"><a href="#d5e189">In Review</a></span></dt></dl></div>
   
   <div class="section" title="Introduction"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e3"></a>Introduction</h2></div></div></div>
     
     <p>
         <span class="emphasis"><em></em></span>
     </p>
-    
+
     <p>
       Getting a new application started in the JVM <span class="application">MUPD8</span>
       is easy.
@@ -99,9 +99,7 @@ Java HotSpot(TM) 64-Bit Server VM (build 24.51-b03, mixed mode)</code>
       <p>
           To install Maven globally for your system, start by downloading Maven from an Apache mirror
 </p><pre class="screen">
-<code class="prompt">$</code> <strong class="userinput"><code>curl -L 'http://www.apache.org/dyn/closer.cgi?path=/maven/maven-3/3.0.5/binaries/apache-maven-3.0.5-bin.tar.gz' |\
-grep '&lt;strong&gt;' | head -1 | sed 's/.*&lt;strong&gt;\(.*\)&lt;\/strong&gt;.*/\1/' |\
-xargs -0 sudo curl -o '/usr/share/apache-maven-3.0.5-bin.tar.gz' -L</code></strong>
+<code class="prompt">$</code> <strong class="userinput"><code>curl -L 'http://archive.apache.org/dist/maven/binaries/apache-maven-3.0.5-bin.tar.gz' -O</code></strong>
 </pre><p>
       </p>
       <p>
@@ -137,17 +135,21 @@ xargs -0 sudo curl -o '/usr/share/apache-maven-3.0.5-bin.tar.gz' -L</code></stro
     <p>
        In the directory where we'd like to fetch and install Cassandra locally (your home directory works fine), we can download the Cassandra distribution from an Apache mirror:
 </p><pre class="screen">
-<code class="prompt">$</code> <strong class="userinput"><code>curl -L 'http://www.apache.org/dyn/closer.cgi?path=/cassandra/2.0.6/apache-cassandra-2.0.6-bin.tar.gz' |\
-  grep '&lt;strong&gt;' | head -1 | sed 's/.*&lt;strong&gt;\(.*\)&lt;\/strong&gt;.*/\1/' | xargs curl -L -O</code></strong>
+<code class="prompt">$</code> <strong class="userinput"><code>curl -L 'http://archive.apache.org/dist/cassandra/2.0.6/apache-cassandra-2.0.6-bin.tar.gz' -O</code></strong>
 
 <code class="prompt">$</code> <strong class="userinput"><code>openssl md5 apache-cassandra-2.0.6-bin.tar.gz</code></strong>
 <code class="computeroutput">MD5(apache-cassandra-2.0.6-bin.tar.gz)= c8da1f4f546ea31ab85cfb236374863b</code>
 </pre><p>
     </p>
     <p>
-      Configure Cassandra to write in the local directory (which does not require root as writing in /var would):
+      Decompress the file:
 </p><pre class="screen">
 <code class="prompt">$</code> <strong class="userinput"><code>tar xf apache-cassandra-2.0.6-bin.tar.gz</code></strong>
+</pre><p>
+    </p>
+    <p>
+      Configure Cassandra to write in the local directory (which does not require root as writing in /var would):
+</p><pre class="screen">
 <code class="prompt">$</code> <strong class="userinput"><code>sed -i.original "s#/var#$PWD/var#" apache-cassandra-2.0.6/conf/{cassandra.yaml,log4j-server.properties}</code></strong>
 </pre><p>
     </p>
@@ -173,7 +175,7 @@ Type 'quit;' or 'exit;' to quit.
 </pre><p>
     </p>
   </div>
-  <div class="section" title="Build MUPD8 (4 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e106"></a>Build MUPD8 (4 minutes)</h2></div></div></div>
+  <div class="section" title="Build MUPD8 (4 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e108"></a>Build MUPD8 (4 minutes)</h2></div></div></div>
     
     <p>
       Users of Maven 3.0+
@@ -190,7 +192,7 @@ Type 'quit;' or 'exit;' to quit.
 </pre><p>
     </p>
   </div>
-  <div class="section" title="Write Application (2 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e118"></a>Write Application (2 minutes)</h2></div></div></div>
+  <div class="section" title="Write Application (2 minutes)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e120"></a>Write Application (2 minutes)</h2></div></div></div>
     
     <p>
       To make the process of writing an application concrete, we write
@@ -441,7 +443,7 @@ EOF</code></strong>
 </pre><p>
       </p>
     </div>
-    <div class="section" title="Run Application (1 minute)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e160"></a>Run Application (1 minute)</h2></div></div></div>
+    <div class="section" title="Run Application (1 minute)"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e162"></a>Run Application (1 minute)</h2></div></div></div>
       
       <p>
 	Provide a little input for the application to verify its effect when run:
@@ -483,7 +485,7 @@ EOF
       In this case, the "entire" stream of one event (<code class="uri">file:stream.txt</code>) is fully processed so the count is stable.  When connected to a live input stream (as <strong class="userinput"><code>hostname:port</code></strong>), the count would vary with each fetch as a reflection of the current slate contents.
     </p>
   </div>
-  <div class="section" title="In Review"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e187"></a>In Review</h2></div></div></div>
+  <div class="section" title="In Review"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d5e189"></a>In Review</h2></div></div></div>
     
     <p>
       What did this example application do?
