@@ -104,9 +104,9 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
                 ring = HashRing.initFromHosts(hosts_to_add1.toIndexedSeq)
               } else {
                 ring = ring.add(hosts_to_add1)
-                info("MessageServer: 1 new ring = " + ring + ", ip2host = " + ring.ipHostMap)
+                debug("MessageServer: 1 new ring = " + ring + ", ip2host = " + ring.ipHostMap)
                 ring = ring.remove(hosts_to_remove1)
-                info("MessageServer: 2 new ring = " + ring + ", ip2host = " + ring.ipHostMap)
+                if (ring == null) debug("MessageServer: 2 empty ring") else debug("MessageServer: 2 new ring = " + ring + ", ip2host = " + ring.ipHostMap)
               }
 
               if (!isTest) {
@@ -269,7 +269,7 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
           if (!notFinishedNodeSet.contains(source)) {
             pings = pings + (source -> future{
               val lmsClient = new LocalMessageServerClient(source.ip, port + 1)
-              if (lmsClient.sendMessage(PING())) false else true
+              lmsClient.sendMessage(PING())
             })
           }
         }
@@ -285,10 +285,8 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
             notFinishedNodeSet += ping._1
           } else {
             ping._2 onComplete {
-              case Success(result) =>
-                failureCounter += (if (result) (ping._1 -> 0) else (ping._1 -> (failureCounter(ping._1) + 1)))
-              case Failure(t) => print(t.getMessage)
-                failureCounter += (ping._1 -> (failureCounter(ping._1) + 1))
+              case Success(result) => failureCounter += (if (result) (ping._1 -> 0) else (ping._1 -> (failureCounter(ping._1) + 1)))
+              case Failure(t) => {error(t.getMessage); failureCounter += (ping._1 -> (failureCounter(ping._1) + 1))}
             }
           }
         }
