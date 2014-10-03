@@ -576,11 +576,12 @@ class AppRuntime(appID: Int,
 
   // Wait current running performer jobs done for prepare ring change
   def waitPerformerJobsDone() {
-    if (threadVect != null)
-      while (pool.threadDataPool.filter(t => t.started && !t.noticedCandidateRing).size > 0) {
+    if (threadVect != null) {
+      while ((pool.threadDataPool.filter(t => t.started && !t.noticedCandidateRing).size) > 0) {
         // TODO: come with a better wait/notify solution
-        Thread.sleep(500)
+        Thread.sleep(1000)
       }
+    }
   }
 
   def getSlateBuilder(pid: Int) = slateBuilders(pid).get

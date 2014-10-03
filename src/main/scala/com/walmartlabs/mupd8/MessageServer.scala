@@ -253,19 +253,9 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
 
     override def act() {
       while (keepRunning) {
-        // source node set can be updated after last ping check run
-        // add newly added sources
-        appRuntime.startedSources.foreach(source =>
-          if (!sourceNodeSet.contains(source._2)) {
-            sourceNodeSet += source._2
-            failureCounter += (source._2 -> 0)
-            pings += (source._2 -> future{false})})
-        // remove outdated sources
-        val stoppedSources = sourceNodeSet filter(host => appRuntime.startedSources contains host.hostname)
-        stoppedSources foreach {host => sourceNodeSet -= host; failureCounter -= host; pings -= host}
-
         // send out PINGs
-        sourceNodeSet foreach {source =>
+        // TODO: Needs some polish on adjusting pings
+        appRuntime.startedSources map (source => source._2) foreach {source =>
           if (!notFinishedNodeSet.contains(source)) {
             pings = pings + (source -> future{
               val lmsClient = new LocalMessageServerClient(source.ip, port + 1)
@@ -338,7 +328,7 @@ class LocalMessageServer(port: Int, appRuntime: AppRuntime) extends Runnable wit
               info("LocalMessageserver - candidateRing = " + appRuntime.candidateRing)
 
               // wait until current performer job is done
-              debug("Checking current performer job")
+              debug("Checking current performer job, cmdID = " + cmdID)
               appRuntime.waitPerformerJobsDone
 
               // flush dirty slates

@@ -39,7 +39,7 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntim
     var started = false;
     // noticedCandidateRing: a candidate ring from message server is set
     // before job from queue is started
-    var noticedCandidateRing = false;
+    var noticedCandidateRing = false
 
     val thread = new Thread(run {
       while (true) {
@@ -47,6 +47,10 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntim
         started = true
         noticedCandidateRing = (appRun.candidateRing != null)
         if (item.key == null) {
+          // mapper sending data to failed node is going to
+          // block the ring update process
+          // TODO: This can be done better by polish mapper's run
+          started = false
           item.job.run() // This is a mapper job
         } else {
           val (i1, i2) = getPoolIndices(item.key)
@@ -75,15 +79,13 @@ class MapUpdatePool[T <: MapUpdateClass[T]](val poolsize: Int, appRun: AppRuntim
               work map { w => w.run() }
               jobCount += 1
               work != None
-            }) {}
+            }) { }
             if (currentlyHot) {
               Thread.currentThread.setPriority(Thread.NORM_PRIORITY)
             }
           }
+          started = false
         }
-        // TODO: come with a better wait/notify solution
-        //if (ring2 != null && !noticedRing2) notify();
-        started = false
       }
     }, "MapUpdateThread-" + me)
     thread.start()
