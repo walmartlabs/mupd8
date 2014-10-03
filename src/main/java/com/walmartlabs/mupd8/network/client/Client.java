@@ -18,7 +18,11 @@
 package com.walmartlabs.mupd8.network.client;
 
 import java.net.InetSocketAddress;
-import java.util.concurrent.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 
 import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.channel.Channel;
@@ -28,12 +32,13 @@ import org.jboss.netty.channel.ChannelPipeline;
 import org.jboss.netty.channel.ChannelPipelineFactory;
 import org.jboss.netty.channel.Channels;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
-
-import com.walmartlabs.mupd8.network.common.*;
 import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
 import org.jboss.netty.handler.codec.replay.ReplayingDecoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.walmartlabs.mupd8.network.common.Decoder;
+import com.walmartlabs.mupd8.network.common.Listener;
 
 public class Client {
 
@@ -45,7 +50,7 @@ public class Client {
       _host = host;
       _port = port;
     }
-    
+
     @Override
     public String toString() {
       return "(" + _host + ", " + _port + ")";
@@ -116,20 +121,20 @@ public class Client {
     InetSocketAddress remoteAddr = new InetSocketAddress(host, port);
 
     ChannelFuture future = null;
-    // retry 6 times for now
+    // retry 3 times for now
     int i = 0;
-    for (; i < 6; i++) {
+    for (; i < 3; i++) {
       future= bootstrap.connect(remoteAddr);
       if (!future.awaitUninterruptibly().isSuccess()) {
         logger.error("CLIENT - Failed to connect to server at " +
                     remoteAddr.getHostName() + ":" + remoteAddr.getPort());
         try {
-          Thread.sleep(10000);
+          Thread.sleep(500);
         } catch (InterruptedException e) {
         }
       } else break;
     }
-    if (i >= 6) return false;
+    if (i >= 3) return false;
     logger.info("CLIENT - Connected to " + remoteAddr.getHostName() + ":" + remoteAddr.getPort());
 
     Channel connector = future.getChannel();

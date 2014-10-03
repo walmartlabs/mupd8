@@ -246,21 +246,22 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
   // For now it only check node with sources on it
   // From there those nodes can detect other nodes' failure
   object PingCheck extends Actor {
-    private var pings: Map[Host, scala.concurrent.Future[Boolean]] = appRuntime.startedSources map { source => (source._2, future{false}) }
-    private var failureCounter: Map[Host, Int] = Map.empty
+    // keep lastcmdid with ping's future call. Since there might be a chance that a PING
+    // reports node failure after this node is evicted and added back again.
+    private var pings: Map[Host, (scala.concurrent.Future[Boolean], Int)] = appRuntime.startedSources map { source => (source._2, (future{false}, -1)) }
+    private var retryCounter: Map[Host, Int] = Map.empty
     private var sourceNodeSet: Set[Host] = Set.empty
-    private var notFinishedNodeSet: Set[Host] = Set.empty
 
     override def act() {
       while (keepRunning) {
-        // send out PINGs
+        // send out PINGs, each of which has roughly 6 retries within 1 minute
         // TODO: Needs some polish on adjusting pings
         appRuntime.startedSources map (source => source._2) foreach {source =>
-          if (!notFinishedNodeSet.contains(source)) {
-            pings = pings + (source -> future{
+          if (!retryCounter.contains(source) || pings(source)._2 != lastCmdID) {
+            pings = pings + (source -> (future{
               val lmsClient = new LocalMessageServerClient(source.ip, port + 1)
               lmsClient.sendMessage(PING())
-            })
+            }, lastCmdID))
           }
         }
 
@@ -268,28 +269,69 @@ class MessageServer(appRuntime: AppRuntime, port: Int, allSources: Map[String, S
         Thread.sleep(10000);
 
         // collect PING results
-        notFinishedNodeSet = Set.empty
+        var failedNodeSet: Set[Host] = Set.empty
         pings foreach {ping =>
-          if (!ping._2.isCompleted) {
-            failureCounter += (ping._1 -> (failureCounter(ping._1) + 1))
-            notFinishedNodeSet += ping._1
+          if (!ping._2._1.isCompleted) {
+            if (ping._2._2 == lastCmdID) {
+              if (retryCounter.contains(ping._1))
+                retryCounter += (ping._1 -> (retryCounter(ping._1) + 1))
+              else
+                retryCounter += (ping._1 -> 1)
+              if (retryCounter(ping._1) >= 6) {
+                failedNodeSet += ping._1
+                retryCounter -= ping._1
+              }
+            } else {
+              debug("Ping.OnComplete: Ping to " + ping._1 + " has passed due 1")
+              if (retryCounter.contains(ping._1)) retryCounter -= ping._1
+            }
           } else {
-            ping._2 onComplete {
-              case Success(result) => failureCounter += (if (result) (ping._1 -> 0) else (ping._1 -> (failureCounter(ping._1) + 1)))
-              case Failure(t) => {error(t.getMessage); failureCounter += (ping._1 -> (failureCounter(ping._1) + 1))}
+            ping._2._1 onComplete {
+              case Success(result) => {
+                if (result) {
+                  if (ping._2._2 != lastCmdID) {
+                    debug("Ping.OnComplete: Ping to " + ping._1 + " has passed due 2")
+                  }
+                } else {
+                  if (ping._2._2 == lastCmdID) {
+                    error("Ping.OnComplete: Ping to " + ping._1 + " returns false")
+                    failedNodeSet += ping._1
+                  } else {
+                    debug("Ping.OnFailure: Ping to " + ping._1 + " has passed due 3")
+                  }
+                }
+                if (retryCounter.contains(ping._1)) retryCounter -= ping._1
+              }
+              case Failure(t) => {
+                error("Ping.OnFailure: Ping to " + ping._1 + " throws exception - " + t.getMessage)
+                // ping passes its own cmd, skip it.
+                // o.w. re-ping it until retryCounter >= 6
+                if (ping._2._2 != lastCmdID) {
+                  if (retryCounter.contains(ping._1)) retryCounter -= ping._1
+                  debug("Ping.OnFailure: Ping to " + ping._1 + " has passed due 4")
+                } else {
+                  // if re-ping more than 6 times, tell on ping._1
+                  if (retryCounter.contains(ping._1))
+                    retryCounter += (ping._1 -> (retryCounter(ping._1) + 1))
+                  else
+                    retryCounter += (ping._1 -> 1)
+                  if (retryCounter(ping._1) >= 6) {
+                    failedNodeSet += ping._1
+                    retryCounter -= ping._1
+                  }
+                }
+              }
             }
           }
         }
-
-        // analyze PING results
-        var failedNodes: Set[Host] = failureCounter.filter(counter => counter._2 > 6).map(_._1).toSet
+        pings = pings.filter(ping => retryCounter.contains(ping._1))
 
         // report failed source nodes
-        if (!failedNodes.isEmpty) {
+        if (!failedNodeSet.isEmpty) {
           val msClient = new MessageServerClient(appRuntime)
-          msClient.sendMessage(NodeChangeMessage(Set.empty, failedNodes, "Ping timeout"))
+          msClient.sendMessage(NodeChangeMessage(Set.empty, failedNodeSet, "Ping timeout"))
           // clean count for failed nodes
-          failedNodes foreach(node => failureCounter += (node -> 0))
+          failedNodeSet = Set.empty
           // if there are nodes failed, sleep sometime for cluster adjustment
           Thread.sleep(10000)
         }
