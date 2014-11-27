@@ -138,6 +138,12 @@ class AppStaticInfo(val configDir: Option[String], val appConfig: Option[String]
     x => x.asInstanceOf[java.util.List[org.json.simple.JSONObject]]
   }.getOrElse(new java.util.ArrayList[org.json.simple.JSONObject]())
 
+  val namelessSources = sources.asScala.filter { source => (source.get("name") == null) }.length
+  if (namelessSources > 0) {
+    error(namelessSources+" source(s) detected without required unique name attribute; aborting.")
+    System.exit(-1)
+  }
+
   val messageServerHostFromConfig: String = Option(config.getScopedValue(Array("mupd8", "messageserver", "host"))) match {
     case None => error("Message server host setting is wrong, exit..."); System.exit(-1); null
     case Some(str) => str.asInstanceOf[String]
