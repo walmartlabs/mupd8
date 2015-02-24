@@ -422,6 +422,10 @@ class AppRuntime(appID: Int,
                 break() // end source thread at first no next returns
               }
             } catch {
+  	      case e: InterruptedException => {
+	        warn("Source Thread exit due to interrupted signal")
+		break()
+              }
               case e: Exception => error("SourceThread: exception during reads. Swallowed to continue next read.", e)
             } // catch everything to keep source running
           }
