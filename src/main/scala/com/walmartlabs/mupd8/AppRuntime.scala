@@ -225,9 +225,9 @@ class AppRuntime(appID: Int,
 
   val maxWorkerCount = 2 * Runtime.getRuntime.availableProcessors
   val slateURLserver = new HttpServer(appStatic.statusPort, maxWorkerCount, s => {
-    val decoded = java.net.URLDecoder.decode(s, "UTF-8")
-    val tok = decoded.split('/')
-    if (tok(1) == "favicon.ico") None
+    var normURL = normalizeURL(s)
+    val tok = normURL.split('/')
+    if (tok.length <= 2 || tok(1) == "favicon.ico") None
     else if (tok(2) == "status") {
       excToOptionWithLog {
         Some(threadVect.map { p =>
@@ -263,24 +263,32 @@ class AppRuntime(appID: Int,
         info("Query request before node is up")
         None
       } else {
+        tok(5) = java.net.URLDecoder.decode(tok(5), "UTF-8")
         val key: (String, Key) = (tok(4), Key(tok(5).map(_.toByte).toArray))
-        val poolKey = PerformerPacket.getKey(appStatic.performerName2ID(key._1), key._2)
-        val dest = ring(poolKey)
-        if (self.ip.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
-          getSlate(key)
-        else {
-          val slate = fetchURL("http://" + dest + ":" + (appStatic.statusPort + 300) + s)
-          slate match {
-            case None =>
-              warn("Can't reach dest(" + dest + "); going to report " + dest + " fails.")
-              val performerId = appStatic.performerName2ID(key._1)
-              val host = ring(PerformerPacket.getKey(performerId, key._2))
-              val future = new Later[SlateObject]
-              storeIO.fetchSlates(key._1, key._2, p => future.set(p))
-              val bytes = new ByteArrayOutputStream()
-              getSlateBuilder(performerId).toBytes(future.get(), bytes)
-              Some(bytes.toByteArray())
-            case Some(s) => Some(s)
+        try {
+          val poolKey = PerformerPacket.getKey(appStatic.performerName2ID(key._1), key._2)
+          val dest = ring(poolKey)
+          if (self.ip.compareTo(dest) == 0 || dest.compareTo("localhost") == 0 || dest.compareTo("127.0.0.1") == 0)
+            getSlate(key)
+          else {
+            val slate = fetchURL("http://" + dest + ":" + (appStatic.statusPort + 300) + s)
+            slate match {
+              case None =>
+                warn("Can't reach dest(" + dest + "); going to report " + dest + " fails.")
+                val performerId = appStatic.performerName2ID(key._1)
+                val host = ring(PerformerPacket.getKey(performerId, key._2))
+                val future = new Later[SlateObject]
+                storeIO.fetchSlates(key._1, key._2, p => future.set(p))
+                val bytes = new ByteArrayOutputStream()
+                getSlateBuilder(performerId).toBytes(future.get(), bytes)
+                Some(bytes.toByteArray())
+              case Some(s) => Some(s)
+            }
+          }
+        } catch {
+          case e: NoSuchElementException => {
+            error(key._1 + " is not a valid performer", e)
+            None
           }
         }
       }
@@ -326,6 +334,22 @@ class AppRuntime(appID: Int,
     }
   }
 
+  // Normalize the URL by collapsing the redundant path separator '/' in URL
+  def normalizeURL(s: String) = {
+    val ss = s.split('/');
+    var list = new java.util.ArrayList[String]()
+    ss.foreach { str => {
+      if (str.length() != 0)
+        list.add(str)
+    }}
+    var re = "";
+    list.foreach { str => {
+      re += "/"
+      re += str
+    }}
+    re
+  }
+
   def waitHashRing(time: Int) {
     if (time <= 0) {
       error("Failed to update hash ring from message server, exiting...")
@@ -352,7 +376,9 @@ class AppRuntime(appID: Int,
   // We need a separate slate server that does not redirect to prevent deadlocks
   val slateServer = new HttpServer(appStatic.statusPort + 300, maxWorkerCount, s => {
     info("slateServer: received " + s)
-    val tok = java.net.URLDecoder.decode(s, "UTF-8").split('/')
+    var normURL = normalizeURL(s)
+    val tok = normURL.split('/')
+    tok(5) = java.net.URLDecoder.decode(tok(5), "UTF-8")
     getSlate((tok(4), Key(tok(5).map(_.toByte).toArray)))
   })
   slateServer.start
@@ -422,9 +448,9 @@ class AppRuntime(appID: Int,
                 break() // end source thread at first no next returns
               }
             } catch {
-  	      case e: InterruptedException => {
-	        warn("SourceThread: interrupted exception; stop this source thread")
-		break()
+              case e: InterruptedException => {
+                warn("SourceThread: interrupted exception; stop this source thread")
+                break()
               }
               case e: Exception => error("SourceThread: exception during reads. Swallowed to continue next read.", e)
             } // catch everything to keep source running
