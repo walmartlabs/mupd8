@@ -57,12 +57,15 @@ class MUCluster[T <: MapUpdateClass[T]](self: Host,
 
   def send(dest: Host, obj: T) {
     def _send(retryCount: Int, destip: String, obj: T): Boolean = {
-      if (retryCount == 0) {
+      if (appRun.candidateRing != null && !appRun.candidateRing.ips.contains(destip)) {
+        warn("Did not send this event, because its destination may not be accessible and will be removed from the ring")
+        false
+      } else if (retryCount == 0) {
         false
       } else {
         if (!client.send(destip, obj)) {
           warn("Failed to send event (" + obj + ") to destination " + destip + " at retry : " + retryCount)
-          Thread.sleep(10000)
+          Thread.sleep(5000)
           _send(retryCount - 1, destip, obj)
         } else {
           true
