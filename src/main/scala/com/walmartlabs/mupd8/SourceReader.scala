@@ -26,9 +26,9 @@ import java.io.InputStreamReader
 import java.io.FileReader
 import java.io.IOException
 import java.lang.Exception
-import org.codehaus.jackson._
-import org.codehaus.jackson.map.ObjectMapper
-import annotation.tailrec
+import com.fasterxml.jackson.databind._
+import com.fasterxml.jackson.databind.ObjectMapper
+import scala.annotation.tailrec
 import java.util.Random
 import grizzled.slf4j.Logging
 

@@ -5,14 +5,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
-import kafka.consumer.*;
+import kafka.consumer.Consumer;
+import kafka.consumer.ConsumerConfig;
+import kafka.consumer.ConsumerIterator;
+import kafka.consumer.KafkaStream;
 import kafka.javaapi.consumer.ConsumerConnector;
 
-import org.codehaus.jackson.JsonNode;
-import org.codehaus.jackson.map.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.walmartlabs.mupd8.application.Mupd8DataPair;
 import com.walmartlabs.mupd8.application.Mupd8Source;
 
